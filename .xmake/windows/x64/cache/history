@@ -1,0 +1,31 @@
+{
+    cmdlines = {
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\explorer.lua]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\config.lua]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\apis.lua]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\apis.lua]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\apis.lua]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\apis.lua]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\apis.lua]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\apis.lua]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\update_intellisense.lua .vscode clangd]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\config.lua]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\explorer.lua]],
+        "xmake check",
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\config.lua]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\update_intellisense.lua .vscode clangd]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\explorer.lua]],
+        "xmake check",
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\apis.lua]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\apis.lua]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\apis.lua]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\apis.lua]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\apis.lua]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\config.lua]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\update_intellisense.lua .vscode clangd]],
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\explorer.lua]],
+        "xmake check",
+        [[xmake l c:\Users\silen\.vscode\extensions\tboox.xmake-vscode-2.4.0\assets\explorer.lua]],
+        "xmake check"
+    }
+}
