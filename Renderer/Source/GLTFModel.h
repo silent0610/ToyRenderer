@@ -1,6 +1,12 @@
 #pragma once
-#define GLFW_INCLUDE_VULKAN
-#include "Lib.h"
+
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <Glm/glm.hpp>
+#include <Glm/gtc/matrix_transform.hpp>
+#include <string>
+#include <vector>
+#include <iostream>
 struct Vertex
 {
     glm::vec3 pos;
@@ -11,6 +17,7 @@ struct Vertex
 struct Model
 {
     std::string name;
+    Model();
 };
 struct Models
 {

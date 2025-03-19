@@ -3,5 +3,5 @@
 
 int main()
 {
-    std::cout << 666;
+    std::cout << 61236;
 }
