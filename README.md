@@ -1,5 +1,5 @@
 # How To Build VS sln  
-`xmake project -k vsxmake Build/VS`
+`xmake project -k vsxmake build/`
 
 # Used Library  
 - Vulkan
