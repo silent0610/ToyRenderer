@@ -1,13 +1,12 @@
-#pragma once
+module;
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
-#include <optional>
-#include <string>
-#include <vector>
+export module RendererMod;
+import std;
 struct UBOMatrices
 {
 	glm::mat4 view;
@@ -47,7 +46,7 @@ struct EnabledFeatures
 	bool enableValidation{false};
 };
 
-class Renderer
+export class Renderer
 {
 public:
 	Renderer(bool enableValidation = false) : m_enableValidation(enableValidation)

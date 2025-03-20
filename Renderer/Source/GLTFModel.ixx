@@ -1,12 +1,12 @@
-#pragma once
+module;
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <Glm/glm.hpp>
 #include <Glm/gtc/matrix_transform.hpp>
-#include <string>
-#include <vector>
-#include <iostream>
+
+export module GLTFModelMod;
+import std;
 struct Vertex
 {
     glm::vec3 pos;

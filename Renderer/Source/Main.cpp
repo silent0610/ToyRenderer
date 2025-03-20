@@ -1,5 +1,5 @@
-#include <iostream>
-#include "Renderer.h"
+import std;
+import RendererMod;
 
 int main()
 {
