@@ -41,16 +41,23 @@ struct FrameBufferAttachment
 	}
 };
 
-struct EnabledFeatures
+struct Limits
 {
-	bool enableValidation{false};
+	bool validation{ false };
+	float maxAnisotropy{ 0 };
+	VkSampleCountFlagBits maxMsaaSamples{ VK_SAMPLE_COUNT_1_BIT };
 };
+struct NeededFeatures
+{
+	bool validation{ false };
 
+};
 export class Renderer
 {
 public:
-	Renderer(bool enableValidation = false) : m_enableValidation(enableValidation)
+	Renderer(bool enableValidation = false)
 	{
+		m_neededFeatures.validation = enableValidation;
 	}
 	void Run();
 	~Renderer()
@@ -58,39 +65,43 @@ public:
 	}
 
 private:
-	VkDescriptorSetLayout m_descriptorSetLayout{VK_NULL_HANDLE};
-	VkPipelineLayout m_pipelineLayout{VK_NULL_HANDLE};
+	VkDescriptorSetLayout m_descriptorSetLayout{ VK_NULL_HANDLE };
+	VkPipelineLayout m_pipelineLayout{ VK_NULL_HANDLE };
 	VkDescriptorPool m_descriptorPool;
 	VkDescriptorSet m_descriptorSet;
-	VkPipeline m_pipeline{nullptr};
-	VkRenderPass m_renderPass{nullptr};
+	VkPipeline m_pipeline{ nullptr };
+	VkRenderPass m_renderPass{ nullptr };
 
 	VkFramebuffer m_frameBuffer;
 	VkCommandPool m_commandPool;
 	VkCommandBuffer m_commandBuffer;
 
-	VkDevice m_device{nullptr};
-	VkQueue m_GraphicsQueue{nullptr};
-	VkQueue m_presentQueue{nullptr};
+	VkDevice m_device{ nullptr };
+	VkQueue m_GraphicsQueue{ nullptr };
+	VkQueue m_presentQueue{ nullptr };
 	VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
-	VkInstance m_instance{nullptr};
+	VkInstance m_instance{ nullptr };
 
-	VkDebugUtilsMessengerEXT m_debugMessenger{nullptr};
-	VkSurfaceKHR m_surface{nullptr}; // 使用与平台无关，但是创建与平台有关
-	GLFWwindow *m_window{nullptr};
-	VkSwapchainKHR m_swapChain{nullptr};
+	// 一个回调对象，用于通过 Vulkan 调试扩展（如 VK_EXT_DEBUG_UTILS）接收 Vulkan 驱动程序生成的调试信息。在应用程序结束时，你需要销毁这个对象，释放资源
+	VkDebugUtilsMessengerEXT m_debugMessenger{ nullptr };
+	VkSurfaceKHR m_surface{ nullptr }; // 使用与平台无关，但是创建与平台有关
+	GLFWwindow* m_window{ nullptr };
+	VkSwapchainKHR m_swapChain{ nullptr };
 
 	bool m_framebufferResized = false;
 	int m_width = 800;
 	int m_height = 600;
 	int m_inFlight = 2;
-	bool m_enableValidation{false};
-	EnabledFeatures m_enabledFeatures{};
+	//bool m_enableValidation{ false };
+	Limits m_limits{};
+	NeededFeatures m_neededFeatures{};
+	VkSampleCountFlagBits m_msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+	float m_maxAnisotropy;
 
-	const std::vector<const char *> m_validationLayers = {
-		"VK_LAYER_KHRONOS_validation"};
-	const std::vector<const char *> m_deviceExtensions = {
-		VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+	const std::vector<const char*> m_validationLayers = {
+		"VK_LAYER_KHRONOS_validation" };
+	const std::vector<const char*> m_deviceExtensions = {
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
 	void CreateInstance();
 	void InitWindow();
@@ -98,16 +109,18 @@ private:
 	void SetupDebugMessenger();
 	void MainLoop();
 	void Cleanup();
+	void GetDeviceProperties();
+	void SetRequiredFeatures();
 	bool CheckValidationLayerSupport();
-	std::vector<const char *> GetRequiredExtensions();
+	std::vector<const char*> GetRequiredExtensions();
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
 		VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 		VkDebugUtilsMessageTypeFlagsEXT messageType,
-		const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
-		void *pUserData);
+		const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+		void* pUserData);
 
-	void PopulateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo);
+	void PopulateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
 	void PickPhysicalDevice();
 	QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device);
 	bool IsDeviceSuitable(VkPhysicalDevice device);
@@ -115,25 +128,25 @@ private:
 	void CreateSurface();
 	bool CheckDeviceExtensionSupport(VkPhysicalDevice device);
 	SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device);
-	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats);
-	VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes);
-	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities);
+	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
+	VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
+	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 	void CreateSwapChain();
 	void CreateImageViews();
 	void CreateGraphicsPipeline();
-	VkShaderModule CreateShaderModule(const std::vector<char> &code);
-	static std::vector<char> ReadFile(const std::string &filename);
+	VkShaderModule CreateShaderModule(const std::vector<char>& code);
+	static std::vector<char> ReadFile(const std::string& filename);
 	void CreateRenderPass();
 	void CreateFramebuffers();
 	void CreateCommandPool();
-	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory);
+	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
 	void CreateCommandBuffers();
 	void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 	void DrawFrame();
 	void CreateSyncObjects();
 	void RecreateSwapChain();
 	void CleanupSwapChain();
-	static void FramebufferResizeCallback(GLFWwindow *window, int width, int height);
+	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
 	void CreateVertexBuffer();
 	void CreateIndexBuffer();
 	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
@@ -146,7 +159,7 @@ private:
 	void CreateTextureImage();
 	void CreateTextureImageView();
 	void CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling,
-					 VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory &imageMemory);
+		VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
 
 	VkCommandBuffer BeginSingleTimeCommands();
 
@@ -158,7 +171,7 @@ private:
 	void CreateTextureSampler();
 
 	void CreateDepthResources();
-	VkFormat FindSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
+	VkFormat FindSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 	VkFormat FindDepthFormat();
 	bool HasStencilComponent(VkFormat format);
 
@@ -166,39 +179,9 @@ private:
 
 	void GenerateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
 
-	VkSampleCountFlagBits GetMaxUsableSampleCount()
-	{
-		VkPhysicalDeviceProperties physicalDeviceProperties;
-		vkGetPhysicalDeviceProperties(m_physicalDevice, &physicalDeviceProperties);
-
-		VkSampleCountFlags counts = physicalDeviceProperties.limits.framebufferColorSampleCounts & physicalDeviceProperties.limits.framebufferDepthSampleCounts;
-		if (counts & VK_SAMPLE_COUNT_64_BIT)
-		{
-			return VK_SAMPLE_COUNT_64_BIT;
-		}
-		if (counts & VK_SAMPLE_COUNT_32_BIT)
-		{
-			return VK_SAMPLE_COUNT_32_BIT;
-		}
-		if (counts & VK_SAMPLE_COUNT_16_BIT)
-		{
-			return VK_SAMPLE_COUNT_16_BIT;
-		}
-		if (counts & VK_SAMPLE_COUNT_8_BIT)
-		{
-			return VK_SAMPLE_COUNT_8_BIT;
-		}
-		if (counts & VK_SAMPLE_COUNT_4_BIT)
-		{
-			return VK_SAMPLE_COUNT_4_BIT;
-		}
-		if (counts & VK_SAMPLE_COUNT_2_BIT)
-		{
-			return VK_SAMPLE_COUNT_2_BIT;
-		}
-
-		return VK_SAMPLE_COUNT_1_BIT;
-	}
+	VkSampleCountFlagBits GetMaxUsableSampleCount();
 
 	void CreateColorResources();
+	VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
+	void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator);
 };

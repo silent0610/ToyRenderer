@@ -1,7 +1,44 @@
 import std;
+import <stdexcept>;
 import RendererMod;
 
-int main()
+int main(int argc, char* argv[])
 {
-    std::cout << 61236;
+	//std::cout << argc << std::endl;
+	//for (int i = 0; i < argc; ++i)
+	//{
+	//	std::cout << argv[i] << std::endl;
+	//}
+	bool enableValidation{ false };
+	if (argc == 1)
+	{
+	}
+	else if (argc == 2)
+	{
+		if (std::string(argv[1]) == "v")
+		{
+			std::cout << "need validation\n";
+			enableValidation = true;
+		}
+		else
+		{
+			std::cerr << "not support arg\n";
+		}
+	}
+	else
+	{
+		std::cerr << "not support arg\n";
+	}
+
+	Renderer renderer{ enableValidation };
+	try
+	{
+		renderer.Run();
+	}
+	catch (const std::exception& e)
+	{
+		std::cerr << e.what() << std::endl;
+		return EXIT_FAILURE;
+	}
+	return  EXIT_SUCCESS;
 }
