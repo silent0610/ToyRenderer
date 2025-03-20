@@ -1,6 +1,10 @@
 #pragma once
-#include "Lib.h"
-
+#include "Glm/mat4x4.hpp"
+#include "VkSDK/vulkan.h"
+#include "GLFW/glfw3.h"
+#include <optional>
+#include <string>
+#include <vector>
 struct UBOMatrices
 {
 	glm::mat4 view;
