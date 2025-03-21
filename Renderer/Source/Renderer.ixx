@@ -41,16 +41,44 @@ struct FrameBufferAttachment
 	}
 };
 
+struct VkQueues
+{
+	VkQueue graphicsQueue{ nullptr };
+	VkQueue presentQueue{ nullptr };
+
+};
+
 struct Limits
 {
 	bool validation{ false };
 	float maxAnisotropy{ 0 };
 	VkSampleCountFlagBits maxMsaaSamples{ VK_SAMPLE_COUNT_1_BIT };
+
 };
+// 应该是键值对 使用map
 struct NeededFeatures
 {
 	bool validation{ false };
+	VkBool32 sampleRateShading{ false };
+	VkBool32 samplerAnisotropy{ false };
 
+};
+
+
+struct SwapChain
+{
+	std::vector<VkImage> images{};
+	std::vector<VkImageView> views{};
+	VkFormat swapChainImageFormat{};
+	VkExtent2D swapChainExtent{};
+
+	VkSwapchainKHR swapChain{ VK_NULL_HANDLE };
+};
+
+struct Image
+{
+	VkImage image;
+	void* mapped;
 };
 export class Renderer
 {
@@ -77,8 +105,8 @@ private:
 	VkCommandBuffer m_commandBuffer;
 
 	VkDevice m_device{ nullptr };
-	VkQueue m_GraphicsQueue{ nullptr };
-	VkQueue m_presentQueue{ nullptr };
+	VkQueues m_queues{};
+
 	VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
 	VkInstance m_instance{ nullptr };
 
@@ -86,7 +114,9 @@ private:
 	VkDebugUtilsMessengerEXT m_debugMessenger{ nullptr };
 	VkSurfaceKHR m_surface{ nullptr }; // 使用与平台无关，但是创建与平台有关
 	GLFWwindow* m_window{ nullptr };
-	VkSwapchainKHR m_swapChain{ nullptr };
+	//VkSwapchainKHR m_swapChain{ nullptr };
+	SwapChain m_swapChain{};
+	SwapChainSupportDetails m_swapChainSupport;
 
 	bool m_framebufferResized = false;
 	int m_width = 800;
@@ -97,6 +127,8 @@ private:
 	NeededFeatures m_neededFeatures{};
 	VkSampleCountFlagBits m_msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 	float m_maxAnisotropy;
+	QueueFamilyIndices m_indices;
+
 
 	const std::vector<const char*> m_validationLayers = {
 		"VK_LAYER_KHRONOS_validation" };
@@ -132,7 +164,7 @@ private:
 	VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
 	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
 	void CreateSwapChain();
-	void CreateImageViews();
+	void CreateSwapChainImageViews();
 	void CreateGraphicsPipeline();
 	VkShaderModule CreateShaderModule(const std::vector<char>& code);
 	static std::vector<char> ReadFile(const std::string& filename);

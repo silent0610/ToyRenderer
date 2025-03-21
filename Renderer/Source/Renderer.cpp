@@ -23,6 +23,7 @@ void Renderer::InitWindow()
 {
 	glfwInit();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+	// 设置 GLFW 创建的窗口是否可以调整大小。
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 	// 使用glfw创建窗口
 	m_window = glfwCreateWindow(m_width, m_height, "Renderer", nullptr, nullptr);
@@ -37,7 +38,206 @@ void Renderer::InitVulkan()
 	SetupDebugMessenger(); //先创建实例，相当于先指定和调试的接口，再之后再实际链接
 	CreateSurface();
 	PickPhysicalDevice();
-	//CreateLogicalDevice();
+	CreateLogicalDevice();
+	CreateSwapChain();
+
+}
+
+void Renderer::CreateRenderPass()
+{
+	std::array<VkAttachmentDescription, 2> attachments = {};
+
+	// Color attachment
+	attachments[0].format = m_swapChain.swapChainImageFormat;
+	attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	// Depth attachment
+	attachments[1].format = FindDepthFormat();
+	attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+	attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+}
+VkFormat Renderer::FindDepthFormat()
+{
+	return FindSupportedFormat(
+		{ VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT },
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
+	);
+}
+
+/// @brief 
+/// @param candidates 
+/// @param tiling 图片在设备中的存储格式
+/// @param features 该格式需要支持的特性
+/// @return 
+VkFormat Renderer::FindSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features)
+{
+	for (VkFormat format : candidates)
+	{
+		VkFormatProperties props;
+		vkGetPhysicalDeviceFormatProperties(m_physicalDevice, format, &props);
+		if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features)
+		{
+			return format;
+		}
+		else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features)
+		{
+			return format;
+		}
+	}
+	throw std::runtime_error("failed to find supported format!");
+
+}
+VkImageView Renderer::CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels)
+{
+	VkImageViewCreateInfo viewCI{};
+	viewCI.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	viewCI.image = image;
+	viewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	viewCI.format = format;
+	viewCI.subresourceRange.aspectMask = aspectFlags;
+	viewCI.subresourceRange.baseMipLevel = 0;
+	viewCI.subresourceRange.levelCount = mipLevels;
+	viewCI.subresourceRange.baseArrayLayer = 0;
+	viewCI.subresourceRange.layerCount = 1;
+
+	VkImageView imageView;
+	if (vkCreateImageView(m_device, &viewCI, nullptr, &imageView) != VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to create texture image view!");
+	}
+	return imageView;
+}
+
+//为获取的交换链图像创建视图，封装
+void Renderer::CreateSwapChainImageViews()
+{
+	m_swapChain.views.resize(m_swapChain.images.size());
+	for (size_t i = 0; i < m_swapChain.images.size(); ++i)
+	{
+		m_swapChain.views[i] = CreateImageView(m_swapChain.images[i], m_swapChain.swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+	}
+}
+VkExtent2D Renderer::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
+{
+	if (capabilities.currentExtent.width != UINT32_MAX)
+	{
+		return capabilities.currentExtent;
+	}
+	else
+	{
+		int width, height;
+		glfwGetFramebufferSize(m_window, &width, &height);
+		VkExtent2D actualExtent = { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
+		std::cout << "actualExtent: " << actualExtent.width << " " << actualExtent.height << std::endl;
+		actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+		actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+		return actualExtent;
+	}
+};
+VkPresentModeKHR Renderer::ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes)
+{
+	for (const auto& availablePresentMode : availablePresentModes)
+	{
+		if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
+		{
+			return availablePresentMode;
+		}
+	}
+
+	return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+/// @brief 选择合适的交换链格式
+/// @param availableFormats 
+/// @return 合适的交换链格式
+VkSurfaceFormatKHR Renderer::ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats)
+{
+	for (const auto& availableFormat : availableFormats)
+	{
+		if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+		{
+			return availableFormat;
+		}
+	}
+	return availableFormats[0];
+}
+
+void Renderer::CreateSwapChain()
+{
+	SwapChainSupportDetails& swapChainSupport = m_swapChainSupport;
+	VkSurfaceFormatKHR surfaceFormat = ChooseSwapSurfaceFormat(swapChainSupport.formats);
+	VkPresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
+	VkExtent2D extent = ChooseSwapExtent(swapChainSupport.capabilities);
+
+	// 设置交换链图像数量
+	uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
+	if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount)
+	{
+		imageCount = swapChainSupport.capabilities.maxImageCount;
+	}
+
+	VkSwapchainCreateInfoKHR createInfo{};
+	createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+	createInfo.surface = m_surface;
+	createInfo.minImageCount = imageCount;
+	createInfo.imageFormat = surfaceFormat.format;
+	createInfo.imageColorSpace = surfaceFormat.colorSpace;
+	createInfo.imageExtent = extent;
+	createInfo.imageArrayLayers = 1;
+	createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+	QueueFamilyIndices& indices = m_indices;
+	uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+	// 如果是两个队列族，交换链就需要在两个队列族之间共享图像
+	if (indices.graphicsFamily != indices.presentFamily)
+	{
+		createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+		createInfo.queueFamilyIndexCount = 2;
+		createInfo.pQueueFamilyIndices = queueFamilyIndices;
+	}
+	else
+	{
+		createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		createInfo.queueFamilyIndexCount = 0; // Optional
+		createInfo.pQueueFamilyIndices = nullptr; // Optional
+	}
+	// 预变换，这里是不变换
+	createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
+	createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+	createInfo.presentMode = presentMode;
+	createInfo.clipped = VK_TRUE;
+	createInfo.oldSwapchain = VK_NULL_HANDLE;
+
+	if (vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapChain.swapChain) != VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to create swap chain!");
+	}
+
+	//查询交换链包含的图像数量，但不会返回图像句柄。这一步的目的是确定需要分配多少内存来存储这些图像。
+	vkGetSwapchainImagesKHR(m_device, m_swapChain.swapChain, &imageCount, nullptr);
+	m_swapChain.images.resize(imageCount);
+
+	//第二次调用 vkGetSwapchainImagesKHR：
+	//传递 mSwapChainImages.data()，将交换链的图像句柄存储到向量中。
+	// mSwapChainImages 现在包含交换链的所有图像句柄，后续可通过这些句柄操作每帧的渲染目标。
+	// Vulkan 管理这些图像的内存。开发者无需手动分配或释放，只需通过 VkSwapchainImagesKHR 获取句柄即可。
+	vkGetSwapchainImagesKHR(m_device, m_swapChain.swapChain, &imageCount, m_swapChain.images.data());
+	m_swapChain.swapChainImageFormat = surfaceFormat.format;
+	m_swapChain.swapChainExtent = extent;
+
+	CreateSwapChainImageViews();
 }
 /// @brief 1. 检查是否支持验证层 2. 获取需要的扩展（glfw + valid），好像没有检查扩展是否可用
 void Renderer::CreateInstance()
@@ -371,15 +571,19 @@ bool Renderer::IsDeviceSuitable(VkPhysicalDevice device)
 	// 不止支持交换链扩展，还需要交换链合适
 	bool swapChainAdequate = false;
 	// 交换链必须支持至少一种format和一种presentmode
-	SwapChainSupportDetails swapChainSupport = QuerySwapChainSupport(device);
-	swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
+	m_swapChainSupport = QuerySwapChainSupport(device);
+	swapChainAdequate = !m_swapChainSupport.formats.empty() && !m_swapChainSupport.presentModes.empty();
 	if (!swapChainAdequate)return false;
 
 	// 且支持各向异性采样
 	VkPhysicalDeviceFeatures supportedFeatures;
 	vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
 
-	return supportedFeatures.samplerAnisotropy;
+	// TODO 改造为支持neededFeature 如果不支持feature 返回不支持的feature名称
+	bool support = supportedFeatures.samplerAnisotropy && supportedFeatures.sampleRateShading;
+	if (support) m_indices = indices;
+
+	return support;
 }
 
 /// @brief 查询并返回交换链支持的细节信息，如format，和present mode 数组
@@ -405,15 +609,8 @@ SwapChainSupportDetails Renderer::QuerySwapChainSupport(VkPhysicalDevice device)
 	}
 	return details;
 }
-// void Renderer::MainLoop()
-//{
-//	while (!glfwWindowShouldClose(m_window))
-//	{
-//		glfwPollEvents();
-//		DrawFrame();
-//	}
-//	vkDeviceWaitIdle(m_device);
-// }
+
+
 void Renderer::DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator)
 {
 	auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
@@ -435,7 +632,7 @@ void Renderer::MainLoop()
 
 void Renderer::Cleanup()
 {
-	vkDestroySwapchainKHR(m_device, m_swapChain, nullptr);
+	vkDestroySwapchainKHR(m_device, m_swapChain.swapChain, nullptr);
 
 	vkDestroyDevice(m_device, nullptr);
 	if (m_neededFeatures.validation)
@@ -449,3 +646,58 @@ void Renderer::Cleanup()
 	glfwTerminate();
 }
 
+
+void Renderer::CreateLogicalDevice()
+{
+	// 设置队列属性 还没创建队列
+	QueueFamilyIndices& indices = m_indices;
+	std::vector<VkDeviceQueueCreateInfo> queueCreateInfos{};
+
+	// 某个显卡支持特定的队列族，某些队列族只支持渲染，某些只支持显示，某些两者都支持
+	// 之前已经判断过物理设备一定支持这两个队列族，这里是防止因为他们相同导致重复创建队列
+	std::set<uint32_t> uniqueQueueFamilies = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+	float queuePriority = 1.0f;
+	for (uint32_t queueFamily : uniqueQueueFamilies)
+	{
+		VkDeviceQueueCreateInfo queueCreateInfo{};
+		queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		queueCreateInfo.queueFamilyIndex = queueFamily;
+		// 只创建该队列族的一个队列
+		queueCreateInfo.queueCount = 1;
+		queueCreateInfo.pQueuePriorities = &queuePriority;
+		queueCreateInfos.push_back(queueCreateInfo);
+	}
+	// 物理设备属性
+	VkPhysicalDeviceFeatures deviceFeatures{};
+
+	VkDeviceCreateInfo createInfo{};
+	createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	createInfo.pQueueCreateInfos = queueCreateInfos.data();
+	createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+	// 这里 没有判断，而是指定让物理设备开启这些功能
+	// TODO
+	deviceFeatures.samplerAnisotropy = VK_TRUE;
+	deviceFeatures.sampleRateShading = VK_TRUE;
+	createInfo.pEnabledFeatures = &deviceFeatures; // 使用设备特性
+
+	// 指定启用的扩展（交换链）获取物理设备时已判断扩展是否可用
+	createInfo.enabledExtensionCount = static_cast<uint32_t>(m_deviceExtensions.size());
+	createInfo.ppEnabledExtensionNames = m_deviceExtensions.data();
+
+	if (m_neededFeatures.validation)
+	{
+		createInfo.enabledLayerCount = static_cast<uint32_t>(m_validationLayers.size());
+		createInfo.ppEnabledLayerNames = m_validationLayers.data();
+	}
+	else
+	{
+		createInfo.enabledLayerCount = 0;
+	}
+	if (vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device) != VK_SUCCESS)
+	{
+		throw std::runtime_error("failed to create logical device");
+	}
+	// 保存队列
+	vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_queues.graphicsQueue);
+	vkGetDeviceQueue(m_device, indices.presentFamily.value(), 0, &m_queues.presentQueue);
+}
