@@ -4,6 +4,7 @@ import RendererMod;
 
 int main(int argc, char* argv[])
 {
+
 	bool enableValidation{ false };
 	if (argc == 1)
 	{

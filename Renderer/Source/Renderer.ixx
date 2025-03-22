@@ -7,6 +7,7 @@ module;
 #include "GLFW/glfw3.h"
 export module RendererMod;
 import std;
+import BufferMod;
 struct UBOMatrices
 {
 	glm::mat4 view;
@@ -75,29 +76,6 @@ struct SwapChain
 	VkSwapchainKHR swapChain{ VK_NULL_HANDLE };
 };
 
-struct Buffer
-{
-	VkDevice device;
-	VkBuffer buffer = VK_NULL_HANDLE;
-	VkDeviceMemory memory = VK_NULL_HANDLE;
-	VkDescriptorBufferInfo descriptor;
-	VkDeviceSize size = 0;
-	VkDeviceSize alignment = 0;
-	void* mapped = nullptr;
-	///** @brief Usage flags to be filled by external source at buffer creation (to query at some later point) */
-	//VkBufferUsageFlags usageFlags;
-	///** @brief Memory property flags to be filled by external source at buffer creation (to query at some later point) */
-	//VkMemoryPropertyFlags memoryPropertyFlags;
-	VkResult Map(VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);
-	void Unmap();
-	VkResult Bind(VkDeviceSize offset = 0);
-	//void SetupDescriptor(VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);
-	//void CopyTo(void* data, VkDeviceSize size);
-	VkResult Flush(VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);
-	//VkResult Invalidate(VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);
-	//void Destroy();
-};
-
 struct Image
 {
 	VkImage image;
@@ -116,14 +94,18 @@ public:
 	}
 
 private:
+	std::vector<VkShaderModule> m_shaderModules{};
+	VkFormat m_depthFormat{};
+	Buffer m_uboBuffer{};
+	UBOMatrices m_uboMatrices{};
 	VkDescriptorSetLayout m_descriptorSetLayout{ VK_NULL_HANDLE };
 	VkPipelineLayout m_pipelineLayout{ VK_NULL_HANDLE };
-	VkDescriptorPool m_descriptorPool;
-	VkDescriptorSet m_descriptorSet;
+	VkDescriptorPool m_descriptorPool{nullptr};
+	VkDescriptorSet m_descriptorSet{nullptr};
 	VkPipeline m_pipeline{ nullptr };
 	VkRenderPass m_renderPass{ nullptr };
 
-	VkFramebuffer m_frameBuffer;
+	std::vector<VkFramebuffer> m_frameBuffers;
 	VkCommandPool m_commandPool;
 	VkCommandBuffer m_commandBuffer;
 
@@ -142,8 +124,8 @@ private:
 	SwapChainSupportDetails m_swapChainSupport;
 
 	bool m_framebufferResized = false;
-	int m_width = 800;
-	int m_height = 600;
+	uint32_t m_width = 800;
+	uint32_t m_height = 600;
 	int m_inFlight = 2;
 	//bool m_enableValidation{ false };
 	Limits m_limits{};
@@ -151,7 +133,14 @@ private:
 	VkSampleCountFlagBits m_msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 	float m_maxAnisotropy;
 	QueueFamilyIndices m_indices;
+	std::vector<VkCommandBuffer> m_drawCmdBuffers{};
 
+	struct
+	{
+		VkImage image;
+		VkDeviceMemory memory;
+		VkImageView view;
+	} m_depthStencil{};
 
 	const std::vector<const char*> m_validationLayers = {
 		"VK_LAYER_KHRONOS_validation" };
@@ -194,7 +183,7 @@ private:
 	void CreateRenderPass();
 	void CreateFramebuffers();
 	void CreateCommandPool();
-	void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+	VkResult CreateBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, Buffer* buffer, VkDeviceSize size, void* data = nullptr);
 	void CreateCommandBuffers();
 	void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 	void DrawFrame();
@@ -239,5 +228,10 @@ private:
 	void CreateColorResources();
 	VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
 	void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator);
+
+	void CreateUniformBuffer();
+	std::string GetShadersPath();
+	VkPipelineShaderStageCreateInfo LoadShader(std::string fileName, VkShaderStageFlagBits stage);
+	void BuildCommandBuffers();
 };
 
