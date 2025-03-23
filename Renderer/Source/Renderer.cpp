@@ -4,9 +4,22 @@ module;
 #include <memory>
 #include "glm/mat4x4.hpp"
 
+
+
 module RendererMod;
 import InitMod;
 import ToolMod;
+
+#define VK_CHECK_RESULT(f)																				\
+{																										\
+	VkResult res = (f);																					\
+	if (res != VK_SUCCESS)																				\
+	{																									\
+		std::cout << "Fatal : VkResult is \"" << Tool::ErrorString(res) << "\" in " << __FILE__ << " at line " << __LINE__ << "\n"; \
+		assert(res == VK_SUCCESS);																		\
+	}																									\
+}
+
 
 void Renderer::Run()
 {
@@ -35,6 +48,16 @@ void Renderer::InitWindow()
 	glfwSetWindowUserPointer(m_window, this);
 	glfwSetFramebufferSizeCallback(m_window, FramebufferResizeCallback);
 }
+
+void Renderer::PreCreateSubmitInfo() {
+
+	m_submitInfo = Init::submitInfo();
+	m_submitInfo.pWaitDstStageMask = &m_submitPipelineStages;
+	m_submitInfo.waitSemaphoreCount = 1;
+	m_submitInfo.pWaitSemaphores = &m_semaphores.presentComplete;
+	m_submitInfo.signalSemaphoreCount = 1;
+	m_submitInfo.pSignalSemaphores = &m_semaphores.renderComplete;
+}
 /// @brief 初始化 Vulkan，包括相关设置
 void Renderer::InitVulkan()
 {
@@ -43,10 +66,14 @@ void Renderer::InitVulkan()
 	CreateSurface();
 	PickPhysicalDevice();
 	CreateLogicalDevice();
+	CreateSyncObjects();
+	PreCreateSubmitInfo();
+
 
 	// prepare
 	CreateSwapChain();
 	CreateCommandPool();
+	CreateCommandBuffers();
 	CreateDepthResources();
 	CreateRenderPass();
 	CreateFramebuffers();
@@ -54,12 +81,178 @@ void Renderer::InitVulkan()
 	//
 	CreateUniformBuffer();
 	CreateDescriptors();
-	//CreateGraphicsPipeline()
-
+	CreateGraphicsPipeline();
+	CreateVertexBuffer();
 	BuildCommandBuffers();
+
 	
 }
 
+// Prepare vertex and index buffers for an indexed triangle
+	// Also uploads them to device local memory using staging and initializes vertex input and attribute binding to match the vertex shader
+void Renderer::CreateVertexBuffer()
+{
+	// A note on memory management in Vulkan in general:
+	//	This is a very complex topic and while it's fine for an example application to small individual memory allocations that is not
+	//	what should be done a real-world application, where you should allocate large chunks of memory at once instead.
+
+	// Setup vertices
+	std::vector<Vertex> vertexBuffer{
+		{ {  1.0f,  1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f } },
+		{ { -1.0f,  1.0f, 0.0f }, { 0.0f, 1.0f, 0.0f } },
+		{ {  0.0f, -1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f } }
+	};
+	uint32_t vertexBufferSize = static_cast<uint32_t>(vertexBuffer.size()) * sizeof(Vertex);
+
+	// Setup indices
+	std::vector<uint32_t> indexBuffer{ 0, 1, 2 };
+	indices.count = static_cast<uint32_t>(indexBuffer.size());
+	uint32_t indexBufferSize = indices.count * sizeof(uint32_t);
+
+	VkMemoryAllocateInfo memAlloc{};
+	memAlloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	VkMemoryRequirements memReqs;
+
+	// Static data like vertex and index buffer should be stored on the device memory for optimal (and fastest) access by the GPU
+	//
+	// To achieve this we use so-called "staging buffers" :
+	// - Create a buffer that's visible to the host (and can be mapped)
+	// - Copy the data to this buffer
+	// - Create another buffer that's local on the device (VRAM) with the same size
+	// - Copy the data from the host to the device using a command buffer
+	// - Delete the host visible (staging) buffer
+	// - Use the device local buffers for rendering
+	//
+	// Note: On unified memory architectures where host (CPU) and GPU share the same memory, staging is not necessary
+	// To keep this sample easy to follow, there is no check for that in place
+
+	struct StagingBuffer
+	{
+		VkDeviceMemory memory;
+		VkBuffer buffer;
+	};
+
+	struct
+	{
+		StagingBuffer vertices;
+		StagingBuffer indices;
+	} stagingBuffers{};
+
+	void* data;
+
+	// Vertex buffer
+	VkBufferCreateInfo vertexBufferInfoCI{};
+	vertexBufferInfoCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	vertexBufferInfoCI.size = vertexBufferSize;
+	// Buffer is used as the copy source
+	vertexBufferInfoCI.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	// Create a host-visible buffer to copy the vertex data to (staging buffer)
+	VK_CHECK_RESULT(vkCreateBuffer(m_device, &vertexBufferInfoCI, nullptr, &stagingBuffers.vertices.buffer));
+	vkGetBufferMemoryRequirements(m_device, stagingBuffers.vertices.buffer, &memReqs);
+	memAlloc.allocationSize = memReqs.size;
+	// Request a host visible memory type that can be used to copy our data to
+	// Also request it to be coherent, so that writes are visible to the GPU right after unmapping the buffer
+	memAlloc.memoryTypeIndex = FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &stagingBuffers.vertices.memory));
+	// Map and copy
+	VK_CHECK_RESULT(vkMapMemory(m_device, stagingBuffers.vertices.memory, 0, memAlloc.allocationSize, 0, &data));
+	memcpy(data, vertexBuffer.data(), vertexBufferSize);
+	vkUnmapMemory(m_device, stagingBuffers.vertices.memory);
+	VK_CHECK_RESULT(vkBindBufferMemory(m_device, stagingBuffers.vertices.buffer, stagingBuffers.vertices.memory, 0));
+
+	// Create a m_device local buffer to which the (host local) vertex data will be copied and which will be used for rendering
+	vertexBufferInfoCI.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	VK_CHECK_RESULT(vkCreateBuffer(m_device, &vertexBufferInfoCI, nullptr, &vertices.buffer));
+	vkGetBufferMemoryRequirements(m_device, vertices.buffer, &memReqs);
+	memAlloc.allocationSize = memReqs.size;
+	memAlloc.memoryTypeIndex = FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &vertices.memory));
+	VK_CHECK_RESULT(vkBindBufferMemory(m_device, vertices.buffer, vertices.memory, 0));
+
+	// Index buffer
+	VkBufferCreateInfo indexbufferCI{};
+	indexbufferCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	indexbufferCI.size = indexBufferSize;
+	indexbufferCI.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	// Copy index data to a buffer visible to the host (staging buffer)
+	VK_CHECK_RESULT(vkCreateBuffer(m_device, &indexbufferCI, nullptr, &stagingBuffers.indices.buffer));
+	vkGetBufferMemoryRequirements(m_device, stagingBuffers.indices.buffer, &memReqs);
+	memAlloc.allocationSize = memReqs.size;
+	memAlloc.memoryTypeIndex = FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &stagingBuffers.indices.memory));
+	VK_CHECK_RESULT(vkMapMemory(m_device, stagingBuffers.indices.memory, 0, indexBufferSize, 0, &data));
+	memcpy(data, indexBuffer.data(), indexBufferSize);
+	vkUnmapMemory(m_device, stagingBuffers.indices.memory);
+	VK_CHECK_RESULT(vkBindBufferMemory(m_device, stagingBuffers.indices.buffer, stagingBuffers.indices.memory, 0));
+
+	// Create destination buffer with m_device only visibility
+	indexbufferCI.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	VK_CHECK_RESULT(vkCreateBuffer(m_device, &indexbufferCI, nullptr, &indices.buffer));
+	vkGetBufferMemoryRequirements(m_device, indices.buffer, &memReqs);
+	memAlloc.allocationSize = memReqs.size;
+	memAlloc.memoryTypeIndex = FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &indices.memory));
+	VK_CHECK_RESULT(vkBindBufferMemory(m_device, indices.buffer, indices.memory, 0));
+
+	// Buffer copies have to be submitted to a queue, so we need a command buffer for them
+	// Note: Some devices offer a dedicated transfer queue (with only the transfer bit set) that may be faster when doing lots of copies
+	VkCommandBuffer copyCmd;
+
+	VkCommandBufferAllocateInfo cmdBufAllocateInfo{};
+	cmdBufAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	cmdBufAllocateInfo.commandPool = m_commandPool;
+	cmdBufAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	cmdBufAllocateInfo.commandBufferCount = 1;
+	VK_CHECK_RESULT(vkAllocateCommandBuffers(m_device, &cmdBufAllocateInfo, &copyCmd));
+
+	VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
+	VK_CHECK_RESULT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo));
+	// Put buffer region copies into command buffer
+	VkBufferCopy copyRegion{};
+	// Vertex buffer
+	copyRegion.size = vertexBufferSize;
+	vkCmdCopyBuffer(copyCmd, stagingBuffers.vertices.buffer, vertices.buffer, 1, &copyRegion);
+	// Index buffer
+	copyRegion.size = indexBufferSize;
+	vkCmdCopyBuffer(copyCmd, stagingBuffers.indices.buffer, indices.buffer, 1, &copyRegion);
+	VK_CHECK_RESULT(vkEndCommandBuffer(copyCmd));
+
+	// Submit the command buffer to the queue to finish the copy
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &copyCmd;
+
+	// Create fence to ensure that the command buffer has finished executing
+	VkFenceCreateInfo fenceCI{};
+	fenceCI.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceCI.flags = 0;
+	VkFence fence;
+	VK_CHECK_RESULT(vkCreateFence(m_device, &fenceCI, nullptr, &fence));
+
+	// Submit to the queue
+	VK_CHECK_RESULT(vkQueueSubmit(m_queues.graphicsQueue, 1, &submitInfo, fence));
+	// Wait for the fence to signal that command buffer has finished executing
+	VK_CHECK_RESULT(vkWaitForFences(m_device, 1, &fence, VK_TRUE, 10000000));
+
+	vkDestroyFence(m_device, fence, nullptr);
+	vkFreeCommandBuffers(m_device, m_commandPool, 1, &copyCmd);
+
+	// Destroy staging buffers
+	// Note: Staging buffer must not be deleted before the copies have been submitted and executed
+	vkDestroyBuffer(m_device, stagingBuffers.vertices.buffer, nullptr);
+	vkFreeMemory(m_device, stagingBuffers.vertices.memory, nullptr);
+	vkDestroyBuffer(m_device, stagingBuffers.indices.buffer, nullptr);
+	vkFreeMemory(m_device, stagingBuffers.indices.memory, nullptr);
+}
+
+void::Renderer::CreateCommandBuffers()
+{
+	// Create one command buffer for each swap chain image
+	m_drawCmdBuffers.resize(m_swapChain.images.size());
+	VkCommandBufferAllocateInfo cmdBufAllocateInfo = Init::commandBufferAllocateInfo(m_commandPool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, static_cast<uint32_t>(m_drawCmdBuffers.size()));
+	VK_CHECK_RESULT(vkAllocateCommandBuffers(m_device, &cmdBufAllocateInfo, m_drawCmdBuffers.data()));
+}
 void Renderer::BuildCommandBuffers()
 {
 	VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
@@ -77,19 +270,33 @@ void Renderer::BuildCommandBuffers()
 	renderPassBeginInfo.clearValueCount = 2;
 	renderPassBeginInfo.pClearValues = clearValues;
 
+	VkViewport viewport = Init::viewport((float)m_width, (float)m_height, 0.0f, 1.0f);
+	VkRect2D scissor = Init::rect2D(m_width, m_height, 0, 0);
+
 	for (int32_t i = 0; i < m_drawCmdBuffers.size(); ++i)
 	{
 		// Set target frame buffer
 		renderPassBeginInfo.framebuffer = m_frameBuffers[i];
 
-		if (vkBeginCommandBuffer(m_drawCmdBuffers[i], &cmdBufInfo) != VK_SUCCESS)
-		{
-			throw std::runtime_error("fail to begin command buffer");
-		}
-
-		VkViewport viewport = Init::viewport((float)m_width, (float)m_height, 0.0f, 1.0f);
+		VK_CHECK_RESULT(vkBeginCommandBuffer(m_drawCmdBuffers[i], &cmdBufInfo));
+		
+		vkCmdBeginRenderPass(m_drawCmdBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 		vkCmdSetViewport(m_drawCmdBuffers[i], 0, 1, &viewport);
+		vkCmdSetScissor(m_drawCmdBuffers[i], 0, 1, &scissor);
 
+		vkCmdBindPipeline(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+		vkCmdBindDescriptorSets(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSet, 0, NULL);
+	
+		glm::vec3 pos{ 1.0f,1.0f,1.0f };
+		vkCmdPushConstants(m_drawCmdBuffers[i], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::vec3), &pos);
+		VkDeviceSize offsets[1] = { 0 };
+		vkCmdBindVertexBuffers(m_drawCmdBuffers[i], 0, 1, &vertices.buffer, offsets);
+		vkCmdBindIndexBuffer(m_drawCmdBuffers[i], indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+		//drawUI(drawCmdBuffers[i]);
+		vkCmdDrawIndexed(m_drawCmdBuffers[i], indices.count, 1, 0, 0, 0);
+		vkCmdEndRenderPass(m_drawCmdBuffers[i]);
+		
+		VK_CHECK_RESULT(vkEndCommandBuffer(m_drawCmdBuffers[i]));
 	}
 }
 VkPipelineShaderStageCreateInfo Renderer::LoadShader(std::string fileName, VkShaderStageFlagBits stage)
@@ -119,6 +326,7 @@ void Renderer::CreateGraphicsPipeline() {
 	pushConstRange.offset = 0;
 	pushConstRange.size = sizeof(glm::mat4x4);
 	pushConstRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	pipelineLayoutCI.pushConstantRangeCount = 1;
 	pipelineLayoutCI.pPushConstantRanges = &pushConstRange;
 
 	if (vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &m_pipelineLayout) != VK_SUCCESS)
@@ -135,13 +343,31 @@ void Renderer::CreateGraphicsPipeline() {
 	VkPipelineMultisampleStateCreateInfo multisampleState = Init::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_1_BIT);
 	std::vector<VkDynamicState> dynamicStateEnables = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
 	VkPipelineDynamicStateCreateInfo dynamicState = Init::pipelineDynamicStateCreateInfo(dynamicStateEnables);
-	VkGraphicsPipelineCreateInfo pipelineCI = Init::pipelineCreateInfo(m_pipelineLayout, m_renderPass);
+	
+	// Vertex input state
+	std::vector<VkVertexInputBindingDescription> vertexInputBindings = {
+		Init::vertexInputBindingDescription(0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX)
+	};
+	std::vector<VkVertexInputAttributeDescription> vertexInputAttributes = {
+		Init::vertexInputAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos)),
+		Init::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, color))
+		//Init::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)),
+		//Init::vertexInputAttributeDescription(0, 2, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal)),
+	};
 
+	VkPipelineVertexInputStateCreateInfo vertexInputState = Init::pipelineVertexInputStateCreateInfo();
+	vertexInputState.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexInputBindings.size());
+	vertexInputState.pVertexBindingDescriptions = vertexInputBindings.data();
+	vertexInputState.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputAttributes.size());
+	vertexInputState.pVertexAttributeDescriptions = vertexInputAttributes.data();
+
+	VkGraphicsPipelineCreateInfo pipelineCI = Init::pipelineCreateInfo(m_pipelineLayout, m_renderPass);
 	std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
 	// TODO
-	shaderStages[0] = LoadShader(GetShadersPath() + "pbrbasic/pbr.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-	shaderStages[1] = LoadShader(GetShadersPath() + "pbrbasic/pbr.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shaderStages[0] = LoadShader(GetShadersPath() + "Triangle.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shaderStages[1] = LoadShader(GetShadersPath() + "Triangle.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
+	pipelineCI.pVertexInputState = &vertexInputState;
 	pipelineCI.pInputAssemblyState = &inputAssemblyState;
 	pipelineCI.pRasterizationState = &rasterizationState;
 	pipelineCI.pColorBlendState = &colorBlendState;
@@ -151,6 +377,7 @@ void Renderer::CreateGraphicsPipeline() {
 	pipelineCI.pDynamicState = &dynamicState;
 	pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
 	pipelineCI.pStages = shaderStages.data();
+	
 
 	// Enable depth test and write
 	depthStencilState.depthWriteEnable = VK_TRUE;
@@ -184,9 +411,8 @@ void Renderer::CreateDepthResources()
 	memAllloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	memAllloc.allocationSize = memReqs.size;
 	FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	if (vkAllocateMemory(m_device, &memAllloc, nullptr, &m_depthStencil.memory)!=VK_SUCCESS) {
-		throw std::runtime_error("fail to allocate depth memory");
-	};
+	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAllloc, nullptr, &m_depthStencil.memory))
+
 	if (vkBindImageMemory(m_device, m_depthStencil.image, m_depthStencil.memory, 0) != VK_SUCCESS)
 	{
 		throw std::runtime_error("fail to allocate depth memory");
@@ -709,7 +935,7 @@ std::vector<const char*> Renderer::GetRequiredExtensions()
 	{
 		extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 	}
-	std::cout << "RequiredExtensions: " << extensions.size() << std::endl;
+	//std::cout << "RequiredExtensions: " << extensions.size() << std::endl;
 	// VK_KHR_surface // 窗口渲染所需的扩展
 	// VK_KHR_win32_surface //特定于windows 窗口渲染所需的扩展，是对VK_KHR_surface的进一步扩展
 	// Vk_EXT_debug_utils
@@ -724,7 +950,7 @@ void Renderer::GetDeviceProperties()
 {
 	uint32_t layerCount{};
 	vkEnumerateInstanceLayerProperties(&layerCount, nullptr); //获取系统中所有可用的Vulkan实例层的总数
-	std::cout << "system available layerCount: " << layerCount << std::endl;
+	//std::cout << "system available layerCount: " << layerCount << std::endl;
 
 	std::vector<VkLayerProperties> availableLayers(layerCount);
 	vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());//实际填充 availableLayers 向量中的每个元素，每个元素包含一个Vulkan实例层的属性信息。
@@ -740,7 +966,7 @@ bool Renderer::CheckValidationLayerSupport()
 {
 	uint32_t layerCount{};
 	vkEnumerateInstanceLayerProperties(&layerCount, nullptr); //获取系统中所有可用的Vulkan实例层的总数
-	std::cout << "system available layerCount: " << layerCount << std::endl;
+	//std::cout << "system available layerCount: " << layerCount << std::endl;
 
 	std::vector<VkLayerProperties> availableLayers(layerCount);
 	vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());//实际填充 availableLayers 向量中的每个元素，每个元素包含一个Vulkan实例层的属性信息。
@@ -756,7 +982,7 @@ bool Renderer::CheckValidationLayerSupport()
 		{
 			if (std::strcmp(layerName, layerProperties.layerName) == 0)
 			{
-				std::cout << "layerName: " << layerName << " Available" << std::endl;
+				//std::cout << "layerName: " << layerName << " Available" << std::endl;
 				layerFound = true;
 				break;
 			}
@@ -867,7 +1093,7 @@ void Renderer::PickPhysicalDevice()
 	uint32_t deviceCount{ 0 };
 	// 获取支持vulkan的gpu，经典两段式，先获取数量，再填充数据
 	vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
-	std::cout << "support deviceCount: " << deviceCount << std::endl;
+	//std::cout << "support deviceCount: " << deviceCount << std::endl;
 	if (deviceCount == 0)
 	{
 		throw std::runtime_error("failed to find GPUs with Vulkan support!");
@@ -959,6 +1185,18 @@ bool Renderer::CheckDeviceExtensionSupport(VkPhysicalDevice device)
 	return requiredExtensions.empty();
 }
 
+void Renderer::CreateSyncObjects()
+{
+	// Create synchronization objects
+	VkSemaphoreCreateInfo semaphoreCreateInfo = Init::semaphoreCreateInfo();
+	// Create a semaphore used to synchronize image presentation
+	// Ensures that the image is displayed before we start submitting new commands to the queue
+	VK_CHECK_RESULT(vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_semaphores.presentComplete));
+	// Create a semaphore used to synchronize command submission
+	// Ensures that the image is not presented until all commands have been submitted and executed
+	VK_CHECK_RESULT(vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_semaphores.renderComplete));
+
+}
 /// @brief 判断某个device是否合适 // 支持队列族、交换链扩展、交换链合适、且支持各向异性采样
 /// @param device 
 /// @return 
@@ -1029,13 +1267,114 @@ void Renderer::MainLoop()
 	while (!glfwWindowShouldClose(m_window))
 	{
 		glfwPollEvents();
-		//DrawFrame();
+		DrawFrame();
 	}
 	vkDeviceWaitIdle(m_device);
 }
 
+void Renderer::PrepareFrame() {
+	
+	VkResult result = vkAcquireNextImageKHR(m_device, m_swapChain.swapChain, UINT64_MAX, m_semaphores.presentComplete, (VkFence)nullptr, &currentBuffer);
+
+	if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR))
+	{
+		if (result == VK_ERROR_OUT_OF_DATE_KHR)
+		{
+			//windowResize();
+			throw std::runtime_error("window Resized");
+		}
+		return;
+	}
+	else
+	{
+		VK_CHECK_RESULT(result);
+	}
+}
+void Renderer::DrawFrame() {
+	//updateUniformBuffers();
+	PrepareFrame();
+
+	m_submitInfo.commandBufferCount = 1;
+	m_submitInfo.pCommandBuffers = &m_drawCmdBuffers[currentBuffer]; //TODO
+	VK_CHECK_RESULT(vkQueueSubmit(m_queues.graphicsQueue, 1, &m_submitInfo, VK_NULL_HANDLE));
+	
+	
+	VkPresentInfoKHR presentInfo = {};
+	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	presentInfo.pNext = NULL;
+	presentInfo.swapchainCount = 1;
+	presentInfo.pSwapchains = &m_swapChain.swapChain;
+	presentInfo.pImageIndices = &currentBuffer;
+	// Check if a wait semaphore has been specified to wait for before presenting the image
+	if (m_semaphores.renderComplete != VK_NULL_HANDLE)
+	{
+		presentInfo.pWaitSemaphores = &m_semaphores.renderComplete;
+		presentInfo.waitSemaphoreCount = 1;
+	}
+	VkResult result = vkQueuePresentKHR(m_queues.presentQueue, &presentInfo);
+
+	
+	// Recreate the swapchain if it's no longer compatible with the surface (OUT_OF_DATE) or no longer optimal for presentation (SUBOPTIMAL)
+	if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR))
+	{
+		//windowResize();
+		if (result == VK_ERROR_OUT_OF_DATE_KHR)
+		{
+			return;
+		}
+	}
+	else
+	{
+		VK_CHECK_RESULT(result);
+	}
+	VK_CHECK_RESULT(vkQueueWaitIdle(m_queues.graphicsQueue));
+}
+
 void Renderer::Cleanup()
 {
+	// cmd buffer
+	vkDestroyCommandPool(m_device, m_commandPool, nullptr);
+
+	// indices vertices
+	vkDestroyBuffer(m_device, vertices.buffer, nullptr);
+	vkFreeMemory(m_device, vertices.memory, nullptr);
+	vkDestroyBuffer(m_device, indices.buffer, nullptr);
+	vkFreeMemory(m_device, indices.memory, nullptr);
+
+	// depth 
+	vkDestroyImageView(m_device, m_depthStencil.view, nullptr);
+	vkDestroyImage(m_device, m_depthStencil.image, nullptr);
+	vkFreeMemory(m_device, m_depthStencil.memory, nullptr);
+
+	// semaphore
+	vkDestroySemaphore(m_device, m_semaphores.presentComplete, nullptr);
+	vkDestroySemaphore(m_device, m_semaphores.renderComplete, nullptr);
+
+	vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
+	vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
+	
+	vkDestroyPipeline(m_device, m_pipeline, nullptr);
+	vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
+	vkDestroyRenderPass(m_device, m_renderPass, nullptr);
+
+	for (auto& frameBuffer : m_frameBuffers)
+		vkDestroyFramebuffer(m_device, frameBuffer, nullptr);
+
+	for (auto& shaderModule : m_shaderModules)
+	{
+		vkDestroyShaderModule(m_device, shaderModule, nullptr);
+	}
+	// uniformbuffer
+	m_uboBuffer.Destroy();
+
+	for (auto& view : m_swapChain.views)
+	{
+		vkDestroyImageView(m_device, view, nullptr);
+	}
+	//for (auto& image : m_swapChain.views)
+	//{
+	//	vkDestroyImageView(m_device, image, nullptr);
+	//}
 	vkDestroySwapchainKHR(m_device, m_swapChain.swapChain, nullptr);
 
 	vkDestroyDevice(m_device, nullptr);

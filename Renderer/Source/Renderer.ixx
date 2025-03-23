@@ -81,6 +81,21 @@ struct Image
 	VkImage image;
 	void* mapped;
 };
+
+struct Semaphores
+{
+	VkSemaphore presentComplete;
+	VkSemaphore renderComplete;
+};
+
+struct Vertex
+{
+	float pos[3];
+	float color[3];
+	//float uv[2];
+	//float normal[3];
+};
+
 export class Renderer
 {
 public:
@@ -93,7 +108,25 @@ public:
 	{
 	}
 
+	// Index buffer
+	struct
+	{
+		VkDeviceMemory memory{ VK_NULL_HANDLE };
+		VkBuffer buffer{ VK_NULL_HANDLE };
+		uint32_t count{ 0 };
+	} indices;
+
+	struct
+	{
+		VkDeviceMemory memory{ VK_NULL_HANDLE }; // Handle to the device memory for this buffer
+		VkBuffer buffer{ VK_NULL_HANDLE };		 // Handle to the Vulkan buffer object that the memory is bound to
+	} vertices;
+
 private:
+	uint32_t currentBuffer = 0;
+	VkPipelineStageFlags m_submitPipelineStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	VkSubmitInfo m_submitInfo{};
+	Semaphores m_semaphores{};
 	std::vector<VkShaderModule> m_shaderModules{};
 	VkFormat m_depthFormat{};
 	Buffer m_uboBuffer{};
@@ -233,5 +266,7 @@ private:
 	std::string GetShadersPath();
 	VkPipelineShaderStageCreateInfo LoadShader(std::string fileName, VkShaderStageFlagBits stage);
 	void BuildCommandBuffers();
+	void PrepareFrame();
+	void PreCreateSubmitInfo();
 };
 
