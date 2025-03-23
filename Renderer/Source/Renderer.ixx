@@ -268,5 +268,6 @@ private:
 	void BuildCommandBuffers();
 	void PrepareFrame();
 	void PreCreateSubmitInfo();
+	void UpdateUniformBuffers();
 };
 

@@ -4,8 +4,6 @@ module;
 #include <memory>
 #include "glm/mat4x4.hpp"
 
-
-
 module RendererMod;
 import InitMod;
 import ToolMod;
@@ -1290,8 +1288,15 @@ void Renderer::PrepareFrame() {
 		VK_CHECK_RESULT(result);
 	}
 }
+void Renderer::UpdateUniformBuffers()
+{
+	// m_uboMatrices.proj TODO
+	shaderData.values.projection = camera.matrices.perspective;
+	shaderData.values.model = camera.matrices.view;
+	shaderData.values.viewPos = camera.viewPos;
+}
 void Renderer::DrawFrame() {
-	//updateUniformBuffers();
+	UpdateUniformBuffers();
 	PrepareFrame();
 
 	m_submitInfo.commandBufferCount = 1;
