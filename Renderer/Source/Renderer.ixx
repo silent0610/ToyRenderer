@@ -8,10 +8,13 @@ module;
 export module RendererMod;
 import std;
 import BufferMod;
+import CameraMod;
+
 struct UBOMatrices
 {
 	glm::mat4 view;
 	glm::mat4 proj;
+	glm::vec3 camPos;
 };
 
 struct QueueFamilyIndices
@@ -99,10 +102,7 @@ struct Vertex
 export class Renderer
 {
 public:
-	Renderer(bool enableValidation = false)
-	{
-		m_neededFeatures.validation = enableValidation;
-	}
+	Renderer(bool enableValidation = false);
 	void Run();
 	~Renderer()
 	{
@@ -123,6 +123,7 @@ public:
 	} vertices;
 
 private:
+	Camera m_camera;
 	uint32_t currentBuffer = 0;
 	VkPipelineStageFlags m_submitPipelineStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 	VkSubmitInfo m_submitInfo{};
@@ -133,8 +134,8 @@ private:
 	UBOMatrices m_uboMatrices{};
 	VkDescriptorSetLayout m_descriptorSetLayout{ VK_NULL_HANDLE };
 	VkPipelineLayout m_pipelineLayout{ VK_NULL_HANDLE };
-	VkDescriptorPool m_descriptorPool{nullptr};
-	VkDescriptorSet m_descriptorSet{nullptr};
+	VkDescriptorPool m_descriptorPool{ nullptr };
+	VkDescriptorSet m_descriptorSet{ nullptr };
 	VkPipeline m_pipeline{ nullptr };
 	VkRenderPass m_renderPass{ nullptr };
 

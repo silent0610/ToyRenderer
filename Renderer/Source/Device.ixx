@@ -4,7 +4,8 @@ export module DeviceMod;
 import std;
 import BufferMod;
 
-struct VulkanDevice
+/// @brief 封装和管理与 Vulkan 物理设备和逻辑设备相关的各种资源和操作。它使得在 Vulkan 中处理设备、命令池、内存管理、队列等复杂的细节变得更加简单和清晰。具
+export struct VulkanDevice
 {
 	/** @brief Physical device representation */
 	VkPhysicalDevice physicalDevice;
