@@ -9,12 +9,37 @@ export module RendererMod;
 import std;
 import BufferMod;
 import CameraMod;
+import GLTFModelMod;
+import DeviceMod;
+
+//vulkanExample = new VulkanExample();															\
+//vulkanExample->initVulkan();																	\
+//vulkanExample->setupWindow(hInstance, WndProc);													\
+//vulkanExample->prepare();																		\
+//vulkanExample->renderLoop();
 
 struct UBOMatrices
 {
 	glm::mat4 view;
 	glm::mat4 proj;
+
 	glm::vec3 camPos;
+};
+
+struct UBOLights
+{
+	glm::vec3 pos;
+	glm::vec3 color;
+	glm::vec3 intensity;
+};
+
+struct ConstBuffers
+{
+	Buffer uboBuffer;
+	Buffer lightBuffer;
+
+	UBOMatrices uboBufferData;
+	UBOLights lightBufferData;
 };
 
 struct QueueFamilyIndices
@@ -123,6 +148,8 @@ public:
 	} vertices;
 
 private:
+	VulkanDevice* m_vulkanDevice;
+	GLTFModel m_glTFModel;
 	uint32_t m_frameCounter = 0;
 	uint32_t m_lastFPS = 0;
 
@@ -154,7 +181,7 @@ private:
 
 	// 一个回调对象，用于通过 Vulkan 调试扩展（如 VK_EXT_DEBUG_UTILS）接收 Vulkan 驱动程序生成的调试信息。在应用程序结束时，你需要销毁这个对象，释放资源
 	VkDebugUtilsMessengerEXT m_debugMessenger{ nullptr };
-	VkSurfaceKHR m_surface{ nullptr }; // 使用与平台无关，但是创建与平台有关
+	VkSurfaceKHR m_surface{ nullptr }; // 对window的抽象
 	GLFWwindow* m_window{ nullptr };
 	//VkSwapchainKHR m_swapChain{ nullptr };
 	SwapChain m_swapChain{};
@@ -273,5 +300,6 @@ private:
 	void PrepareFrame();
 	void PreCreateSubmitInfo();
 	void UpdateUniformBuffers();
+	void LoadglTFFile(std::string filename);
 };
 

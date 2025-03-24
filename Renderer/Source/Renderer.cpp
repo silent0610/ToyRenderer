@@ -4,6 +4,8 @@ module;
 #include <memory>
 #include "glm/mat4x4.hpp"
 
+#define TINYGLTF_IMPLEMENTATION
+#include "tiny_gltf.h"
 module RendererMod;
 import InitMod;
 import ToolMod;
@@ -296,11 +298,13 @@ void Renderer::BuildCommandBuffers()
 		vkCmdBindPipeline(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 		vkCmdBindDescriptorSets(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &m_descriptorSet, 0, NULL);
 
-		glm::mat4x4 model{ {1,0,0,0}, {0,1,0,0} ,{0,0,1,0}, {0,0,0,1} };
+		glm::mat4x4 model{ 1.0f };
 		vkCmdPushConstants(m_drawCmdBuffers[i], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4x4), &model);
 		VkDeviceSize offsets[1] = { 0 };
 		vkCmdBindVertexBuffers(m_drawCmdBuffers[i], 0, 1, &vertices.buffer, offsets);
 		vkCmdBindIndexBuffer(m_drawCmdBuffers[i], indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+
+		m_glTFModel.Draw(m_drawCmdBuffers[i], m_pipelineLayout);
 		//drawUI(drawCmdBuffers[i]);
 		vkCmdDrawIndexed(m_drawCmdBuffers[i], indices.count, 1, 0, 0, 0);
 		vkCmdEndRenderPass(m_drawCmdBuffers[i]);
@@ -1470,4 +1474,21 @@ void Renderer::CreateLogicalDevice()
 	// 保存队列
 	vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_queues.graphicsQueue);
 	vkGetDeviceQueue(m_device, indices.presentFamily.value(), 0, &m_queues.presentQueue);
+}
+
+void Renderer::LoadglTFFile(std::string fileName)
+{
+	tinygltf::Model glTFInput;
+	tinygltf::TinyGLTF gltfContext;
+	std::string error, warning;
+	bool fileLoaded = gltfContext.LoadASCIIFromFile(&glTFInput, &error, &warning, fileName);
+
+	// Pass some Vulkan resources required for setup and rendering to the glTF model loading class
+	m_vulkanDevice = new VulkanDevice(m_physicalDevice);
+	m_glTFModel.vulkanDevice = m_vulkanDevice;
+	m_glTFModel.copyQueue = m_queues.graphicsQueue;
+
+	std::vector<uint32_t> indexBuffer;
+	std::vector<GLTFModel::Vertex> vertexBuffer;
+
 }

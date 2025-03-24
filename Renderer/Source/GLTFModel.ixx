@@ -13,7 +13,7 @@ import std;
 import TextureMod;
 import DeviceMod;
 
-class GLTFModel
+export class GLTFModel
 {
 public:
 	VulkanDevice* vulkanDevice;
