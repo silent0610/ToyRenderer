@@ -5,7 +5,7 @@ module;
 #include <Glm/glm.hpp>
 #include <Glm/gtc/matrix_transform.hpp>
 
-#define TINYGLTF_NO_STB_IMAGE_WRITE
+
 #include "tiny_gltf.h"
 #include "vulkan/vulkan.h"
 export module GLTFModelMod;
@@ -16,8 +16,8 @@ import DeviceMod;
 export class GLTFModel
 {
 public:
-	VulkanDevice* vulkanDevice;
-	VkQueue copyQueue;
+	VulkanDevice* vulkanDevice{nullptr};
+	VkQueue copyQueue{nullptr};
 
 	// The vertex layout for the samples' model
 	struct Vertex
@@ -31,19 +31,19 @@ public:
 	// Single vertex buffer for all primitives
 	struct VerticeBuffer
 	{
-		VkBuffer buffer;
-		VkDeviceMemory memory;
+		VkBuffer buffer{nullptr};
+		VkDeviceMemory memory{nullptr};
 	};
 
-	VerticeBuffer vertices;
+	VerticeBuffer vertices{};
 	// Single index buffer for all primitives
 	struct IndiceBuffer
 	{
 		int count;
-		VkBuffer buffer;
-		VkDeviceMemory memory;
+		VkBuffer buffer{ nullptr };
+		VkDeviceMemory memory{ nullptr };
 	};
-	IndiceBuffer indices;
+	IndiceBuffer indices{ };
 
 	struct Primitive
 	{
@@ -118,14 +118,4 @@ public:
 
 
 
-struct Model
-{
-	std::string name;
-	Model();
-};
-struct Models
-{
-	Model skyBox;
-	std::vector<Model> transObjects;
-	std::vector<Model> OpaqueObjects;
-};
+

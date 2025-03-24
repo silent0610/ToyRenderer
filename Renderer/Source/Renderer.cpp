@@ -3,8 +3,7 @@ module;
 #include "GLFW/glfw3.h"
 #include <memory>
 #include "glm/mat4x4.hpp"
-
-#define TINYGLTF_IMPLEMENTATION
+#include "stb/stb_image.h"
 #include "tiny_gltf.h"
 module RendererMod;
 import InitMod;
@@ -69,6 +68,22 @@ void Renderer::PreCreateSubmitInfo()
 	m_submitInfo.signalSemaphoreCount = 1;
 	m_submitInfo.pSignalSemaphores = &m_semaphores.renderComplete;
 }
+
+void Renderer::EncapsulationDevice() {
+	VkResult result;
+	m_vulkanDevice = new VulkanDevice(m_physicalDevice);
+	
+	result = m_vulkanDevice->CreateLogicalDevice(m_enabledFeatures, m_enabledDeviceExtensions, m_deviceCreatepNextChain);
+	if (result != VK_SUCCESS)
+	{
+		throw std::runtime_error("Could not create Vulkan device: \n" + Tool::ErrorString(result));
+	}
+	m_device = m_vulkanDevice->logicalDevice;
+
+	// Get a graphics queue from the device
+	vkGetDeviceQueue(m_device, m_vulkanDevice->queueFamilyIndices.graphics, 0, &m_queues.graphicsQueue);
+	vkGetDeviceQueue(m_device, m_vulkanDevice->queueFamilyIndices.graphics, 0, &m_queues.presentQueue);
+}
 /// @brief 初始化 Vulkan，包括相关设置
 void Renderer::InitVulkan()
 {
@@ -76,20 +91,27 @@ void Renderer::InitVulkan()
 	SetupDebugMessenger(); //先创建实例，相当于先指定和调试的接口，再之后再实际链接
 	CreateSurface();
 	PickPhysicalDevice();
-	CreateLogicalDevice();
+	//CreateLogicalDevice();
+
+	EncapsulationDevice();
+	m_swapChain.SetContext(m_instance, m_physicalDevice, m_device);
+
 	CreateSyncObjects();
 	PreCreateSubmitInfo();
+	m_swapChain.InitSurface(m_surface);
+	m_swapChain.Create(m_width, m_height, false, false);
 
+	LoadAssets();
 
 	// prepare
-	CreateSwapChain();
+	//CreateSwapChain();
 	CreateCommandPool();
 	CreateCommandBuffers();
 	CreateDepthResources();
 	CreateRenderPass();
 	CreateFramebuffers();
 
-	//
+	
 	CreateUniformBuffer();
 	CreateDescriptors();
 	CreateGraphicsPipeline();
@@ -330,6 +352,12 @@ std::string Renderer::GetShadersPath()
 	auto projectPath = path.parent_path().parent_path().parent_path().parent_path();
 	return projectPath.string() + "/Renderer/Shader/";
 }
+std::string Renderer::GetAssetsPath() {
+
+	auto path = std::filesystem::current_path();
+	auto projectPath = path.parent_path().parent_path().parent_path().parent_path();
+	return projectPath.string() + "/Renderer/Asset/";
+}
 void Renderer::CreateGraphicsPipeline()
 {
 	VkPipelineLayoutCreateInfo pipelineLayoutCI{};
@@ -458,7 +486,7 @@ void Renderer::CreateFramebuffers()
 	m_frameBuffers.resize(m_swapChain.images.size());
 	for (uint32_t i = 0; i < m_frameBuffers.size(); ++i)
 	{
-		const VkImageView attachments[2]{ m_swapChain.views[i] ,m_depthStencil.view };
+		const VkImageView attachments[2]{ m_swapChain.imageViews[i] ,m_depthStencil.view };
 		VkFramebufferCreateInfo frameBufferCI{};
 		frameBufferCI.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		frameBufferCI.renderPass = m_renderPass;
@@ -645,7 +673,7 @@ void Renderer::CreateRenderPass()
 	std::array<VkAttachmentDescription, 2> attachments = {};
 
 	// Color attachment
-	attachments[0].format = m_swapChain.swapChainImageFormat;
+	attachments[0].format = m_swapChain.colorFormat;
 	attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
 	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -772,10 +800,10 @@ VkImageView Renderer::CreateImageView(VkImage image, VkFormat format, VkImageAsp
 //为获取的交换链图像创建视图，封装
 void Renderer::CreateSwapChainImageViews()
 {
-	m_swapChain.views.resize(m_swapChain.images.size());
+	m_swapChain.imageViews.resize(m_swapChain.images.size());
 	for (size_t i = 0; i < m_swapChain.images.size(); ++i)
 	{
-		m_swapChain.views[i] = CreateImageView(m_swapChain.images[i], m_swapChain.swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+		m_swapChain.imageViews[i] = CreateImageView(m_swapChain.images[i], m_swapChain.colorFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 	}
 }
 VkExtent2D Renderer::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
@@ -883,8 +911,8 @@ void Renderer::CreateSwapChain()
 	// mSwapChainImages 现在包含交换链的所有图像句柄，后续可通过这些句柄操作每帧的渲染目标。
 	// Vulkan 管理这些图像的内存。开发者无需手动分配或释放，只需通过 VkSwapchainImagesKHR 获取句柄即可。
 	vkGetSwapchainImagesKHR(m_device, m_swapChain.swapChain, &imageCount, m_swapChain.images.data());
-	m_swapChain.swapChainImageFormat = surfaceFormat.format;
-	m_swapChain.swapChainExtent = extent;
+	m_swapChain.colorFormat = surfaceFormat.format;
+	//m_swapChain.swapChainExtent = extent;
 
 	CreateSwapChainImageViews();
 }
@@ -1398,23 +1426,25 @@ void Renderer::Cleanup()
 	// uniformbuffer
 	m_uboBuffer.Destroy();
 
-	for (auto& view : m_swapChain.views)
-	{
-		vkDestroyImageView(m_device, view, nullptr);
-	}
+	//for (auto& view : m_swapChain.imageViews)
+	//{
+	//	vkDestroyImageView(m_device, view, nullptr);
+	//}
 	//for (auto& image : m_swapChain.views)
 	//{
 	//	vkDestroyImageView(m_device, image, nullptr);
 	//}
-	vkDestroySwapchainKHR(m_device, m_swapChain.swapChain, nullptr);
+	m_swapChain.Cleanup();
+	delete m_vulkanDevice;
+	//vkDestroySwapchainKHR(m_device, m_swapChain.swapChain, nullptr);
 
-	vkDestroyDevice(m_device, nullptr);
+	//vkDestroyDevice(m_device, nullptr);
 	if (m_neededFeatures.validation)
 	{
 		DestroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
 	}
-	vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
-	vkDestroyInstance(m_instance, nullptr);
+	//vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
+	//vkDestroyInstance(m_instance, nullptr);
 
 	glfwDestroyWindow(m_window);
 	glfwTerminate();
@@ -1476,6 +1506,11 @@ void Renderer::CreateLogicalDevice()
 	vkGetDeviceQueue(m_device, indices.presentFamily.value(), 0, &m_queues.presentQueue);
 }
 
+void Renderer::LoadAssets()
+{
+	LoadglTFFile(GetAssetsPath() + "Models/FlightHelmet/glTF/FlightHelmet.gltf");
+}
+
 void Renderer::LoadglTFFile(std::string fileName)
 {
 	tinygltf::Model glTFInput;
@@ -1484,11 +1519,101 @@ void Renderer::LoadglTFFile(std::string fileName)
 	bool fileLoaded = gltfContext.LoadASCIIFromFile(&glTFInput, &error, &warning, fileName);
 
 	// Pass some Vulkan resources required for setup and rendering to the glTF model loading class
-	m_vulkanDevice = new VulkanDevice(m_physicalDevice);
 	m_glTFModel.vulkanDevice = m_vulkanDevice;
 	m_glTFModel.copyQueue = m_queues.graphicsQueue;
 
 	std::vector<uint32_t> indexBuffer;
 	std::vector<GLTFModel::Vertex> vertexBuffer;
+
+	if (fileLoaded)
+	{
+		m_glTFModel.LoadImages(glTFInput);
+		m_glTFModel.LoadMaterials(glTFInput);
+		m_glTFModel.LoadTextures(glTFInput);
+		const tinygltf::Scene& scene = glTFInput.scenes[0];
+		for (size_t i = 0; i < scene.nodes.size(); i++)
+		{
+			const tinygltf::Node node = glTFInput.nodes[scene.nodes[i]];
+			m_glTFModel.LoadNode(node, glTFInput, nullptr, indexBuffer, vertexBuffer);
+		}
+	}
+	else
+	{
+		throw std::runtime_error("Could not open the glTF file.\n\nMake sure the assets submodule has been checked out and is up-to-date.");
+		return;
+	}
+
+	// Create and upload vertex and index buffer
+	// We will be using one single vertex buffer and one single index buffer for the whole glTF scene
+	// Primitives (of the glTF model) will then index into these using index offsets
+
+	size_t vertexBufferSize = vertexBuffer.size() * sizeof(GLTFModel::Vertex);
+	size_t indexBufferSize = indexBuffer.size() * sizeof(uint32_t);
+	m_glTFModel.indices.count = static_cast<uint32_t>(indexBuffer.size());
+
+	struct StagingBuffer
+	{
+		VkBuffer buffer;
+		VkDeviceMemory memory;
+	} vertexStaging, indexStaging;
+
+	// Create host visible staging buffers (source)
+	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		vertexBufferSize,
+		&vertexStaging.buffer,
+		&vertexStaging.memory,
+		vertexBuffer.data()));
+	// Index data
+	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		indexBufferSize,
+		&indexStaging.buffer,
+		&indexStaging.memory,
+		indexBuffer.data()));
+
+	// Create device local buffers (target)
+	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		vertexBufferSize,
+		&m_glTFModel.vertices.buffer,
+		&m_glTFModel.vertices.memory));
+	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+		VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		indexBufferSize,
+		&m_glTFModel.indices.buffer,
+		&m_glTFModel.indices.memory));
+
+	// Copy data from staging buffers (host) do device local buffer (gpu)
+	VkCommandBuffer copyCmd = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+	VkBufferCopy copyRegion = {};
+
+	copyRegion.size = vertexBufferSize;
+	vkCmdCopyBuffer(
+		copyCmd,
+		vertexStaging.buffer,
+		m_glTFModel.vertices.buffer,
+		1,
+		&copyRegion);
+
+	copyRegion.size = indexBufferSize;
+	vkCmdCopyBuffer(
+		copyCmd,
+		indexStaging.buffer,
+		m_glTFModel.indices.buffer,
+		1,
+		&copyRegion);
+
+	m_vulkanDevice->FlushCommandBuffer(copyCmd, m_queues.graphicsQueue, true);
+
+	// Free staging resources
+	vkDestroyBuffer(m_device, vertexStaging.buffer, nullptr);
+	vkFreeMemory(m_device, vertexStaging.memory, nullptr);
+	vkDestroyBuffer(m_device, indexStaging.buffer, nullptr);
+	vkFreeMemory(m_device, indexStaging.memory, nullptr);
 
 }

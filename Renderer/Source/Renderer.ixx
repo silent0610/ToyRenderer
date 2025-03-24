@@ -11,7 +11,8 @@ import BufferMod;
 import CameraMod;
 import GLTFModelMod;
 import DeviceMod;
-
+import SwapChainMod;
+import ConfigMod;
 //vulkanExample = new VulkanExample();															\
 //vulkanExample->initVulkan();																	\
 //vulkanExample->setupWindow(hInstance, WndProc);													\
@@ -94,15 +95,15 @@ struct NeededFeatures
 };
 
 
-struct SwapChain
-{
-	std::vector<VkImage> images{};
-	std::vector<VkImageView> views{};
-	VkFormat swapChainImageFormat{};
-	VkExtent2D swapChainExtent{};
-
-	VkSwapchainKHR swapChain{ VK_NULL_HANDLE };
-};
+//struct SwapChain
+//{
+//	std::vector<VkImage> images{};
+//	std::vector<VkImageView> views{};
+//	VkFormat swapChainImageFormat{};
+//	VkExtent2D swapChainExtent{};
+//
+//	VkSwapchainKHR swapChain{ VK_NULL_HANDLE };
+//};
 
 struct Image
 {
@@ -148,6 +149,16 @@ public:
 	} vertices;
 
 private:
+
+
+	VkPhysicalDeviceFeatures m_enabledFeatures{};
+	/** @brief Set of device extensions to be enabled for this example (must be set in the derived constructor) */
+	std::vector<const char*> m_enabledDeviceExtensions;
+	std::vector<const char*> m_enabledInstanceExtensions;
+	/** @brief Optional pNext structure for passing extension structures to device creation */
+	void* m_deviceCreatepNextChain = nullptr;
+
+
 	VulkanDevice* m_vulkanDevice;
 	GLTFModel m_glTFModel;
 	uint32_t m_frameCounter = 0;
@@ -184,7 +195,7 @@ private:
 	VkSurfaceKHR m_surface{ nullptr }; // 对window的抽象
 	GLFWwindow* m_window{ nullptr };
 	//VkSwapchainKHR m_swapChain{ nullptr };
-	SwapChain m_swapChain{};
+	VulkanSwapChain m_swapChain{};
 	SwapChainSupportDetails m_swapChainSupport;
 
 	bool m_framebufferResized = false;
@@ -301,5 +312,8 @@ private:
 	void PreCreateSubmitInfo();
 	void UpdateUniformBuffers();
 	void LoadglTFFile(std::string filename);
+	void EncapsulationDevice();
+	void LoadAssets();
+	std::string GetAssetsPath();
 };
 

@@ -6,7 +6,7 @@ export module SwapChainMod;
 import std;
 
 
-class VulkanSwapChain
+export class VulkanSwapChain
 {
 private:
 	VkInstance m_instance{ VK_NULL_HANDLE };
@@ -21,7 +21,7 @@ public:
 	std::vector<VkImageView> imageViews{};
 	uint32_t queueNodeIndex{ UINT32_MAX };
 
-
+	void InitSurface(VkSurfaceKHR surface);
 	void InitSurface(void* platformHandle, void* platformWindow);
 	/* Set the Vulkan objects required for swapchain creation and management, must be called before swapchain creation */
 	void SetContext(VkInstance instance, VkPhysicalDevice physicalDevice, VkDevice device);

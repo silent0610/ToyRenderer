@@ -520,7 +520,7 @@ void VulkanDevice::FlushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue que
 	// Submit to the queue
 	VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, fence));
 	// Wait for the fence to signal that command buffer has finished executing
-	VK_CHECK_RESULT(vkWaitForFences(logicalDevice, 1, &fence, VK_TRUE, 1000000));
+	VK_CHECK_RESULT(vkWaitForFences(logicalDevice, 1, &fence, VK_TRUE, 100000000));
 	vkDestroyFence(logicalDevice, fence, nullptr);
 	if (free)
 	{

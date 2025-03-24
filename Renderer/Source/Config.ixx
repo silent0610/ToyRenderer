@@ -4,7 +4,9 @@ import std;
 
 export struct Config
 {
-	bool enableValidation;
-
 	Config(std::string configPath);
+	bool enableValidation;
+	std::string modelPath;
+	std::string shaderPath;
+	
 };

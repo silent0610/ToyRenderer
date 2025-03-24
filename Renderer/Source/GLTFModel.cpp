@@ -7,11 +7,14 @@ module;
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_IMPLEMENTATION
-#define TINYGLTF_NO_STB_IMAGE_WRITE
 #include "tiny_gltf.h"
 #include "vulkan/vulkan.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb/stb_image_write.h"
 
 module GLTFModelMod;
 
@@ -29,10 +32,10 @@ GLTFModel::~GLTFModel()
 	{
 		delete node;
 	}
-	vkDestroyBuffer(vulkanDevice->logicalDevice, vertices.buffer, nullptr);
-	vkFreeMemory(vulkanDevice->logicalDevice, vertices.memory, nullptr);
-	vkDestroyBuffer(vulkanDevice->logicalDevice, indices.buffer, nullptr);
-	vkFreeMemory(vulkanDevice->logicalDevice, indices.memory, nullptr);
+	if(vertices.buffer)vkDestroyBuffer(vulkanDevice->logicalDevice, vertices.buffer, nullptr);
+	if(vertices.memory) vkFreeMemory(vulkanDevice->logicalDevice, vertices.memory, nullptr);
+	if(indices.buffer)vkDestroyBuffer(vulkanDevice->logicalDevice, indices.buffer, nullptr);
+	if (indices.memory)vkFreeMemory(vulkanDevice->logicalDevice, indices.memory, nullptr);
 	for (Image image : images)
 	{
 		vkDestroyImageView(vulkanDevice->logicalDevice, image.texture.view, nullptr);

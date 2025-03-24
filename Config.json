@@ -1,0 +1,26 @@
+{
+    "modelPath": [
+        "666"
+    ],
+    "shaderPath": [
+        "666"
+    ],
+    "pipelineType": "basic",
+    "enableValidation": true,
+    "camera": {
+        "pos": [
+            0.0,
+            0.0,
+            -3.0
+        ],
+        "type": "lookat",
+        "flipY": true,
+        "fov": 60.0,
+        "znear": 0.1,
+        "zfar": 256.0
+    },
+    "light": {
+        "pos": [],
+        "color": []
+    }
+}
