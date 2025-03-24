@@ -1,11 +1,15 @@
+
 import std;
 import <stdexcept>;
 import RendererMod;
+import ConfigMod;
 
 int main(int argc, char* argv[])
 {
 
-	bool enableValidation{ false };
+	Config config{ "Config.json" };
+	bool enableValidation{ config.enableValidation };
+
 	if (argc == 1)
 	{
 	}
@@ -13,7 +17,7 @@ int main(int argc, char* argv[])
 	{
 		if (std::string(argv[1]) == "v")
 		{
-			std::cout << "need validation\n";
+
 			enableValidation = true;
 		}
 		else
@@ -25,7 +29,7 @@ int main(int argc, char* argv[])
 	{
 		std::cerr << "not support arg\n";
 	}
-
+	if (enableValidation)std::cout << "enable validation\n";
 	Renderer renderer{ enableValidation };
 	try
 	{
