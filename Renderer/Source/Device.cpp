@@ -1,6 +1,7 @@
 module;
 #include "vulkan/vulkan.h"
 #include <assert.h>
+#include <memory>
 module DeviceMod;
 import std;
 import BufferMod;
@@ -18,7 +19,7 @@ import BufferMod;
 	}																									\
 }
 
-explicit VulkanDevice::VulkanDevice(VkPhysicalDevice physicalDevice)
+VulkanDevice::VulkanDevice(VkPhysicalDevice physicalDevice)
 {
 	assert(physicalDevice);
 	this->physicalDevice = physicalDevice;

@@ -2,10 +2,12 @@ module;
 #include "vulkan/vulkan.h"
 export module TextureMod;
 import std;
+import DeviceMod;
+
 export class Texture
 {
 public:
-	VkDevice*			  device;
+	VulkanDevice* device;
 	VkImage               image;
 	VkImageLayout         imageLayout;
 	VkDeviceMemory        deviceMemory;
@@ -28,7 +30,7 @@ public:
 	void LoadFromFile(
 		std::string        filename,
 		VkFormat           format,
-		VkDevice*          device,
+		VulkanDevice* device,
 		VkQueue            copyQueue,
 		VkImageUsageFlags  imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
 		VkImageLayout      imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -39,7 +41,7 @@ public:
 		VkFormat           format,
 		uint32_t           texWidth,
 		uint32_t           texHeight,
-		VkDevice         * device,
+		VulkanDevice* device,
 		VkQueue            copyQueue,
 		VkFilter           filter = VK_FILTER_LINEAR,
 		VkImageUsageFlags  imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -52,7 +54,7 @@ public:
 	void LoadFromFile(
 		std::string        filename,
 		VkFormat           format,
-		VkDevice         * device,
+		VulkanDevice* device,
 		VkQueue            copyQueue,
 		VkImageUsageFlags  imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
 		VkImageLayout      imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -64,7 +66,7 @@ public:
 	void LoadFromFile(
 		std::string        filename,
 		VkFormat           format,
-		VkDevice *         device,
+		VulkanDevice* device,
 		VkQueue            copyQueue,
 		VkImageUsageFlags  imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
 		VkImageLayout      imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);

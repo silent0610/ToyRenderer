@@ -123,6 +123,9 @@ public:
 	} vertices;
 
 private:
+	uint32_t m_frameCounter = 0;
+	uint32_t m_lastFPS = 0;
+
 	Camera m_camera;
 	uint32_t currentBuffer = 0;
 	VkPipelineStageFlags m_submitPipelineStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
