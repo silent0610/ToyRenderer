@@ -25,16 +25,15 @@ GLTFModel::Node::~Node()
 		delete child;
 	}
 }
-
-GLTFModel::~GLTFModel()
+void GLTFModel::Destroy()
 {
 	for (auto node : nodes)
 	{
 		delete node;
 	}
-	if(vertices.buffer)vkDestroyBuffer(vulkanDevice->logicalDevice, vertices.buffer, nullptr);
-	if(vertices.memory) vkFreeMemory(vulkanDevice->logicalDevice, vertices.memory, nullptr);
-	if(indices.buffer)vkDestroyBuffer(vulkanDevice->logicalDevice, indices.buffer, nullptr);
+	if (vertices.buffer)vkDestroyBuffer(vulkanDevice->logicalDevice, vertices.buffer, nullptr);
+	if (vertices.memory) vkFreeMemory(vulkanDevice->logicalDevice, vertices.memory, nullptr);
+	if (indices.buffer)vkDestroyBuffer(vulkanDevice->logicalDevice, indices.buffer, nullptr);
 	if (indices.memory)vkFreeMemory(vulkanDevice->logicalDevice, indices.memory, nullptr);
 	for (Image image : images)
 	{
@@ -43,6 +42,25 @@ GLTFModel::~GLTFModel()
 		vkDestroySampler(vulkanDevice->logicalDevice, image.texture.sampler, nullptr);
 		vkFreeMemory(vulkanDevice->logicalDevice, image.texture.deviceMemory, nullptr);
 	}
+
+}
+GLTFModel::~GLTFModel()
+{
+	//for (auto node : nodes)
+	//{
+	//	delete node;
+	//}
+	//if(vertices.buffer)vkDestroyBuffer(vulkanDevice->logicalDevice, vertices.buffer, nullptr);
+	//if(vertices.memory) vkFreeMemory(vulkanDevice->logicalDevice, vertices.memory, nullptr);
+	//if(indices.buffer)vkDestroyBuffer(vulkanDevice->logicalDevice, indices.buffer, nullptr);
+	//if (indices.memory)vkFreeMemory(vulkanDevice->logicalDevice, indices.memory, nullptr);
+	//for (Image image : images)
+	//{
+	//	vkDestroyImageView(vulkanDevice->logicalDevice, image.texture.view, nullptr);
+	//	vkDestroyImage(vulkanDevice->logicalDevice, image.texture.image, nullptr);
+	//	vkDestroySampler(vulkanDevice->logicalDevice, image.texture.sampler, nullptr);
+	//	vkFreeMemory(vulkanDevice->logicalDevice, image.texture.deviceMemory, nullptr);
+	//}
 }
 
 void GLTFModel::LoadImages(tinygltf::Model& input)

@@ -115,7 +115,7 @@ void Renderer::InitVulkan()
 	CreateUniformBuffer();
 	CreateDescriptors();
 	CreateGraphicsPipeline();
-	CreateVertexBuffer();
+	//CreateVertexBuffer();
 	BuildCommandBuffers();
 
 
@@ -123,161 +123,161 @@ void Renderer::InitVulkan()
 
 // Prepare vertex and index buffers for an indexed triangle
 	// Also uploads them to device local memory using staging and initializes vertex input and attribute binding to match the vertex shader
-void Renderer::CreateVertexBuffer()
-{
-	// A note on memory management in Vulkan in general:
-	//	This is a very complex topic and while it's fine for an example application to small individual memory allocations that is not
-	//	what should be done a real-world application, where you should allocate large chunks of memory at once instead.
-
-	// Setup vertices
-	std::vector<Vertex> vertexBuffer{
-		{ {  1.0f,  -1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f } },
-		{ { 0.0f,  1.0f, 0.0f }, { 0.0f, 1.0f, 0.0f } },
-		{ {  -1.0f, -1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f } }
-	};
-	uint32_t vertexBufferSize = static_cast<uint32_t>(vertexBuffer.size()) * sizeof(Vertex);
-
-	// Setup indices
-	std::vector<uint32_t> indexBuffer{ 0, 1, 2 };
-	indices.count = static_cast<uint32_t>(indexBuffer.size());
-	uint32_t indexBufferSize = indices.count * sizeof(uint32_t);
-
-	VkMemoryAllocateInfo memAlloc{};
-	memAlloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	VkMemoryRequirements memReqs;
-
-	// Static data like vertex and index buffer should be stored on the device memory for optimal (and fastest) access by the GPU
-	//
-	// To achieve this we use so-called "staging buffers" :
-	// - Create a buffer that's visible to the host (and can be mapped)
-	// - Copy the data to this buffer
-	// - Create another buffer that's local on the device (VRAM) with the same size
-	// - Copy the data from the host to the device using a command buffer
-	// - Delete the host visible (staging) buffer
-	// - Use the device local buffers for rendering
-	//
-	// Note: On unified memory architectures where host (CPU) and GPU share the same memory, staging is not necessary
-	// To keep this sample easy to follow, there is no check for that in place
-
-	struct StagingBuffer
-	{
-		VkDeviceMemory memory;
-		VkBuffer buffer;
-	};
-
-	struct
-	{
-		StagingBuffer vertices;
-		StagingBuffer indices;
-	} stagingBuffers{};
-
-	void* data;
-
-	// Vertex buffer
-	VkBufferCreateInfo vertexBufferInfoCI{};
-	vertexBufferInfoCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	vertexBufferInfoCI.size = vertexBufferSize;
-	// Buffer is used as the copy source
-	vertexBufferInfoCI.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-	// Create a host-visible buffer to copy the vertex data to (staging buffer)
-	VK_CHECK_RESULT(vkCreateBuffer(m_device, &vertexBufferInfoCI, nullptr, &stagingBuffers.vertices.buffer));
-	vkGetBufferMemoryRequirements(m_device, stagingBuffers.vertices.buffer, &memReqs);
-	memAlloc.allocationSize = memReqs.size;
-	// Request a host visible memory type that can be used to copy our data to
-	// Also request it to be coherent, so that writes are visible to the GPU right after unmapping the buffer
-	memAlloc.memoryTypeIndex = FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &stagingBuffers.vertices.memory));
-	// Map and copy
-	VK_CHECK_RESULT(vkMapMemory(m_device, stagingBuffers.vertices.memory, 0, memAlloc.allocationSize, 0, &data));
-	memcpy(data, vertexBuffer.data(), vertexBufferSize);
-	vkUnmapMemory(m_device, stagingBuffers.vertices.memory);
-	VK_CHECK_RESULT(vkBindBufferMemory(m_device, stagingBuffers.vertices.buffer, stagingBuffers.vertices.memory, 0));
-
-	// Create a m_device local buffer to which the (host local) vertex data will be copied and which will be used for rendering
-	vertexBufferInfoCI.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-	VK_CHECK_RESULT(vkCreateBuffer(m_device, &vertexBufferInfoCI, nullptr, &vertices.buffer));
-	vkGetBufferMemoryRequirements(m_device, vertices.buffer, &memReqs);
-	memAlloc.allocationSize = memReqs.size;
-	memAlloc.memoryTypeIndex = FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &vertices.memory));
-	VK_CHECK_RESULT(vkBindBufferMemory(m_device, vertices.buffer, vertices.memory, 0));
-
-	// Index buffer
-	VkBufferCreateInfo indexbufferCI{};
-	indexbufferCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	indexbufferCI.size = indexBufferSize;
-	indexbufferCI.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-	// Copy index data to a buffer visible to the host (staging buffer)
-	VK_CHECK_RESULT(vkCreateBuffer(m_device, &indexbufferCI, nullptr, &stagingBuffers.indices.buffer));
-	vkGetBufferMemoryRequirements(m_device, stagingBuffers.indices.buffer, &memReqs);
-	memAlloc.allocationSize = memReqs.size;
-	memAlloc.memoryTypeIndex = FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &stagingBuffers.indices.memory));
-	VK_CHECK_RESULT(vkMapMemory(m_device, stagingBuffers.indices.memory, 0, indexBufferSize, 0, &data));
-	memcpy(data, indexBuffer.data(), indexBufferSize);
-	vkUnmapMemory(m_device, stagingBuffers.indices.memory);
-	VK_CHECK_RESULT(vkBindBufferMemory(m_device, stagingBuffers.indices.buffer, stagingBuffers.indices.memory, 0));
-
-	// Create destination buffer with m_device only visibility
-	indexbufferCI.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-	VK_CHECK_RESULT(vkCreateBuffer(m_device, &indexbufferCI, nullptr, &indices.buffer));
-	vkGetBufferMemoryRequirements(m_device, indices.buffer, &memReqs);
-	memAlloc.allocationSize = memReqs.size;
-	memAlloc.memoryTypeIndex = FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &indices.memory));
-	VK_CHECK_RESULT(vkBindBufferMemory(m_device, indices.buffer, indices.memory, 0));
-
-	// Buffer copies have to be submitted to a queue, so we need a command buffer for them
-	// Note: Some devices offer a dedicated transfer queue (with only the transfer bit set) that may be faster when doing lots of copies
-	VkCommandBuffer copyCmd;
-
-	VkCommandBufferAllocateInfo cmdBufAllocateInfo{};
-	cmdBufAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	cmdBufAllocateInfo.commandPool = m_commandPool;
-	cmdBufAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	cmdBufAllocateInfo.commandBufferCount = 1;
-	VK_CHECK_RESULT(vkAllocateCommandBuffers(m_device, &cmdBufAllocateInfo, &copyCmd));
-
-	VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
-	VK_CHECK_RESULT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo));
-	// Put buffer region copies into command buffer
-	VkBufferCopy copyRegion{};
-	// Vertex buffer
-	copyRegion.size = vertexBufferSize;
-	vkCmdCopyBuffer(copyCmd, stagingBuffers.vertices.buffer, vertices.buffer, 1, &copyRegion);
-	// Index buffer
-	copyRegion.size = indexBufferSize;
-	vkCmdCopyBuffer(copyCmd, stagingBuffers.indices.buffer, indices.buffer, 1, &copyRegion);
-	VK_CHECK_RESULT(vkEndCommandBuffer(copyCmd));
-
-	// Submit the command buffer to the queue to finish the copy
-	VkSubmitInfo submitInfo{};
-	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &copyCmd;
-
-	// Create fence to ensure that the command buffer has finished executing
-	VkFenceCreateInfo fenceCI{};
-	fenceCI.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	fenceCI.flags = 0;
-	VkFence fence;
-	VK_CHECK_RESULT(vkCreateFence(m_device, &fenceCI, nullptr, &fence));
-
-	// Submit to the queue
-	VK_CHECK_RESULT(vkQueueSubmit(m_queues.graphicsQueue, 1, &submitInfo, fence));
-	// Wait for the fence to signal that command buffer has finished executing
-	VK_CHECK_RESULT(vkWaitForFences(m_device, 1, &fence, VK_TRUE, 10000000));
-
-	vkDestroyFence(m_device, fence, nullptr);
-	vkFreeCommandBuffers(m_device, m_commandPool, 1, &copyCmd);
-
-	// Destroy staging buffers
-	// Note: Staging buffer must not be deleted before the copies have been submitted and executed
-	vkDestroyBuffer(m_device, stagingBuffers.vertices.buffer, nullptr);
-	vkFreeMemory(m_device, stagingBuffers.vertices.memory, nullptr);
-	vkDestroyBuffer(m_device, stagingBuffers.indices.buffer, nullptr);
-	vkFreeMemory(m_device, stagingBuffers.indices.memory, nullptr);
-}
+//void Renderer::CreateVertexBuffer()
+//{
+//	// A note on memory management in Vulkan in general:
+//	//	This is a very complex topic and while it's fine for an example application to small individual memory allocations that is not
+//	//	what should be done a real-world application, where you should allocate large chunks of memory at once instead.
+//
+//	// Setup vertices
+//	std::vector<Vertex> vertexBuffer{
+//		{ {  1.0f,  -1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f } },
+//		{ { 0.0f,  1.0f, 0.0f }, { 0.0f, 1.0f, 0.0f } },
+//		{ {  -1.0f, -1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f } }
+//	};
+//	uint32_t vertexBufferSize = static_cast<uint32_t>(vertexBuffer.size()) * sizeof(Vertex);
+//
+//	// Setup indices
+//	std::vector<uint32_t> indexBuffer{ 0, 1, 2 };
+//	indices.count = static_cast<uint32_t>(indexBuffer.size());
+//	uint32_t indexBufferSize = indices.count * sizeof(uint32_t);
+//
+//	VkMemoryAllocateInfo memAlloc{};
+//	memAlloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+//	VkMemoryRequirements memReqs;
+//
+//	// Static data like vertex and index buffer should be stored on the device memory for optimal (and fastest) access by the GPU
+//	//
+//	// To achieve this we use so-called "staging buffers" :
+//	// - Create a buffer that's visible to the host (and can be mapped)
+//	// - Copy the data to this buffer
+//	// - Create another buffer that's local on the device (VRAM) with the same size
+//	// - Copy the data from the host to the device using a command buffer
+//	// - Delete the host visible (staging) buffer
+//	// - Use the device local buffers for rendering
+//	//
+//	// Note: On unified memory architectures where host (CPU) and GPU share the same memory, staging is not necessary
+//	// To keep this sample easy to follow, there is no check for that in place
+//
+//	struct StagingBuffer
+//	{
+//		VkDeviceMemory memory;
+//		VkBuffer buffer;
+//	};
+//
+//	struct
+//	{
+//		StagingBuffer vertices;
+//		StagingBuffer indices;
+//	} stagingBuffers{};
+//
+//	void* data;
+//
+//	// Vertex buffer
+//	VkBufferCreateInfo vertexBufferInfoCI{};
+//	vertexBufferInfoCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+//	vertexBufferInfoCI.size = vertexBufferSize;
+//	// Buffer is used as the copy source
+//	vertexBufferInfoCI.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+//	// Create a host-visible buffer to copy the vertex data to (staging buffer)
+//	VK_CHECK_RESULT(vkCreateBuffer(m_device, &vertexBufferInfoCI, nullptr, &stagingBuffers.vertices.buffer));
+//	vkGetBufferMemoryRequirements(m_device, stagingBuffers.vertices.buffer, &memReqs);
+//	memAlloc.allocationSize = memReqs.size;
+//	// Request a host visible memory type that can be used to copy our data to
+//	// Also request it to be coherent, so that writes are visible to the GPU right after unmapping the buffer
+//	memAlloc.memoryTypeIndex = FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+//	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &stagingBuffers.vertices.memory));
+//	// Map and copy
+//	VK_CHECK_RESULT(vkMapMemory(m_device, stagingBuffers.vertices.memory, 0, memAlloc.allocationSize, 0, &data));
+//	memcpy(data, vertexBuffer.data(), vertexBufferSize);
+//	vkUnmapMemory(m_device, stagingBuffers.vertices.memory);
+//	VK_CHECK_RESULT(vkBindBufferMemory(m_device, stagingBuffers.vertices.buffer, stagingBuffers.vertices.memory, 0));
+//
+//	// Create a m_device local buffer to which the (host local) vertex data will be copied and which will be used for rendering
+//	vertexBufferInfoCI.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+//	VK_CHECK_RESULT(vkCreateBuffer(m_device, &vertexBufferInfoCI, nullptr, &vertices.buffer));
+//	vkGetBufferMemoryRequirements(m_device, vertices.buffer, &memReqs);
+//	memAlloc.allocationSize = memReqs.size;
+//	memAlloc.memoryTypeIndex = FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+//	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &vertices.memory));
+//	VK_CHECK_RESULT(vkBindBufferMemory(m_device, vertices.buffer, vertices.memory, 0));
+//
+//	// Index buffer
+//	VkBufferCreateInfo indexbufferCI{};
+//	indexbufferCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+//	indexbufferCI.size = indexBufferSize;
+//	indexbufferCI.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+//	// Copy index data to a buffer visible to the host (staging buffer)
+//	VK_CHECK_RESULT(vkCreateBuffer(m_device, &indexbufferCI, nullptr, &stagingBuffers.indices.buffer));
+//	vkGetBufferMemoryRequirements(m_device, stagingBuffers.indices.buffer, &memReqs);
+//	memAlloc.allocationSize = memReqs.size;
+//	memAlloc.memoryTypeIndex = FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+//	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &stagingBuffers.indices.memory));
+//	VK_CHECK_RESULT(vkMapMemory(m_device, stagingBuffers.indices.memory, 0, indexBufferSize, 0, &data));
+//	memcpy(data, indexBuffer.data(), indexBufferSize);
+//	vkUnmapMemory(m_device, stagingBuffers.indices.memory);
+//	VK_CHECK_RESULT(vkBindBufferMemory(m_device, stagingBuffers.indices.buffer, stagingBuffers.indices.memory, 0));
+//
+//	// Create destination buffer with m_device only visibility
+//	indexbufferCI.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+//	VK_CHECK_RESULT(vkCreateBuffer(m_device, &indexbufferCI, nullptr, &indices.buffer));
+//	vkGetBufferMemoryRequirements(m_device, indices.buffer, &memReqs);
+//	memAlloc.allocationSize = memReqs.size;
+//	memAlloc.memoryTypeIndex = FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+//	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &indices.memory));
+//	VK_CHECK_RESULT(vkBindBufferMemory(m_device, indices.buffer, indices.memory, 0));
+//
+//	// Buffer copies have to be submitted to a queue, so we need a command buffer for them
+//	// Note: Some devices offer a dedicated transfer queue (with only the transfer bit set) that may be faster when doing lots of copies
+//	VkCommandBuffer copyCmd;
+//
+//	VkCommandBufferAllocateInfo cmdBufAllocateInfo{};
+//	cmdBufAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+//	cmdBufAllocateInfo.commandPool = m_commandPool;
+//	cmdBufAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+//	cmdBufAllocateInfo.commandBufferCount = 1;
+//	VK_CHECK_RESULT(vkAllocateCommandBuffers(m_device, &cmdBufAllocateInfo, &copyCmd));
+//
+//	VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
+//	VK_CHECK_RESULT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo));
+//	// Put buffer region copies into command buffer
+//	VkBufferCopy copyRegion{};
+//	// Vertex buffer
+//	copyRegion.size = vertexBufferSize;
+//	vkCmdCopyBuffer(copyCmd, stagingBuffers.vertices.buffer, vertices.buffer, 1, &copyRegion);
+//	// Index buffer
+//	copyRegion.size = indexBufferSize;
+//	vkCmdCopyBuffer(copyCmd, stagingBuffers.indices.buffer, indices.buffer, 1, &copyRegion);
+//	VK_CHECK_RESULT(vkEndCommandBuffer(copyCmd));
+//
+//	// Submit the command buffer to the queue to finish the copy
+//	VkSubmitInfo submitInfo{};
+//	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+//	submitInfo.commandBufferCount = 1;
+//	submitInfo.pCommandBuffers = &copyCmd;
+//
+//	// Create fence to ensure that the command buffer has finished executing
+//	VkFenceCreateInfo fenceCI{};
+//	fenceCI.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+//	fenceCI.flags = 0;
+//	VkFence fence;
+//	VK_CHECK_RESULT(vkCreateFence(m_device, &fenceCI, nullptr, &fence));
+//
+//	// Submit to the queue
+//	VK_CHECK_RESULT(vkQueueSubmit(m_queues.graphicsQueue, 1, &submitInfo, fence));
+//	// Wait for the fence to signal that command buffer has finished executing
+//	VK_CHECK_RESULT(vkWaitForFences(m_device, 1, &fence, VK_TRUE, 10000000));
+//
+//	vkDestroyFence(m_device, fence, nullptr);
+//	vkFreeCommandBuffers(m_device, m_commandPool, 1, &copyCmd);
+//
+//	// Destroy staging buffers
+//	// Note: Staging buffer must not be deleted before the copies have been submitted and executed
+//	vkDestroyBuffer(m_device, stagingBuffers.vertices.buffer, nullptr);
+//	vkFreeMemory(m_device, stagingBuffers.vertices.memory, nullptr);
+//	vkDestroyBuffer(m_device, stagingBuffers.indices.buffer, nullptr);
+//	vkFreeMemory(m_device, stagingBuffers.indices.memory, nullptr);
+//}
 
 void::Renderer::CreateCommandBuffers()
 {
@@ -323,12 +323,12 @@ void Renderer::BuildCommandBuffers()
 		glm::mat4x4 model{ 1.0f };
 		vkCmdPushConstants(m_drawCmdBuffers[i], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4x4), &model);
 		VkDeviceSize offsets[1] = { 0 };
-		vkCmdBindVertexBuffers(m_drawCmdBuffers[i], 0, 1, &vertices.buffer, offsets);
-		vkCmdBindIndexBuffer(m_drawCmdBuffers[i], indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+	/*	vkCmdBindVertexBuffers(m_drawCmdBuffers[i], 0, 1, &vertices.buffer, offsets);
+		vkCmdBindIndexBuffer(m_drawCmdBuffers[i], indices.buffer, 0, VK_INDEX_TYPE_UINT32);*/
 
 		m_glTFModel.Draw(m_drawCmdBuffers[i], m_pipelineLayout);
 		//drawUI(drawCmdBuffers[i]);
-		vkCmdDrawIndexed(m_drawCmdBuffers[i], indices.count, 1, 0, 0, 0);
+		//vkCmdDrawIndexed(m_drawCmdBuffers[i], indices.count, 1, 0, 0, 0);
 		vkCmdEndRenderPass(m_drawCmdBuffers[i]);
 
 		VK_CHECK_RESULT(vkEndCommandBuffer(m_drawCmdBuffers[i]));
@@ -360,10 +360,9 @@ std::string Renderer::GetAssetsPath() {
 }
 void Renderer::CreateGraphicsPipeline()
 {
-	VkPipelineLayoutCreateInfo pipelineLayoutCI{};
-	pipelineLayoutCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutCI.pSetLayouts = &m_descriptorSetLayout;
-	pipelineLayoutCI.setLayoutCount = 1;
+	std::array<VkDescriptorSetLayout, 2> setLayouts = { m_descriptorSetLayouts.Matrices, m_descriptorSetLayouts.Textures };
+
+	VkPipelineLayoutCreateInfo pipelineLayoutCI = Init::pipelineLayoutCreateInfo(setLayouts.data(), static_cast<uint32_t>(setLayouts.size()));
 
 	VkPushConstantRange pushConstRange{};
 	pushConstRange.offset = 0;
@@ -389,13 +388,13 @@ void Renderer::CreateGraphicsPipeline()
 
 	// Vertex input state
 	std::vector<VkVertexInputBindingDescription> vertexInputBindings = {
-		Init::vertexInputBindingDescription(0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX)
+		Init::vertexInputBindingDescription(0, sizeof(GLTFModel::Vertex), VK_VERTEX_INPUT_RATE_VERTEX)
 	};
 	std::vector<VkVertexInputAttributeDescription> vertexInputAttributes = {
-		Init::vertexInputAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos)),
-		Init::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, color))
-		//Init::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)),
-		//Init::vertexInputAttributeDescription(0, 2, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal)),
+		Init::vertexInputAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(GLTFModel::Vertex, pos)),
+		Init::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(GLTFModel::Vertex, normal)),
+		Init::vertexInputAttributeDescription(0, 2, VK_FORMAT_R32G32_SFLOAT, offsetof(GLTFModel::Vertex, uv)),
+		Init::vertexInputAttributeDescription(0, 3, VK_FORMAT_R32G32B32_SFLOAT, offsetof(GLTFModel::Vertex, color)),
 	};
 
 	VkPipelineVertexInputStateCreateInfo vertexInputState = Init::pipelineVertexInputStateCreateInfo();
@@ -594,11 +593,11 @@ void Renderer::CreateDescriptors()
 	// pool
 	std::vector<VkDescriptorPoolSize> poolSizes{};
 	poolSizes.emplace_back(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
-	poolSizes.emplace_back(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1);
+	poolSizes.emplace_back(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(m_glTFModel.images.size()));
 	VkDescriptorPoolCreateInfo descriptorPoolCI{};
 	descriptorPoolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	descriptorPoolCI.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-	descriptorPoolCI.maxSets = 1;
+	descriptorPoolCI.maxSets = static_cast<uint32_t>(m_glTFModel.images.size()) + 1;
 	descriptorPoolCI.pPoolSizes = poolSizes.data();
 
 	if (vkCreateDescriptorPool(m_device, &descriptorPoolCI, nullptr, &m_descriptorPool) != VK_SUCCESS)
@@ -607,41 +606,19 @@ void Renderer::CreateDescriptors()
 	};
 
 	// create layout
-	std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings{};
-
-	VkDescriptorSetLayoutBinding uboLayoutBinding{};
-	uboLayoutBinding.binding = 0;
-	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	uboLayoutBinding.descriptorCount = 1;
-	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-	uboLayoutBinding.pImmutableSamplers = nullptr;
-
-	//VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-	//samplerLayoutBinding.binding = 1;
-	//samplerLayoutBinding.descriptorCount = 1;
-	//samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	//samplerLayoutBinding.pImmutableSamplers = nullptr;
-	//samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-	setLayoutBindings.push_back(std::move(uboLayoutBinding));
-	//setLayoutBindings.push_back(std::move(samplerLayoutBinding));
-
-	VkDescriptorSetLayoutCreateInfo layoutCI{};
-	layoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutCI.bindingCount = static_cast<uint32_t>(setLayoutBindings.size());
-	layoutCI.pBindings = setLayoutBindings.data();
-
-	if (vkCreateDescriptorSetLayout(m_device, &layoutCI, nullptr, &m_descriptorSetLayout) != VK_SUCCESS)
-	{
-		throw std::runtime_error("failed to create descriptor set layout!");
-	}
+	VkDescriptorSetLayoutBinding setLayoutBinding = Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
+	VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI = Init::descriptorSetLayoutCreateInfo(&setLayoutBinding, 1);
+	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorSetLayoutCI, nullptr, &m_descriptorSetLayouts.Matrices));
+	// Descriptor set layout for passing material textures
+	setLayoutBinding = Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorSetLayoutCI, nullptr, &m_descriptorSetLayouts.Textures));
 
 	// allocate set
 	VkDescriptorSetAllocateInfo allocIF{};
 	allocIF.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	allocIF.descriptorPool = m_descriptorPool;
 	allocIF.descriptorSetCount = 1;
-	allocIF.pSetLayouts = &m_descriptorSetLayout;
+	allocIF.pSetLayouts = &m_descriptorSetLayouts.Matrices;
 
 	if (vkAllocateDescriptorSets(m_device, &allocIF, &m_descriptorSet) != VK_SUCCESS)
 	{
@@ -657,16 +634,17 @@ void Renderer::CreateDescriptors()
 	writeUBO.pBufferInfo = &m_uboBuffer.descriptor;
 	writeUBO.descriptorCount = 1;
 
-	//VkWriteDescriptorSet writeImageSampler{};
-	//writeUBO.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	//writeUBO.dstSet = m_descriptorSet;
-	//writeUBO.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	//writeUBO.dstBinding = 1;
-	//writeUBO.pBufferInfo = bufferInfo;
-	//writeUBO.descriptorCount = 1;
-
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets{ writeUBO };
 	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+
+	// Descriptor sets for materials
+	for (auto& image : m_glTFModel.images)
+	{
+		const VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.Textures, 1);
+		VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &image.descriptorSet));
+		VkWriteDescriptorSet writeDescriptorSet = Init::writeDescriptorSet(image.descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, &image.texture.descriptor);
+		vkUpdateDescriptorSets(m_device, 1, &writeDescriptorSet, 0, nullptr);
+	}
 }
 void Renderer::CreateRenderPass()
 {
@@ -1395,10 +1373,10 @@ void Renderer::Cleanup()
 	vkDestroyCommandPool(m_device, m_commandPool, nullptr);
 
 	// indices vertices
-	vkDestroyBuffer(m_device, vertices.buffer, nullptr);
-	vkFreeMemory(m_device, vertices.memory, nullptr);
-	vkDestroyBuffer(m_device, indices.buffer, nullptr);
-	vkFreeMemory(m_device, indices.memory, nullptr);
+	//vkDestroyBuffer(m_device, vertices.buffer, nullptr);
+	//vkFreeMemory(m_device, vertices.memory, nullptr);
+	//vkDestroyBuffer(m_device, indices.buffer, nullptr);
+	//vkFreeMemory(m_device, indices.memory, nullptr);
 
 	// depth 
 	vkDestroyImageView(m_device, m_depthStencil.view, nullptr);
@@ -1409,7 +1387,8 @@ void Renderer::Cleanup()
 	vkDestroySemaphore(m_device, m_semaphores.presentComplete, nullptr);
 	vkDestroySemaphore(m_device, m_semaphores.renderComplete, nullptr);
 
-	vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayout, nullptr);
+	vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayouts.Textures, nullptr);
+	vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayouts.Matrices, nullptr);
 	vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
 
 	vkDestroyPipeline(m_device, m_pipeline, nullptr);
@@ -1426,25 +1405,17 @@ void Renderer::Cleanup()
 	// uniformbuffer
 	m_uboBuffer.Destroy();
 
-	//for (auto& view : m_swapChain.imageViews)
-	//{
-	//	vkDestroyImageView(m_device, view, nullptr);
-	//}
-	//for (auto& image : m_swapChain.views)
-	//{
-	//	vkDestroyImageView(m_device, image, nullptr);
-	//}
+	m_glTFModel.Destroy();
 	m_swapChain.Cleanup();
-	delete m_vulkanDevice;
-	//vkDestroySwapchainKHR(m_device, m_swapChain.swapChain, nullptr);
 
-	//vkDestroyDevice(m_device, nullptr);
+
+
+	delete m_vulkanDevice;
+
 	if (m_neededFeatures.validation)
 	{
 		DestroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
 	}
-	//vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
-	//vkDestroyInstance(m_instance, nullptr);
 
 	glfwDestroyWindow(m_window);
 	glfwTerminate();

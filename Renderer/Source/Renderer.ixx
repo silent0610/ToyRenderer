@@ -19,6 +19,12 @@ import ConfigMod;
 //vulkanExample->prepare();																		\
 //vulkanExample->renderLoop();
 
+struct DescriptorSetLayouts
+{
+	VkDescriptorSetLayout Matrices{nullptr};
+	VkDescriptorSetLayout Textures{nullptr};
+};
+
 struct UBOMatrices
 {
 	glm::mat4 view;
@@ -62,8 +68,8 @@ struct SwapChainSupportDetails
 
 struct FrameBufferAttachment
 {
-	VkImage image;
-	VkImageView view;
+	VkImage image{nullptr};
+	VkImageView view{nullptr};
 
 	~FrameBufferAttachment()
 	{
@@ -75,7 +81,6 @@ struct VkQueues
 {
 	VkQueue graphicsQueue{ nullptr };
 	VkQueue presentQueue{ nullptr };
-
 };
 
 struct Limits
@@ -94,17 +99,6 @@ struct NeededFeatures
 
 };
 
-
-//struct SwapChain
-//{
-//	std::vector<VkImage> images{};
-//	std::vector<VkImageView> views{};
-//	VkFormat swapChainImageFormat{};
-//	VkExtent2D swapChainExtent{};
-//
-//	VkSwapchainKHR swapChain{ VK_NULL_HANDLE };
-//};
-
 struct Image
 {
 	VkImage image;
@@ -117,40 +111,16 @@ struct Semaphores
 	VkSemaphore renderComplete;
 };
 
-struct Vertex
-{
-	float pos[3];
-	float color[3];
-	//float uv[2];
-	//float normal[3];
-};
-
 export class Renderer
 {
 public:
 	Renderer(bool enableValidation = false);
 	void Run();
-	~Renderer()
-	{
-	}
-
-	// Index buffer
-	struct
-	{
-		VkDeviceMemory memory{ VK_NULL_HANDLE };
-		VkBuffer buffer{ VK_NULL_HANDLE };
-		uint32_t count{ 0 };
-	} indices;
-
-	struct
-	{
-		VkDeviceMemory memory{ VK_NULL_HANDLE }; // Handle to the device memory for this buffer
-		VkBuffer buffer{ VK_NULL_HANDLE };		 // Handle to the Vulkan buffer object that the memory is bound to
-	} vertices;
+	~Renderer() = default;
 
 private:
 
-
+	DescriptorSetLayouts m_descriptorSetLayouts;
 	VkPhysicalDeviceFeatures m_enabledFeatures{};
 	/** @brief Set of device extensions to be enabled for this example (must be set in the derived constructor) */
 	std::vector<const char*> m_enabledDeviceExtensions;
@@ -253,54 +223,37 @@ private:
 	void CreateSwapChain();
 	void CreateSwapChainImageViews();
 	void CreateGraphicsPipeline();
-	VkShaderModule CreateShaderModule(const std::vector<char>& code);
-	static std::vector<char> ReadFile(const std::string& filename);
+
 	void CreateRenderPass();
 	void CreateFramebuffers();
 	void CreateCommandPool();
 	VkResult CreateBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, Buffer* buffer, VkDeviceSize size, void* data = nullptr);
 	void CreateCommandBuffers();
-	void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+	//void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 	void DrawFrame();
 	void CreateSyncObjects();
-	void RecreateSwapChain();
-	void CleanupSwapChain();
+
 	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
-	void CreateVertexBuffer();
-	void CreateIndexBuffer();
+
 	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
-	void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
-	void CreateDescriptorSetLayout();
-	void CreateUniformBuffers();
-	void UpdateUniformBuffer(uint32_t currentImage);
-	void CreateDescriptorPool();
-	void CreateDescriptorSets();
-	void CreateTextureImage();
-	void CreateTextureImageView();
-	void CreateImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling,
-		VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
+	
 
-	VkCommandBuffer BeginSingleTimeCommands();
 
-	void EndSingleTimeCommands(VkCommandBuffer commandBuffer);
-	void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);
-	void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+	
 
 	VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels);
-	void CreateTextureSampler();
 
 	void CreateDepthResources();
 	VkFormat FindSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 	VkFormat FindDepthFormat();
-	bool HasStencilComponent(VkFormat format);
 
-	void LoadModel();
 
-	void GenerateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
+
+	//void GenerateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
 
 	VkSampleCountFlagBits GetMaxUsableSampleCount();
 	void CreateDescriptors();
-	void CreateColorResources();
+
 	VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
 	void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator);
 

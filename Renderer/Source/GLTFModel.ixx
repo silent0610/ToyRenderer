@@ -101,6 +101,7 @@ public:
 	std::vector<Material> materials;
 	std::vector<Node*> nodes;
 
+	void Destroy();
 	~GLTFModel();
 
 
