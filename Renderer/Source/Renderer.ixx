@@ -263,7 +263,7 @@ private:
 	void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator);
 
 	void CreateUniformBuffer();
-	std::string GetShadersPath();
+	//std::string GetShadersPath();
 	VkPipelineShaderStageCreateInfo LoadShader(std::string fileName, VkShaderStageFlagBits stage);
 	void BuildCommandBuffers();
 	void PrepareFrame();
@@ -272,7 +272,7 @@ private:
 	void LoadglTFFile(std::string filename);
 	void EncapsulationDevice();
 	void LoadAssets();
-	std::string GetAssetsPath();
+	//std::string GetAssetsPath();
 	static void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 	static void MouseCallback(GLFWwindow* window, double xpos, double ypos);
 	static void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods);

@@ -20,6 +20,7 @@ private:
 		glm::mat4 rotM = glm::mat4(1.0f);
 		glm::mat4 transM;
 
+		// 对于第一人称相机来说，这实际上是调整相机的朝向
 		rotM = glm::rotate(rotM, glm::radians(rotation.x * (flipY ? -1.0f : 1.0f)), glm::vec3(1.0f, 0.0f, 0.0f));
 		rotM = glm::rotate(rotM, glm::radians(rotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
 		rotM = glm::rotate(rotM, glm::radians(rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));

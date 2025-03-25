@@ -196,19 +196,7 @@ VkPipelineShaderStageCreateInfo Renderer::LoadShader(std::string fileName, VkSha
 	return shaderStage;
 }
 
-std::string Renderer::GetShadersPath()
-{
-	auto path = std::filesystem::current_path();
-	auto projectPath = path.parent_path().parent_path().parent_path().parent_path();
-	return projectPath.string() + "/Renderer/Shader/";
-}
-std::string Renderer::GetAssetsPath()
-{
 
-	auto path = std::filesystem::current_path();
-	auto projectPath = path.parent_path().parent_path().parent_path().parent_path();
-	return projectPath.string() + "/Renderer/Asset/";
-}
 void Renderer::CreateGraphicsPipeline()
 {
 	std::array<VkDescriptorSetLayout, 2> setLayouts = { m_descriptorSetLayouts.Matrices, m_descriptorSetLayouts.Textures };
@@ -257,8 +245,8 @@ void Renderer::CreateGraphicsPipeline()
 	VkGraphicsPipelineCreateInfo pipelineCI = Init::pipelineCreateInfo(m_pipelineLayout, m_renderPass);
 	std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
 	// TODO
-	shaderStages[0] = LoadShader(GetShadersPath() + "Triangle.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-	shaderStages[1] = LoadShader(GetShadersPath() + "Triangle.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Triangle.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Triangle.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	pipelineCI.pVertexInputState = &vertexInputState;
 	pipelineCI.pInputAssemblyState = &inputAssemblyState;
@@ -1242,7 +1230,7 @@ void Renderer::MouseButtonCallback(GLFWwindow* window, int button, int action, i
 void Renderer::ScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
 {
 	auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
-	app->m_camera.translate(glm::vec3(0.0f, 0.0f, (float)yoffset * 0.005f));
+	app->m_camera.translate(glm::vec3(0.0f, 0.0f, (float)yoffset * 0.1f));
 	/*app->viewUpdated = true;*/
 }
 void Renderer::MainLoop()
@@ -1440,7 +1428,7 @@ void Renderer::CreateLogicalDevice()
 
 void Renderer::LoadAssets()
 {
-	LoadglTFFile(GetAssetsPath() + "Models/FlightHelmet/glTF/FlightHelmet.gltf");
+	LoadglTFFile(Tool::GetAssetsPath() + "Models/FlightHelmet/glTF/FlightHelmet.gltf");
 }
 
 void Renderer::LoadglTFFile(std::string fileName)
