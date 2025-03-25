@@ -51,7 +51,8 @@ void UIOverlay::PrepareResources()
 	unsigned char* fontData;
 	int texWidth, texHeight;
 
-	const std::string filename = Tool::GetAssetsPath() + "Roboto-Medium.ttf"; // TODO
+	// 加载字体文件
+	const std::string filename = Tool::GetAssetsPath() + "Roboto-Medium.ttf"; 
 	io.Fonts->AddFontFromFileTTF(filename.c_str(), 16.0f * scale);
 
 	io.Fonts->GetTexDataAsRGBA32(&fontData, &texWidth, &texHeight);
@@ -60,7 +61,6 @@ void UIOverlay::PrepareResources()
 	//SRS - Set ImGui style scale factor to handle retina and other HiDPI displays (same as font scaling above)
 	ImGuiStyle& style = ImGui::GetStyle();
 	style.ScaleAllSizes(scale);
-
 	// Create target image for copy
 	VkImageCreateInfo imageInfo = Init::imageCreateInfo();
 	imageInfo.imageType = VK_IMAGE_TYPE_2D;

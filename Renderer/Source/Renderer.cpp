@@ -5,7 +5,7 @@ module;
 #include "glm/mat4x4.hpp"
 #include "stb/stb_image.h"
 #include "tiny_gltf.h"
-
+#include "imgui.h"
 module RendererMod;
 import InitMod;
 import ToolMod;
@@ -120,7 +120,7 @@ void Renderer::InitVulkan()
 	CreateDepthResources();
 	CreateRenderPass();
 	CreateFramebuffers();
-
+	InitUI();
 
 	CreateUniformBuffer();
 	CreateDescriptors();
@@ -130,6 +130,18 @@ void Renderer::InitVulkan()
 
 
 }
+void Renderer::InitUI() 
+{
+	m_UI.device = m_vulkanDevice;
+	m_UI.queue = m_queues.graphicsQueue;
+	m_UI.shaders = {
+		LoadShader(Tool::GetShadersPath() + "Base/uioverlay.vert.spv", VK_SHADER_STAGE_VERTEX_BIT),
+		LoadShader(Tool::GetShadersPath() + "Base/uioverlay.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT),
+	};
+	m_UI.PrepareResources();
+	m_UI.PreparePipeline(nullptr, m_renderPass, m_swapChain.colorFormat, m_depthFormat);
+}
+
 
 void::Renderer::CreateCommandBuffers()
 {
@@ -177,13 +189,24 @@ void Renderer::BuildCommandBuffers()
 		VkDeviceSize offsets[1] = { 0 };
 
 		m_glTFModel.Draw(m_drawCmdBuffers[i], m_pipelineLayout);
-		//drawUI(drawCmdBuffers[i]);
+		DrawUI(m_drawCmdBuffers[i]);
 		//vkCmdDrawIndexed(m_drawCmdBuffers[i], indices.count, 1, 0, 0, 0);
 		vkCmdEndRenderPass(m_drawCmdBuffers[i]);
 
 		VK_CHECK_RESULT(vkEndCommandBuffer(m_drawCmdBuffers[i]));
 	}
 }
+
+void Renderer::DrawUI(const VkCommandBuffer commandBuffer)
+{
+	const VkViewport viewport = Init::viewport((float)m_width, (float)m_height, 0.0f, 1.0f);
+	const VkRect2D scissor = Init::rect2D(m_width, m_height, 0, 0);
+	vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+	m_UI.Draw(commandBuffer);
+}
+
 VkPipelineShaderStageCreateInfo Renderer::LoadShader(std::string fileName, VkShaderStageFlagBits stage)
 {
 	VkPipelineShaderStageCreateInfo shaderStage = {};
@@ -1233,13 +1256,73 @@ void Renderer::ScrollCallback(GLFWwindow* window, double xoffset, double yoffset
 	app->m_camera.translate(glm::vec3(0.0f, 0.0f, (float)yoffset * 0.1f));
 	/*app->viewUpdated = true;*/
 }
+
+void Renderer::DisplayUI(UIOverlay* overlay)
+{
+	if (overlay->Header("Settings"))
+	{
+		if (overlay->CheckBox("Click", &click))
+		{
+			BuildCommandBuffers();
+		}
+	}
+}
+void Renderer::UpdateOverlay() {
+	m_UI.updateTimer -= m_frameTimer;
+	if (m_UI.updateTimer >= 0.0f)
+	{
+		return;
+	}
+	// Update at max. rate of 30 fps
+	m_UI.updateTimer = 1.0f / 30.0f;
+
+	ImGuiIO& io = ImGui::GetIO();
+
+	io.DisplaySize = ImVec2((float)m_width, (float)m_height);
+	io.DeltaTime = m_frameTimer;
+
+	io.MousePos = ImVec2(m_mouseState.Position.x, m_mouseState.Position.y);
+	io.MouseDown[0] = m_mouseState.Buttons.Left && m_UI.visible;
+	io.MouseDown[1] = m_mouseState.Buttons.Right && m_UI.visible;
+	io.MouseDown[2] = m_mouseState.Buttons.Middle && m_UI.visible;
+
+	ImGui::NewFrame();
+
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0);
+	ImGui::SetNextWindowPos(ImVec2(10 * m_UI.scale, 10 * m_UI.scale));
+	ImGui::SetNextWindowSize(ImVec2(0, 0), 4);
+	ImGui::Begin("MyToyRenderer", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+	ImGui::TextUnformatted(m_title.c_str());
+	ImGui::TextUnformatted(m_vulkanDevice->properties.deviceName);
+	//ImGui::Text("%.2f ms/frame (%.1d fps)", (1000.0f / lastFPS), lastFPS);
+
+
+	ImGui::PushItemWidth(110.0f * m_UI.scale);
+	DisplayUI(&m_UI);
+	ImGui::PopItemWidth();
+
+	ImGui::End();
+	ImGui::PopStyleVar();
+	ImGui::Render();
+
+	if (m_UI.Update() || m_UI.updated)
+	{
+		BuildCommandBuffers();
+		m_UI.updated = false;
+	}
+
+
+}
 void Renderer::MainLoop()
 {
 
 	while (!glfwWindowShouldClose(m_window))
 	{
 		auto tStart = std::chrono::high_resolution_clock::now();
+		
 		DrawFrame();
+		vkDeviceWaitIdle(m_device);
+		
 		m_frameCounter++;
 		auto tEnd = std::chrono::high_resolution_clock::now();
 		auto tDiff = std::chrono::duration<double, std::milli>(tEnd - tStart).count();
@@ -1247,8 +1330,9 @@ void Renderer::MainLoop()
 		m_camera.update(m_frameTimer);
 		//std::cout << m_camera.moving();
 		currentBuffer = (currentBuffer + 1) % m_swapChain.images.size();
+		
+		UpdateOverlay();
 		glfwPollEvents();
-		vkDeviceWaitIdle(m_device);
 	}
 }
 void Renderer::PrepareFrame()
@@ -1357,8 +1441,7 @@ void Renderer::Cleanup()
 	m_glTFModel.Destroy();
 	m_swapChain.Cleanup();
 
-
-
+	m_UI.FreeResources();
 	delete m_vulkanDevice;
 
 	if (m_neededFeatures.validation)

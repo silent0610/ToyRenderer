@@ -13,6 +13,7 @@ import GLTFModelMod;
 import DeviceMod;
 import SwapChainMod;
 import ConfigMod;
+import UIMod;
 //vulkanExample = new VulkanExample();															\
 //vulkanExample->initVulkan();																	\
 //vulkanExample->setupWindow(hInstance, WndProc);													\
@@ -119,7 +120,8 @@ public:
 	~Renderer() = default;
 
 private:
-
+	std::string m_title = "Vulkan Example";
+	bool click{false};
 	struct
 	{
 		struct
@@ -131,6 +133,7 @@ private:
 		glm::vec2 Position;
 	} m_mouseState;
 
+	UIOverlay m_UI;
 	DescriptorSetLayouts m_descriptorSetLayouts;
 	VkPhysicalDeviceFeatures m_enabledFeatures{};
 	/** @brief Set of device extensions to be enabled for this example (must be set in the derived constructor) */
@@ -180,8 +183,8 @@ private:
 	SwapChainSupportDetails m_swapChainSupport;
 
 	bool m_framebufferResized = false;
-	uint32_t m_width = 800;
-	uint32_t m_height = 600;
+	uint32_t m_width = 1600;
+	uint32_t m_height = 1200;
 	int m_inFlight = 2;
 	//bool m_enableValidation{ false };
 	Limits m_limits{};
@@ -272,6 +275,11 @@ private:
 	void LoadglTFFile(std::string filename);
 	void EncapsulationDevice();
 	void LoadAssets();
+
+	void DrawUI(const VkCommandBuffer commandBuffer);
+	void InitUI();
+	void DisplayUI(UIOverlay* overlay);
+	void UpdateOverlay();
 	//std::string GetAssetsPath();
 	static void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 	static void MouseCallback(GLFWwindow* window, double xpos, double ypos);
