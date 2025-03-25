@@ -21,8 +21,8 @@ import ConfigMod;
 
 struct DescriptorSetLayouts
 {
-	VkDescriptorSetLayout Matrices{nullptr};
-	VkDescriptorSetLayout Textures{nullptr};
+	VkDescriptorSetLayout Matrices{ nullptr };
+	VkDescriptorSetLayout Textures{ nullptr };
 };
 
 struct UBOMatrices
@@ -68,8 +68,8 @@ struct SwapChainSupportDetails
 
 struct FrameBufferAttachment
 {
-	VkImage image{nullptr};
-	VkImageView view{nullptr};
+	VkImage image{ nullptr };
+	VkImageView view{ nullptr };
 
 	~FrameBufferAttachment()
 	{
@@ -120,6 +120,17 @@ public:
 
 private:
 
+	struct
+	{
+		struct
+		{
+			bool Left = false;
+			bool Right = false;
+			bool Middle = false;
+		} Buttons;
+		glm::vec2 Position;
+	} m_mouseState;
+
 	DescriptorSetLayouts m_descriptorSetLayouts;
 	VkPhysicalDeviceFeatures m_enabledFeatures{};
 	/** @brief Set of device extensions to be enabled for this example (must be set in the derived constructor) */
@@ -133,7 +144,7 @@ private:
 	GLTFModel m_glTFModel;
 	uint32_t m_frameCounter = 0;
 	uint32_t m_lastFPS = 0;
-
+	float m_frameTimer{};
 	Camera m_camera;
 	uint32_t currentBuffer = 0;
 	VkPipelineStageFlags m_submitPipelineStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -233,13 +244,7 @@ private:
 	void DrawFrame();
 	void CreateSyncObjects();
 
-	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
-
 	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
-	
-
-
-	
 
 	VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels);
 
@@ -268,5 +273,10 @@ private:
 	void EncapsulationDevice();
 	void LoadAssets();
 	std::string GetAssetsPath();
+	static void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+	static void MouseCallback(GLFWwindow* window, double xpos, double ypos);
+	static void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
+	static void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
+	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
 };
 

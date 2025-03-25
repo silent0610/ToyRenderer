@@ -5,6 +5,7 @@ module;
 #include "glm/mat4x4.hpp"
 #include "stb/stb_image.h"
 #include "tiny_gltf.h"
+
 module RendererMod;
 import InitMod;
 import ToolMod;
@@ -43,6 +44,7 @@ void Renderer::FramebufferResizeCallback(GLFWwindow* window, int width, int heig
 	// 得到从window传递的this指针
 	auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
 	app->m_framebufferResized = true;
+	//std::cout << app->m_framebufferResized;
 }
 /// @brief 初始化窗口
 void Renderer::InitWindow()
@@ -50,12 +52,19 @@ void Renderer::InitWindow()
 	glfwInit();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	// 设置 GLFW 创建的窗口是否可以调整大小。
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 	// 使用glfw创建窗口
 	m_window = glfwCreateWindow(m_width, m_height, "Renderer", nullptr, nullptr);
+
+
 	// 传递对象this指针给回调函数。这样我们就可以在回调函数中访问类的成员变量, 也就是传递窗口变化信息
 	glfwSetWindowUserPointer(m_window, this);
-	glfwSetFramebufferSizeCallback(m_window, FramebufferResizeCallback);
+
+	glfwSetKeyCallback(m_window, KeyCallback);          // 键盘事件
+	glfwSetCursorPosCallback(m_window, MouseCallback);  // 鼠标移动
+	glfwSetScrollCallback(m_window, ScrollCallback);    // 鼠标滚轮
+	glfwSetMouseButtonCallback(m_window, MouseButtonCallback); // 鼠标按键
+	glfwSetFramebufferSizeCallback(m_window, FramebufferResizeCallback); //窗口大小改变、最小化
 }
 
 void Renderer::PreCreateSubmitInfo()
@@ -69,10 +78,11 @@ void Renderer::PreCreateSubmitInfo()
 	m_submitInfo.pSignalSemaphores = &m_semaphores.renderComplete;
 }
 
-void Renderer::EncapsulationDevice() {
+void Renderer::EncapsulationDevice()
+{
 	VkResult result;
 	m_vulkanDevice = new VulkanDevice(m_physicalDevice);
-	
+
 	result = m_vulkanDevice->CreateLogicalDevice(m_enabledFeatures, m_enabledDeviceExtensions, m_deviceCreatepNextChain);
 	if (result != VK_SUCCESS)
 	{
@@ -111,7 +121,7 @@ void Renderer::InitVulkan()
 	CreateRenderPass();
 	CreateFramebuffers();
 
-	
+
 	CreateUniformBuffer();
 	CreateDescriptors();
 	CreateGraphicsPipeline();
@@ -120,164 +130,6 @@ void Renderer::InitVulkan()
 
 
 }
-
-// Prepare vertex and index buffers for an indexed triangle
-	// Also uploads them to device local memory using staging and initializes vertex input and attribute binding to match the vertex shader
-//void Renderer::CreateVertexBuffer()
-//{
-//	// A note on memory management in Vulkan in general:
-//	//	This is a very complex topic and while it's fine for an example application to small individual memory allocations that is not
-//	//	what should be done a real-world application, where you should allocate large chunks of memory at once instead.
-//
-//	// Setup vertices
-//	std::vector<Vertex> vertexBuffer{
-//		{ {  1.0f,  -1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f } },
-//		{ { 0.0f,  1.0f, 0.0f }, { 0.0f, 1.0f, 0.0f } },
-//		{ {  -1.0f, -1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f } }
-//	};
-//	uint32_t vertexBufferSize = static_cast<uint32_t>(vertexBuffer.size()) * sizeof(Vertex);
-//
-//	// Setup indices
-//	std::vector<uint32_t> indexBuffer{ 0, 1, 2 };
-//	indices.count = static_cast<uint32_t>(indexBuffer.size());
-//	uint32_t indexBufferSize = indices.count * sizeof(uint32_t);
-//
-//	VkMemoryAllocateInfo memAlloc{};
-//	memAlloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-//	VkMemoryRequirements memReqs;
-//
-//	// Static data like vertex and index buffer should be stored on the device memory for optimal (and fastest) access by the GPU
-//	//
-//	// To achieve this we use so-called "staging buffers" :
-//	// - Create a buffer that's visible to the host (and can be mapped)
-//	// - Copy the data to this buffer
-//	// - Create another buffer that's local on the device (VRAM) with the same size
-//	// - Copy the data from the host to the device using a command buffer
-//	// - Delete the host visible (staging) buffer
-//	// - Use the device local buffers for rendering
-//	//
-//	// Note: On unified memory architectures where host (CPU) and GPU share the same memory, staging is not necessary
-//	// To keep this sample easy to follow, there is no check for that in place
-//
-//	struct StagingBuffer
-//	{
-//		VkDeviceMemory memory;
-//		VkBuffer buffer;
-//	};
-//
-//	struct
-//	{
-//		StagingBuffer vertices;
-//		StagingBuffer indices;
-//	} stagingBuffers{};
-//
-//	void* data;
-//
-//	// Vertex buffer
-//	VkBufferCreateInfo vertexBufferInfoCI{};
-//	vertexBufferInfoCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-//	vertexBufferInfoCI.size = vertexBufferSize;
-//	// Buffer is used as the copy source
-//	vertexBufferInfoCI.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-//	// Create a host-visible buffer to copy the vertex data to (staging buffer)
-//	VK_CHECK_RESULT(vkCreateBuffer(m_device, &vertexBufferInfoCI, nullptr, &stagingBuffers.vertices.buffer));
-//	vkGetBufferMemoryRequirements(m_device, stagingBuffers.vertices.buffer, &memReqs);
-//	memAlloc.allocationSize = memReqs.size;
-//	// Request a host visible memory type that can be used to copy our data to
-//	// Also request it to be coherent, so that writes are visible to the GPU right after unmapping the buffer
-//	memAlloc.memoryTypeIndex = FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-//	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &stagingBuffers.vertices.memory));
-//	// Map and copy
-//	VK_CHECK_RESULT(vkMapMemory(m_device, stagingBuffers.vertices.memory, 0, memAlloc.allocationSize, 0, &data));
-//	memcpy(data, vertexBuffer.data(), vertexBufferSize);
-//	vkUnmapMemory(m_device, stagingBuffers.vertices.memory);
-//	VK_CHECK_RESULT(vkBindBufferMemory(m_device, stagingBuffers.vertices.buffer, stagingBuffers.vertices.memory, 0));
-//
-//	// Create a m_device local buffer to which the (host local) vertex data will be copied and which will be used for rendering
-//	vertexBufferInfoCI.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-//	VK_CHECK_RESULT(vkCreateBuffer(m_device, &vertexBufferInfoCI, nullptr, &vertices.buffer));
-//	vkGetBufferMemoryRequirements(m_device, vertices.buffer, &memReqs);
-//	memAlloc.allocationSize = memReqs.size;
-//	memAlloc.memoryTypeIndex = FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-//	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &vertices.memory));
-//	VK_CHECK_RESULT(vkBindBufferMemory(m_device, vertices.buffer, vertices.memory, 0));
-//
-//	// Index buffer
-//	VkBufferCreateInfo indexbufferCI{};
-//	indexbufferCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-//	indexbufferCI.size = indexBufferSize;
-//	indexbufferCI.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-//	// Copy index data to a buffer visible to the host (staging buffer)
-//	VK_CHECK_RESULT(vkCreateBuffer(m_device, &indexbufferCI, nullptr, &stagingBuffers.indices.buffer));
-//	vkGetBufferMemoryRequirements(m_device, stagingBuffers.indices.buffer, &memReqs);
-//	memAlloc.allocationSize = memReqs.size;
-//	memAlloc.memoryTypeIndex = FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-//	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &stagingBuffers.indices.memory));
-//	VK_CHECK_RESULT(vkMapMemory(m_device, stagingBuffers.indices.memory, 0, indexBufferSize, 0, &data));
-//	memcpy(data, indexBuffer.data(), indexBufferSize);
-//	vkUnmapMemory(m_device, stagingBuffers.indices.memory);
-//	VK_CHECK_RESULT(vkBindBufferMemory(m_device, stagingBuffers.indices.buffer, stagingBuffers.indices.memory, 0));
-//
-//	// Create destination buffer with m_device only visibility
-//	indexbufferCI.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-//	VK_CHECK_RESULT(vkCreateBuffer(m_device, &indexbufferCI, nullptr, &indices.buffer));
-//	vkGetBufferMemoryRequirements(m_device, indices.buffer, &memReqs);
-//	memAlloc.allocationSize = memReqs.size;
-//	memAlloc.memoryTypeIndex = FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-//	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &indices.memory));
-//	VK_CHECK_RESULT(vkBindBufferMemory(m_device, indices.buffer, indices.memory, 0));
-//
-//	// Buffer copies have to be submitted to a queue, so we need a command buffer for them
-//	// Note: Some devices offer a dedicated transfer queue (with only the transfer bit set) that may be faster when doing lots of copies
-//	VkCommandBuffer copyCmd;
-//
-//	VkCommandBufferAllocateInfo cmdBufAllocateInfo{};
-//	cmdBufAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-//	cmdBufAllocateInfo.commandPool = m_commandPool;
-//	cmdBufAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-//	cmdBufAllocateInfo.commandBufferCount = 1;
-//	VK_CHECK_RESULT(vkAllocateCommandBuffers(m_device, &cmdBufAllocateInfo, &copyCmd));
-//
-//	VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
-//	VK_CHECK_RESULT(vkBeginCommandBuffer(copyCmd, &cmdBufInfo));
-//	// Put buffer region copies into command buffer
-//	VkBufferCopy copyRegion{};
-//	// Vertex buffer
-//	copyRegion.size = vertexBufferSize;
-//	vkCmdCopyBuffer(copyCmd, stagingBuffers.vertices.buffer, vertices.buffer, 1, &copyRegion);
-//	// Index buffer
-//	copyRegion.size = indexBufferSize;
-//	vkCmdCopyBuffer(copyCmd, stagingBuffers.indices.buffer, indices.buffer, 1, &copyRegion);
-//	VK_CHECK_RESULT(vkEndCommandBuffer(copyCmd));
-//
-//	// Submit the command buffer to the queue to finish the copy
-//	VkSubmitInfo submitInfo{};
-//	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-//	submitInfo.commandBufferCount = 1;
-//	submitInfo.pCommandBuffers = &copyCmd;
-//
-//	// Create fence to ensure that the command buffer has finished executing
-//	VkFenceCreateInfo fenceCI{};
-//	fenceCI.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-//	fenceCI.flags = 0;
-//	VkFence fence;
-//	VK_CHECK_RESULT(vkCreateFence(m_device, &fenceCI, nullptr, &fence));
-//
-//	// Submit to the queue
-//	VK_CHECK_RESULT(vkQueueSubmit(m_queues.graphicsQueue, 1, &submitInfo, fence));
-//	// Wait for the fence to signal that command buffer has finished executing
-//	VK_CHECK_RESULT(vkWaitForFences(m_device, 1, &fence, VK_TRUE, 10000000));
-//
-//	vkDestroyFence(m_device, fence, nullptr);
-//	vkFreeCommandBuffers(m_device, m_commandPool, 1, &copyCmd);
-//
-//	// Destroy staging buffers
-//	// Note: Staging buffer must not be deleted before the copies have been submitted and executed
-//	vkDestroyBuffer(m_device, stagingBuffers.vertices.buffer, nullptr);
-//	vkFreeMemory(m_device, stagingBuffers.vertices.memory, nullptr);
-//	vkDestroyBuffer(m_device, stagingBuffers.indices.buffer, nullptr);
-//	vkFreeMemory(m_device, stagingBuffers.indices.memory, nullptr);
-//}
 
 void::Renderer::CreateCommandBuffers()
 {
@@ -323,8 +175,6 @@ void Renderer::BuildCommandBuffers()
 		glm::mat4x4 model{ 1.0f };
 		vkCmdPushConstants(m_drawCmdBuffers[i], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4x4), &model);
 		VkDeviceSize offsets[1] = { 0 };
-	/*	vkCmdBindVertexBuffers(m_drawCmdBuffers[i], 0, 1, &vertices.buffer, offsets);
-		vkCmdBindIndexBuffer(m_drawCmdBuffers[i], indices.buffer, 0, VK_INDEX_TYPE_UINT32);*/
 
 		m_glTFModel.Draw(m_drawCmdBuffers[i], m_pipelineLayout);
 		//drawUI(drawCmdBuffers[i]);
@@ -352,7 +202,8 @@ std::string Renderer::GetShadersPath()
 	auto projectPath = path.parent_path().parent_path().parent_path().parent_path();
 	return projectPath.string() + "/Renderer/Shader/";
 }
-std::string Renderer::GetAssetsPath() {
+std::string Renderer::GetAssetsPath()
+{
 
 	auto path = std::filesystem::current_path();
 	auto projectPath = path.parent_path().parent_path().parent_path().parent_path();
@@ -1286,18 +1137,132 @@ void Renderer::DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMe
 		func(instance, debugMessenger, pAllocator);
 	}
 }
+void Renderer::KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+	auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
+	if (action == GLFW_PRESS)  // 按键按下
+	{
+		switch (key)
+		{
+			//case GLFW_KEY_P:
+			//	app->m_camera.paused = !paused;
+			//	break;
+			//case GLFW_KEY_F1:
+			//	uiVisible = !uiVisible;
+			//	break;
+		case GLFW_KEY_F2:
+			app->m_camera.type = (app->m_camera.type == Camera::CameraType::lookat) ? Camera::CameraType::firstperson : Camera::CameraType::lookat;
+			break;
+		case GLFW_KEY_ESCAPE:
+			glfwSetWindowShouldClose(window, true);
+			break;
+		}
 
+		if (app->m_camera.type == Camera::firstperson)
+		{
+			switch (key)
+			{
+			case GLFW_KEY_W: app->m_camera.keys.up = true; break;
+			case GLFW_KEY_S: app->m_camera.keys.down = true; break;
+			case GLFW_KEY_A: app->m_camera.keys.left = true; break;
+			case GLFW_KEY_D: app->m_camera.keys.right = true; break;
+			}
+		}
+	}
+	else if (action == GLFW_RELEASE)  // 按键释放
+	{
+		if (app->m_camera.type == Camera::CameraType::firstperson)
+		{
+			switch (key)
+			{
+			case GLFW_KEY_W:  app->m_camera.keys.up = false; break;
+			case GLFW_KEY_S:  app->m_camera.keys.down = false; break;
+			case GLFW_KEY_A:  app->m_camera.keys.left = false; break;
+			case GLFW_KEY_D:  app->m_camera.keys.right = false; break;
+			}
+		}
+	}
+}
+void Renderer::MouseCallback(GLFWwindow* window, double xpos, double ypos)
+{
+
+
+	auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
+	auto& mouseState = app->m_mouseState;
+	auto& camera = app->m_camera;
+	int32_t dx = (int32_t)mouseState.Position.x - (int32_t)xpos;
+	int32_t dy = (int32_t)mouseState.Position.y - (int32_t)ypos;
+
+	bool handled = false;
+
+	if (mouseState.Buttons.Left)
+	{
+		camera.rotate(glm::vec3(dy * camera.rotationSpeed, -dx * camera.rotationSpeed, 0.0f));
+		//viewUpdated = true;
+	}
+	if (mouseState.Buttons.Right)
+	{
+		camera.translate(glm::vec3(-0.0f, 0.0f, dy * .005f));
+		//viewUpdated = true;
+	}
+	if (mouseState.Buttons.Middle)
+	{
+		camera.translate(glm::vec3(-dx * 0.005f, -dy * 0.005f, 0.0f));
+		//viewUpdated = true;
+	}
+	mouseState.Position = glm::vec2((float)xpos, (float)ypos);
+}
+void Renderer::MouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
+{
+	auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
+
+	auto& mouseState = app->m_mouseState;
+	if (button == GLFW_MOUSE_BUTTON_LEFT)
+	{
+		if (action == GLFW_PRESS)
+			mouseState.Buttons.Left = true;
+		else if (action == GLFW_RELEASE)
+			mouseState.Buttons.Left = false;
+	}
+	else if (button == GLFW_MOUSE_BUTTON_RIGHT)
+	{
+		if (action == GLFW_PRESS)
+			mouseState.Buttons.Right = true;
+		else if (action == GLFW_RELEASE)
+			mouseState.Buttons.Right = false;
+	}
+	else if (button == GLFW_MOUSE_BUTTON_MIDDLE)
+	{
+		if (action == GLFW_PRESS)
+			mouseState.Buttons.Middle = true;
+		else if (action == GLFW_RELEASE)
+			mouseState.Buttons.Middle = false;
+	}
+}
+void Renderer::ScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
+{
+	auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
+	app->m_camera.translate(glm::vec3(0.0f, 0.0f, (float)yoffset * 0.005f));
+	/*app->viewUpdated = true;*/
+}
 void Renderer::MainLoop()
 {
+
 	while (!glfwWindowShouldClose(m_window))
 	{
-		glfwPollEvents();
+		auto tStart = std::chrono::high_resolution_clock::now();
 		DrawFrame();
+		m_frameCounter++;
+		auto tEnd = std::chrono::high_resolution_clock::now();
+		auto tDiff = std::chrono::duration<double, std::milli>(tEnd - tStart).count();
+		m_frameTimer = (float)tDiff / 1000.0f;
+		m_camera.update(m_frameTimer);
+		//std::cout << m_camera.moving();
 		currentBuffer = (currentBuffer + 1) % m_swapChain.images.size();
+		glfwPollEvents();
+		vkDeviceWaitIdle(m_device);
 	}
-	vkDeviceWaitIdle(m_device);
 }
-
 void Renderer::PrepareFrame()
 {
 
@@ -1307,7 +1272,7 @@ void Renderer::PrepareFrame()
 	{
 		if (result == VK_ERROR_OUT_OF_DATE_KHR)
 		{
-			//windowResize();
+			// TODO windowResize(); 
 			throw std::runtime_error("window Resized");
 		}
 		return;
@@ -1372,11 +1337,7 @@ void Renderer::Cleanup()
 	// cmd buffer
 	vkDestroyCommandPool(m_device, m_commandPool, nullptr);
 
-	// indices vertices
-	//vkDestroyBuffer(m_device, vertices.buffer, nullptr);
-	//vkFreeMemory(m_device, vertices.memory, nullptr);
-	//vkDestroyBuffer(m_device, indices.buffer, nullptr);
-	//vkFreeMemory(m_device, indices.memory, nullptr);
+
 
 	// depth 
 	vkDestroyImageView(m_device, m_depthStencil.view, nullptr);
