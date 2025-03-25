@@ -120,6 +120,12 @@ public:
 	~Renderer() = default;
 
 private:
+	float m_timer;
+	float m_timerSpeed;
+	uint32_t m_frameCounter = 0;
+	uint32_t m_lastFPS = 0;
+	float m_frameTimer{};
+	std::chrono::time_point<std::chrono::high_resolution_clock> m_lastTimestamp, m_tPrevEnd;
 	std::string m_title = "Vulkan Example";
 	bool click{false};
 	struct
@@ -145,9 +151,8 @@ private:
 
 	VulkanDevice* m_vulkanDevice;
 	GLTFModel m_glTFModel;
-	uint32_t m_frameCounter = 0;
-	uint32_t m_lastFPS = 0;
-	float m_frameTimer{};
+
+
 	Camera m_camera;
 	uint32_t currentBuffer = 0;
 	VkPipelineStageFlags m_submitPipelineStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -280,6 +285,8 @@ private:
 	void InitUI();
 	void DisplayUI(UIOverlay* overlay);
 	void UpdateOverlay();
+	std::string GetWindowTitle()const;
+
 	//std::string GetAssetsPath();
 	static void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 	static void MouseCallback(GLFWwindow* window, double xpos, double ypos);

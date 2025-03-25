@@ -1294,7 +1294,7 @@ void Renderer::UpdateOverlay() {
 	ImGui::Begin("MyToyRenderer", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
 	ImGui::TextUnformatted(m_title.c_str());
 	ImGui::TextUnformatted(m_vulkanDevice->properties.deviceName);
-	//ImGui::Text("%.2f ms/frame (%.1d fps)", (1000.0f / lastFPS), lastFPS);
+	ImGui::Text("%.2f ms/frame (%.1d fps)", (1000.0f / m_lastFPS), m_lastFPS);
 
 
 	ImGui::PushItemWidth(110.0f * m_UI.scale);
@@ -1313,6 +1313,15 @@ void Renderer::UpdateOverlay() {
 
 
 }
+std::string Renderer::GetWindowTitle() const
+{
+	std::string windowTitle{ m_title + " - " + m_vulkanDevice->properties.deviceName };
+
+
+	windowTitle += " - " + std::to_string(m_frameCounter) + " fps";
+	
+	return windowTitle;
+}
 void Renderer::MainLoop()
 {
 
@@ -1321,16 +1330,33 @@ void Renderer::MainLoop()
 		auto tStart = std::chrono::high_resolution_clock::now();
 		
 		DrawFrame();
+		currentBuffer = (currentBuffer + 1) % m_swapChain.images.size();
 		vkDeviceWaitIdle(m_device);
-		
+	
 		m_frameCounter++;
 		auto tEnd = std::chrono::high_resolution_clock::now();
 		auto tDiff = std::chrono::duration<double, std::milli>(tEnd - tStart).count();
 		m_frameTimer = (float)tDiff / 1000.0f;
 		m_camera.update(m_frameTimer);
 		//std::cout << m_camera.moving();
-		currentBuffer = (currentBuffer + 1) % m_swapChain.images.size();
-		
+		m_timer += m_timerSpeed * m_frameTimer;
+		if (m_timer > 1.0)
+		{
+			m_timer -= 1.0f;
+		}
+		float fpsTimer = (float)(std::chrono::duration<double, std::milli>(tEnd - m_lastTimestamp).count());
+		if (fpsTimer > 1000.0f)
+		{
+			m_lastFPS = static_cast<uint32_t>((float)m_frameCounter * (1000.0f / fpsTimer));
+
+			std::string windowTitle = GetWindowTitle();
+			glfwSetWindowTitle(m_window, windowTitle.c_str());
+
+
+			m_frameCounter = 0;
+			m_lastTimestamp = tEnd;
+		}
+		m_tPrevEnd = tEnd;
 		UpdateOverlay();
 		glfwPollEvents();
 	}
