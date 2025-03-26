@@ -9,7 +9,7 @@ export module RendererMod;
 import std;
 import BufferMod;
 import CameraMod;
-import GLTFModelMod;
+import VkglTFModel;
 import DeviceMod;
 import SwapChainMod;
 import ConfigMod;
@@ -154,7 +154,7 @@ private:
 
 
 	VulkanDevice* m_vulkanDevice;
-	GLTFModel m_glTFModel;
+	vkglTF::Model m_glTFModel;
 
 
 	Camera m_camera;
@@ -298,5 +298,6 @@ private:
 	static void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
 	void ResizeWindow();
+	void LoadAssetsglTF();
 };
 

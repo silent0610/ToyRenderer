@@ -1,5 +1,6 @@
 # How To Build VS sln  
 `xmake project -k vsxmake build/`
+> ***only support Windows***
 
 # Used Library  
 - Vulkan
@@ -8,4 +9,5 @@
 - ImGui
 - Spdlog
 - TinyGLTF
-- stb_image
+- stb_image  
+- dear json

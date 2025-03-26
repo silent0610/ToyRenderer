@@ -1592,7 +1592,14 @@ void Renderer::LoadAssets()
 {
 	LoadglTFFile(Tool::GetAssetsPath() + "Models/FlightHelmet/glTF/FlightHelmet.gltf");
 }
-
+void Renderer::LoadAssetsglTF()
+{
+	const uint32_t glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors | vkglTF::FileLoadingFlags::FlipY;
+	//scenes.resize(2);
+	//scenes[0].loadFromFile(Tool::GetAssetsPath() + "models/vulkanscene_shadow.gltf", vulkanDevice, queue, glTFLoadingFlags);
+	//scenes[1].loadFromFile(Tool::GetAssetsPath() + "models/samplescene.gltf", vulkanDevice, queue, glTFLoadingFlags);
+	//sceneNames = { "Vulkan scene", "Teapots and pillars" };
+}
 void Renderer::LoadglTFFile(std::string fileName)
 {
 	tinygltf::Model glTFInput;
