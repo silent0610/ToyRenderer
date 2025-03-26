@@ -130,7 +130,7 @@ void Renderer::InitVulkan()
 
 
 }
-void Renderer::InitUI() 
+void Renderer::InitUI()
 {
 	m_UI.device = m_vulkanDevice;
 	m_UI.queue = m_queues.graphicsQueue;
@@ -155,7 +155,7 @@ void Renderer::BuildCommandBuffers()
 	VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
 
 	VkClearValue clearValues[2];
-	clearValues[0].color = { { 0.5f, 0.025f, 0.025f, 1.0f } };
+	clearValues[0].color = { { 0.25f, 0.25f, 0.25f, 1.0f } };;
 	clearValues[1].depthStencil = { 1.0f, 0 };
 
 	VkRenderPassBeginInfo renderPassBeginInfo = Init::renderPassBeginInfo();
@@ -267,9 +267,9 @@ void Renderer::CreateGraphicsPipeline()
 
 	VkGraphicsPipelineCreateInfo pipelineCI = Init::pipelineCreateInfo(m_pipelineLayout, m_renderPass);
 	std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
-	// TODO
-	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Triangle.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Triangle.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+
+	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "glTFloading/Mesh.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "glTFloading/Mesh.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	pipelineCI.pVertexInputState = &vertexInputState;
 	pipelineCI.pInputAssemblyState = &inputAssemblyState;
@@ -1267,7 +1267,8 @@ void Renderer::DisplayUI(UIOverlay* overlay)
 		}
 	}
 }
-void Renderer::UpdateOverlay() {
+void Renderer::UpdateOverlay()
+{
 	m_UI.updateTimer -= m_frameTimer;
 	if (m_UI.updateTimer >= 0.0f)
 	{
@@ -1319,7 +1320,7 @@ std::string Renderer::GetWindowTitle() const
 
 
 	windowTitle += " - " + std::to_string(m_frameCounter) + " fps";
-	
+
 	return windowTitle;
 }
 void Renderer::MainLoop()
@@ -1328,11 +1329,11 @@ void Renderer::MainLoop()
 	while (!glfwWindowShouldClose(m_window))
 	{
 		auto tStart = std::chrono::high_resolution_clock::now();
-		
+
 		DrawFrame();
 		currentBuffer = (currentBuffer + 1) % m_swapChain.images.size();
 		vkDeviceWaitIdle(m_device);
-	
+
 		m_frameCounter++;
 		auto tEnd = std::chrono::high_resolution_clock::now();
 		auto tDiff = std::chrono::duration<double, std::milli>(tEnd - tStart).count();
@@ -1385,7 +1386,8 @@ void Renderer::UpdateUniformBuffers()
 	m_uboMatrices.proj = m_camera.matrices.perspective;
 	m_uboMatrices.view = m_camera.matrices.view;
 	//camera.matrices.view;
-	//m_uboMatrices.camPos = m_camera.position * -1.0f;
+	m_uboMatrices.lightPos = glm::vec3(5.0f, 5.0f, -5.0f);
+	m_uboMatrices.camPos = m_camera.position * -1.0f;
 
 	memcpy(m_uboBuffer.mapped, &m_uboMatrices, sizeof(m_uboMatrices));
 }

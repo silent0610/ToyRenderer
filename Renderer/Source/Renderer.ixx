@@ -30,7 +30,7 @@ struct UBOMatrices
 {
 	glm::mat4 view;
 	glm::mat4 proj;
-
+	glm::vec3 lightPos;
 	glm::vec3 camPos;
 };
 
@@ -127,7 +127,7 @@ private:
 	float m_frameTimer{};
 	std::chrono::time_point<std::chrono::high_resolution_clock> m_lastTimestamp, m_tPrevEnd;
 	std::string m_title = "Vulkan Example";
-	bool click{false};
+	bool click{ false };
 	struct
 	{
 		struct
