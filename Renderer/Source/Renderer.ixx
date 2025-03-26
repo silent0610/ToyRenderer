@@ -120,6 +120,7 @@ public:
 	~Renderer() = default;
 
 private:
+	std::vector<VkFence> m_waitFences;
 	float m_timer;
 	float m_timerSpeed;
 	uint32_t m_frameCounter = 0;
@@ -293,5 +294,6 @@ private:
 	static void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 	static void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
+	void ResizeWindow();
 };
 

@@ -52,14 +52,13 @@ void Renderer::InitWindow()
 	glfwInit();
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	// 设置 GLFW 创建的窗口是否可以调整大小。
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 	// 使用glfw创建窗口
 	m_window = glfwCreateWindow(m_width, m_height, "Renderer", nullptr, nullptr);
 
 
 	// 传递对象this指针给回调函数。这样我们就可以在回调函数中访问类的成员变量, 也就是传递窗口变化信息
 	glfwSetWindowUserPointer(m_window, this);
-
 	glfwSetKeyCallback(m_window, KeyCallback);          // 键盘事件
 	glfwSetCursorPosCallback(m_window, MouseCallback);  // 鼠标移动
 	glfwSetScrollCallback(m_window, ScrollCallback);    // 鼠标滚轮
@@ -1331,7 +1330,7 @@ void Renderer::MainLoop()
 		auto tStart = std::chrono::high_resolution_clock::now();
 
 		DrawFrame();
-		currentBuffer = (currentBuffer + 1) % m_swapChain.images.size();
+
 		vkDeviceWaitIdle(m_device);
 
 		m_frameCounter++;
@@ -1353,13 +1352,63 @@ void Renderer::MainLoop()
 			std::string windowTitle = GetWindowTitle();
 			glfwSetWindowTitle(m_window, windowTitle.c_str());
 
-
 			m_frameCounter = 0;
 			m_lastTimestamp = tEnd;
 		}
 		m_tPrevEnd = tEnd;
 		UpdateOverlay();
 		glfwPollEvents();
+	}
+}
+
+void Renderer::ResizeWindow()
+{
+	int width = 0, height = 0;
+	glfwGetFramebufferSize(m_window, &width, &height);
+	while (width == 0 || height == 0)
+	{
+		// 等待窗口事件，如窗口大小改变或其他事件
+		glfwWaitEvents();
+		glfwGetFramebufferSize(m_window, &width, &height);
+	}
+	vkDeviceWaitIdle(m_device);
+	m_width = static_cast<uint32_t>(width);
+	m_height = static_cast<uint32_t>(height);
+	m_swapChain.Create(m_width, m_height, false, false);
+
+	// Recreate the frame buffers
+	vkDestroyImageView(m_device, m_depthStencil.view, nullptr);
+	vkDestroyImage(m_device, m_depthStencil.image, nullptr);
+	vkFreeMemory(m_device, m_depthStencil.memory, nullptr);
+	CreateDepthResources();
+	for (auto& frameBuffer : m_frameBuffers)
+	{
+		vkDestroyFramebuffer(m_device, frameBuffer, nullptr);
+	}
+	CreateFramebuffers();
+	if ((m_width > 0.0f) && (m_height > 0.0f))
+	{
+		m_UI.Resize(m_width, m_height);
+	}
+
+	// Command buffers need to be recreated as they may store
+	// references to the recreated frame buffer
+	vkFreeCommandBuffers(m_device, m_commandPool, static_cast<uint32_t>(m_drawCmdBuffers.size()), m_drawCmdBuffers.data());
+	CreateCommandBuffers();
+	BuildCommandBuffers();
+
+	// SRS - Recreate fences in case number of swapchain images has changed on resize
+	//for (auto& fence : m_waitFences)
+	//{
+	//	vkDestroyFence(m_device, fence, nullptr);
+	//}
+	//CreateSyncObjects();
+
+	vkDeviceWaitIdle(m_device);
+
+	if ((m_width > 0.0f) && (m_height > 0.0f))
+	{
+		m_camera.updateAspectRatio((float)m_width / (float)m_height);
 	}
 }
 void Renderer::PrepareFrame()
@@ -1371,8 +1420,7 @@ void Renderer::PrepareFrame()
 	{
 		if (result == VK_ERROR_OUT_OF_DATE_KHR)
 		{
-			// TODO windowResize(); 
-			throw std::runtime_error("window Resized");
+			ResizeWindow();
 		}
 		return;
 	}
@@ -1419,7 +1467,7 @@ void Renderer::DrawFrame()
 	// Recreate the swapchain if it's no longer compatible with the surface (OUT_OF_DATE) or no longer optimal for presentation (SUBOPTIMAL)
 	if ((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR))
 	{
-		//windowResize();
+		ResizeWindow();
 		if (result == VK_ERROR_OUT_OF_DATE_KHR)
 		{
 			return;
@@ -1430,6 +1478,7 @@ void Renderer::DrawFrame()
 		VK_CHECK_RESULT(result);
 	}
 	VK_CHECK_RESULT(vkQueueWaitIdle(m_queues.graphicsQueue));
+	//currentBuffer = (currentBuffer + 1) % m_swapChain.images.size();
 }
 
 void Renderer::Cleanup()
