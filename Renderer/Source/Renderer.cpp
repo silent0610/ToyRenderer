@@ -1331,7 +1331,7 @@ void Renderer::MainLoop()
 
 		DrawFrame();
 
-		vkDeviceWaitIdle(m_device);
+		//vkDeviceWaitIdle(m_device);
 
 		m_frameCounter++;
 		auto tEnd = std::chrono::high_resolution_clock::now();
@@ -1439,6 +1439,12 @@ void Renderer::UpdateUniformBuffers()
 
 	memcpy(m_uboBuffer.mapped, &m_uboMatrices, sizeof(m_uboMatrices));
 }
+
+// 信号量一组
+// 无fence
+// commande buffer 和 swapchain size皆为3
+// 这里的绘制逻辑是逐帧渲染，，所以下一帧提交前所以不会有资源冲突问题，
+// 因为这里不需要重新buildcommandbufer（没有东西改变），所以inflight 没有用（不需要进行tutorial中的同时多帧处理）
 void Renderer::DrawFrame()
 {
 	UpdateUniformBuffers();
@@ -1447,7 +1453,6 @@ void Renderer::DrawFrame()
 	m_submitInfo.commandBufferCount = 1;
 	m_submitInfo.pCommandBuffers = &m_drawCmdBuffers[currentBuffer]; //TODO
 	VK_CHECK_RESULT(vkQueueSubmit(m_queues.graphicsQueue, 1, &m_submitInfo, VK_NULL_HANDLE));
-
 
 	VkPresentInfoKHR presentInfo = {};
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
