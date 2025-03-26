@@ -26,6 +26,7 @@ namespace Tool
 		VkImageLayout newImageLayout,
 		VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
 		VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+	export std::string GetProjectPath();
 	export std::string GetShadersPath();
 	export std::string GetAssetsPath();
 }

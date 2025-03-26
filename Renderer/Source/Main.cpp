@@ -3,12 +3,10 @@ import std;
 import <stdexcept>;
 import RendererMod;
 import ConfigMod;
-
+import ToolMod;
 int main(int argc, char* argv[])
 {
-
-	Config config{ "Config.json" };
-	bool enableValidation{ config.enableValidation };
+	Config* config = new Config{ Tool::GetProjectPath() + "/Config.json" };
 
 	if (argc == 1)
 	{
@@ -18,7 +16,7 @@ int main(int argc, char* argv[])
 		if (std::string(argv[1]) == "v")
 		{
 
-			enableValidation = true;
+			config->enableValidation = true;
 		}
 		else
 		{
@@ -29,8 +27,9 @@ int main(int argc, char* argv[])
 	{
 		std::cerr << "not support arg\n";
 	}
-	if (enableValidation)std::cout << "enable validation\n";
-	Renderer renderer{ enableValidation };
+
+	if (config->enableValidation)std::cout << "enable validation\n";
+	Renderer renderer{ config };
 	try
 	{
 		renderer.Run();
@@ -41,4 +40,5 @@ int main(int argc, char* argv[])
 		return EXIT_FAILURE;
 	}
 	return  EXIT_SUCCESS;
+	delete config;
 }

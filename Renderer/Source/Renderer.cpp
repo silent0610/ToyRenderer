@@ -19,15 +19,14 @@ import ToolMod;
 		assert(res == VK_SUCCESS);																		\
 	}																									\
 }
-Renderer::Renderer(bool enableValidation)
+Renderer::Renderer(Config* config) :m_config(config)
 {
-	m_neededFeatures.validation = enableValidation;
+	m_neededFeatures.validation = config->enableValidation;
 	m_camera.type = Camera::CameraType::lookat;
 	m_camera.flipY = true;
 	m_camera.setPosition(glm::vec3(0.0f, 0.0f, -3.f));
 	m_camera.setRotation(glm::vec3(0.0f));
 	m_camera.setPerspective(60.0f, (float)m_width / (float)m_height, 0.1f, 256.0f);
-
 }
 
 
@@ -1330,8 +1329,6 @@ void Renderer::MainLoop()
 		auto tStart = std::chrono::high_resolution_clock::now();
 
 		DrawFrame();
-
-		//vkDeviceWaitIdle(m_device);
 
 		m_frameCounter++;
 		auto tEnd = std::chrono::high_resolution_clock::now();

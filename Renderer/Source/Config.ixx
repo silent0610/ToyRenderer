@@ -1,4 +1,5 @@
 module;
+#include "glm/glm.hpp"
 export module ConfigMod;
 import std;
 
@@ -8,5 +9,19 @@ export struct Config
 	bool enableValidation;
 	std::string modelPath;
 	std::string shaderPath;
-	
+	struct
+	{
+		glm::vec3 pos;
+		std::string type;
+		std::string flipY;
+		float fov;
+		float znear;
+		float zfar;
+	}camera;
+
+	struct
+	{
+		glm::vec3 pos;
+		glm::vec3 color;
+	}light;
 };

@@ -14,6 +14,7 @@ import DeviceMod;
 import SwapChainMod;
 import ConfigMod;
 import UIMod;
+import ConfigMod;
 //vulkanExample = new VulkanExample();															\
 //vulkanExample->initVulkan();																	\
 //vulkanExample->setupWindow(hInstance, WndProc);													\
@@ -115,11 +116,12 @@ struct Semaphores
 export class Renderer
 {
 public:
-	Renderer(bool enableValidation = false);
+	Renderer(Config* config);
 	void Run();
 	~Renderer() = default;
 
 private:
+	Config* m_config;
 	std::vector<VkFence> m_waitFences;
 	float m_timer;
 	float m_timerSpeed;
@@ -129,6 +131,7 @@ private:
 	std::chrono::time_point<std::chrono::high_resolution_clock> m_lastTimestamp, m_tPrevEnd;
 	std::string m_title = "Vulkan Example";
 	bool click{ false };
+
 	struct
 	{
 		struct

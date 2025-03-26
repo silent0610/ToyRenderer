@@ -219,18 +219,21 @@ namespace Tool
 		subresourceRange.layerCount = 1;
 		SetImageLayout(cmdbuffer, image, oldImageLayout, newImageLayout, subresourceRange, srcStageMask, dstStageMask);
 	}
-
-	std::string GetShadersPath()
+	std::string GetProjectPath()
 	{
 		auto path = std::filesystem::current_path();
-		auto projectPath = path.parent_path().parent_path().parent_path().parent_path();
-		return projectPath.string() + "/Renderer/Shader/";
+		while (path != std::filesystem::path("/") && path.filename() != "MyToyRenderer")
+		{
+			path = path.parent_path();  // 向上遍历
+		}
+		return path.string();
+	}
+	std::string GetShadersPath()
+	{
+		return GetProjectPath() + "/Renderer/Shader/";
 	}
 	std::string GetAssetsPath()
 	{
-
-		auto path = std::filesystem::current_path();
-		auto projectPath = path.parent_path().parent_path().parent_path().parent_path();
-		return projectPath.string() + "/Renderer/Asset/";
+		return GetProjectPath() + "/Renderer/Asset/";
 	}
 }

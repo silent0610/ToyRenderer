@@ -9,4 +9,5 @@ Config::Config(std::string configPath)
 	f.close();
 
 	enableValidation = config["enableValidation"];
+
 }
