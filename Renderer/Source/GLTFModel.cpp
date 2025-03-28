@@ -8,12 +8,12 @@ module;
 #include <glm/gtc/type_ptr.hpp>
 
 
-#define TINYGLTF_IMPLEMENTATION
-#define STB_IMAGE_IMPLEMENTATION
+//#define TINYGLTF_IMPLEMENTATION
+//#define STB_IMAGE_IMPLEMENTATION
 #include "tiny_gltf.h"
 #include "vulkan/vulkan.h"
 
-#define STB_IMAGE_WRITE_IMPLEMENTATION
+//#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb/stb_image_write.h"
 
 module GLTFModelMod;

@@ -186,7 +186,7 @@ void Renderer::BuildCommandBuffers()
 		vkCmdPushConstants(m_drawCmdBuffers[i], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4x4), &model);
 		VkDeviceSize offsets[1] = { 0 };
 
-		m_glTFModel.Draw(m_drawCmdBuffers[i], m_pipelineLayout);
+		m_glTFModel.draw(m_drawCmdBuffers[i]);
 		DrawUI(m_drawCmdBuffers[i]);
 		//vkCmdDrawIndexed(m_drawCmdBuffers[i], indices.count, 1, 0, 0, 0);
 		vkCmdEndRenderPass(m_drawCmdBuffers[i]);
@@ -220,7 +220,7 @@ VkPipelineShaderStageCreateInfo Renderer::LoadShader(std::string fileName, VkSha
 
 void Renderer::CreateGraphicsPipeline()
 {
-	std::array<VkDescriptorSetLayout, 2> setLayouts = { m_descriptorSetLayouts.Matrices, m_descriptorSetLayouts.Textures };
+	std::array<VkDescriptorSetLayout, 2> setLayouts = { m_descriptorSetLayouts.Matrices }; //, m_descriptorSetLayouts.Textures
 
 	VkPipelineLayoutCreateInfo pipelineLayoutCI = Init::pipelineLayoutCreateInfo(setLayouts.data(), static_cast<uint32_t>(setLayouts.size()));
 
@@ -246,30 +246,36 @@ void Renderer::CreateGraphicsPipeline()
 	std::vector<VkDynamicState> dynamicStateEnables = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
 	VkPipelineDynamicStateCreateInfo dynamicState = Init::pipelineDynamicStateCreateInfo(dynamicStateEnables);
 
-	// Vertex input state
-	std::vector<VkVertexInputBindingDescription> vertexInputBindings = {
-		Init::vertexInputBindingDescription(0, sizeof(GLTFModel::Vertex), VK_VERTEX_INPUT_RATE_VERTEX)
-	};
-	std::vector<VkVertexInputAttributeDescription> vertexInputAttributes = {
-		Init::vertexInputAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(GLTFModel::Vertex, pos)),
-		Init::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(GLTFModel::Vertex, normal)),
-		Init::vertexInputAttributeDescription(0, 2, VK_FORMAT_R32G32_SFLOAT, offsetof(GLTFModel::Vertex, uv)),
-		Init::vertexInputAttributeDescription(0, 3, VK_FORMAT_R32G32B32_SFLOAT, offsetof(GLTFModel::Vertex, color)),
-	};
+	//// Vertex input state
+	//std::vector<VkVertexInputBindingDescription> vertexInputBindings = {
+	//	Init::vertexInputBindingDescription(0, sizeof(GLTFModel::Vertex), VK_VERTEX_INPUT_RATE_VERTEX)
+	//};
+	//std::vector<VkVertexInputAttributeDescription> vertexInputAttributes = {
+	//	Init::vertexInputAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(GLTFModel::Vertex, pos)),
+	//	Init::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32B32_SFLOAT, offsetof(GLTFModel::Vertex, normal)),
+	//	Init::vertexInputAttributeDescription(0, 2, VK_FORMAT_R32G32_SFLOAT, offsetof(GLTFModel::Vertex, uv)),
+	//	Init::vertexInputAttributeDescription(0, 3, VK_FORMAT_R32G32B32_SFLOAT, offsetof(GLTFModel::Vertex, color)),
+	//};
 
-	VkPipelineVertexInputStateCreateInfo vertexInputState = Init::pipelineVertexInputStateCreateInfo();
-	vertexInputState.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexInputBindings.size());
-	vertexInputState.pVertexBindingDescriptions = vertexInputBindings.data();
-	vertexInputState.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputAttributes.size());
-	vertexInputState.pVertexAttributeDescriptions = vertexInputAttributes.data();
+	//VkPipelineVertexInputStateCreateInfo vertexInputState = Init::pipelineVertexInputStateCreateInfo();
+	//vertexInputState.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexInputBindings.size());
+	//vertexInputState.pVertexBindingDescriptions = vertexInputBindings.data();
+	//vertexInputState.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputAttributes.size());
+	//vertexInputState.pVertexAttributeDescriptions = vertexInputAttributes.data();
+
+
 
 	VkGraphicsPipelineCreateInfo pipelineCI = Init::pipelineCreateInfo(m_pipelineLayout, m_renderPass);
 	std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
 
-	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "glTFloading/Mesh.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "glTFloading/Mesh.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	//shaderStages[0] = LoadShader(Tool::GetShadersPath() + "glTFloading/Mesh.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	//shaderStages[1] = LoadShader(Tool::GetShadersPath() + "glTFloading/Mesh.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
-	pipelineCI.pVertexInputState = &vertexInputState;
+	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "shadowmapping/scene.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "shadowmapping/scene.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+
+	//pipelineCI.pVertexInputState = &vertexInputState;
+	pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position, vkglTF::VertexComponent::UV, vkglTF::VertexComponent::Color, vkglTF::VertexComponent::Normal });
 	pipelineCI.pInputAssemblyState = &inputAssemblyState;
 	pipelineCI.pRasterizationState = &rasterizationState;
 	pipelineCI.pColorBlendState = &colorBlendState;
@@ -453,11 +459,11 @@ void Renderer::CreateDescriptors()
 	// pool
 	std::vector<VkDescriptorPoolSize> poolSizes{};
 	poolSizes.emplace_back(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
-	poolSizes.emplace_back(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(m_glTFModel.images.size()));
+	//poolSizes.emplace_back(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(m_glTFModel.textures.size()));
 	VkDescriptorPoolCreateInfo descriptorPoolCI{};
 	descriptorPoolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	descriptorPoolCI.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-	descriptorPoolCI.maxSets = static_cast<uint32_t>(m_glTFModel.images.size()) + 1;
+	descriptorPoolCI.maxSets = 1;//static_cast<uint32_t>(m_glTFModel.textures.size()) + ;
 	descriptorPoolCI.pPoolSizes = poolSizes.data();
 
 	if (vkCreateDescriptorPool(m_device, &descriptorPoolCI, nullptr, &m_descriptorPool) != VK_SUCCESS)
@@ -470,8 +476,8 @@ void Renderer::CreateDescriptors()
 	VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI = Init::descriptorSetLayoutCreateInfo(&setLayoutBinding, 1);
 	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorSetLayoutCI, nullptr, &m_descriptorSetLayouts.Matrices));
 	// Descriptor set layout for passing material textures
-	setLayoutBinding = Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorSetLayoutCI, nullptr, &m_descriptorSetLayouts.Textures));
+	/*setLayoutBinding = Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorSetLayoutCI, nullptr, &m_descriptorSetLayouts.Textures));*/
 
 	// allocate set
 	VkDescriptorSetAllocateInfo allocIF{};
@@ -497,14 +503,14 @@ void Renderer::CreateDescriptors()
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets{ writeUBO };
 	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 
-	// Descriptor sets for materials
-	for (auto& image : m_glTFModel.images)
-	{
-		const VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.Textures, 1);
-		VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &image.descriptorSet));
-		VkWriteDescriptorSet writeDescriptorSet = Init::writeDescriptorSet(image.descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, &image.texture.descriptor);
-		vkUpdateDescriptorSets(m_device, 1, &writeDescriptorSet, 0, nullptr);
-	}
+	//// Descriptor sets for materials
+	//for (auto& image : m_glTFModel.images)
+	//{
+	//	const VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.Textures, 1);
+	//	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &image.descriptorSet));
+	//	VkWriteDescriptorSet writeDescriptorSet = Init::writeDescriptorSet(image.descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, &image.texture.descriptor);
+	//	vkUpdateDescriptorSets(m_device, 1, &writeDescriptorSet, 0, nullptr);
+	//}
 }
 void Renderer::CreateRenderPass()
 {
@@ -1517,7 +1523,7 @@ void Renderer::Cleanup()
 	// uniformbuffer
 	m_uboBuffer.Destroy();
 
-	m_glTFModel.Destroy();
+	/*m_glTFModel.Destroy();*/
 	m_swapChain.Cleanup();
 
 	m_UI.FreeResources();
@@ -1590,7 +1596,9 @@ void Renderer::CreateLogicalDevice()
 
 void Renderer::LoadAssets()
 {
-	LoadglTFFile(Tool::GetAssetsPath() + "Models/FlightHelmet/glTF/FlightHelmet.gltf");
+	const uint32_t glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors | vkglTF::FileLoadingFlags::FlipY;
+	/*LoadglTFFile(Tool::GetAssetsPath() + "Models/FlightHelmet/glTF/FlightHelmet.gltf");*/
+	m_glTFModel.loadFromFile(Tool::GetAssetsPath() + "Models/samplescene.gltf", m_vulkanDevice, m_queues.graphicsQueue, glTFLoadingFlags);
 }
 void Renderer::LoadAssetsglTF()
 {
@@ -1600,109 +1608,109 @@ void Renderer::LoadAssetsglTF()
 	//scenes[1].loadFromFile(Tool::GetAssetsPath() + "models/samplescene.gltf", vulkanDevice, queue, glTFLoadingFlags);
 	//sceneNames = { "Vulkan scene", "Teapots and pillars" };
 }
-void Renderer::LoadglTFFile(std::string fileName)
-{
-	tinygltf::Model glTFInput;
-	tinygltf::TinyGLTF gltfContext;
-	std::string error, warning;
-	bool fileLoaded = gltfContext.LoadASCIIFromFile(&glTFInput, &error, &warning, fileName);
-
-	// Pass some Vulkan resources required for setup and rendering to the glTF model loading class
-	m_glTFModel.vulkanDevice = m_vulkanDevice;
-	m_glTFModel.copyQueue = m_queues.graphicsQueue;
-
-	std::vector<uint32_t> indexBuffer;
-	std::vector<GLTFModel::Vertex> vertexBuffer;
-
-	if (fileLoaded)
-	{
-		m_glTFModel.LoadImages(glTFInput);
-		m_glTFModel.LoadMaterials(glTFInput);
-		m_glTFModel.LoadTextures(glTFInput);
-		const tinygltf::Scene& scene = glTFInput.scenes[0];
-		for (size_t i = 0; i < scene.nodes.size(); i++)
-		{
-			const tinygltf::Node node = glTFInput.nodes[scene.nodes[i]];
-			m_glTFModel.LoadNode(node, glTFInput, nullptr, indexBuffer, vertexBuffer);
-		}
-	}
-	else
-	{
-		throw std::runtime_error("Could not open the glTF file.\n\nMake sure the assets submodule has been checked out and is up-to-date.");
-		return;
-	}
-
-	// Create and upload vertex and index buffer
-	// We will be using one single vertex buffer and one single index buffer for the whole glTF scene
-	// Primitives (of the glTF model) will then index into these using index offsets
-
-	size_t vertexBufferSize = vertexBuffer.size() * sizeof(GLTFModel::Vertex);
-	size_t indexBufferSize = indexBuffer.size() * sizeof(uint32_t);
-	m_glTFModel.indices.count = static_cast<uint32_t>(indexBuffer.size());
-
-	struct StagingBuffer
-	{
-		VkBuffer buffer;
-		VkDeviceMemory memory;
-	} vertexStaging, indexStaging;
-
-	// Create host visible staging buffers (source)
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		vertexBufferSize,
-		&vertexStaging.buffer,
-		&vertexStaging.memory,
-		vertexBuffer.data()));
-	// Index data
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-		indexBufferSize,
-		&indexStaging.buffer,
-		&indexStaging.memory,
-		indexBuffer.data()));
-
-	// Create device local buffers (target)
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
-		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		vertexBufferSize,
-		&m_glTFModel.vertices.buffer,
-		&m_glTFModel.vertices.memory));
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
-		VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		indexBufferSize,
-		&m_glTFModel.indices.buffer,
-		&m_glTFModel.indices.memory));
-
-	// Copy data from staging buffers (host) do device local buffer (gpu)
-	VkCommandBuffer copyCmd = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-	VkBufferCopy copyRegion = {};
-
-	copyRegion.size = vertexBufferSize;
-	vkCmdCopyBuffer(
-		copyCmd,
-		vertexStaging.buffer,
-		m_glTFModel.vertices.buffer,
-		1,
-		&copyRegion);
-
-	copyRegion.size = indexBufferSize;
-	vkCmdCopyBuffer(
-		copyCmd,
-		indexStaging.buffer,
-		m_glTFModel.indices.buffer,
-		1,
-		&copyRegion);
-
-	m_vulkanDevice->FlushCommandBuffer(copyCmd, m_queues.graphicsQueue, true);
-
-	// Free staging resources
-	vkDestroyBuffer(m_device, vertexStaging.buffer, nullptr);
-	vkFreeMemory(m_device, vertexStaging.memory, nullptr);
-	vkDestroyBuffer(m_device, indexStaging.buffer, nullptr);
-	vkFreeMemory(m_device, indexStaging.memory, nullptr);
-
-}
+//void Renderer::LoadglTFFile(std::string fileName)
+//{
+//	tinygltf::Model glTFInput;
+//	tinygltf::TinyGLTF gltfContext;
+//	std::string error, warning;
+//	bool fileLoaded = gltfContext.LoadASCIIFromFile(&glTFInput, &error, &warning, fileName);
+//
+//	// Pass some Vulkan resources required for setup and rendering to the glTF model loading class
+//	m_glTFModel.vulkanDevice = m_vulkanDevice;
+//	m_glTFModel.copyQueue = m_queues.graphicsQueue;
+//
+//	std::vector<uint32_t> indexBuffer;
+//	std::vector<GLTFModel::Vertex> vertexBuffer;
+//
+//	if (fileLoaded)
+//	{
+//		m_glTFModel.LoadImages(glTFInput);
+//		m_glTFModel.LoadMaterials(glTFInput);
+//		m_glTFModel.LoadTextures(glTFInput);
+//		const tinygltf::Scene& scene = glTFInput.scenes[0];
+//		for (size_t i = 0; i < scene.nodes.size(); i++)
+//		{
+//			const tinygltf::Node node = glTFInput.nodes[scene.nodes[i]];
+//			m_glTFModel.LoadNode(node, glTFInput, nullptr, indexBuffer, vertexBuffer);
+//		}
+//	}
+//	else
+//	{
+//		throw std::runtime_error("Could not open the glTF file.\n\nMake sure the assets submodule has been checked out and is up-to-date.");
+//		return;
+//	}
+//
+//	// Create and upload vertex and index buffer
+//	// We will be using one single vertex buffer and one single index buffer for the whole glTF scene
+//	// Primitives (of the glTF model) will then index into these using index offsets
+//
+//	size_t vertexBufferSize = vertexBuffer.size() * sizeof(GLTFModel::Vertex);
+//	size_t indexBufferSize = indexBuffer.size() * sizeof(uint32_t);
+//	m_glTFModel.indices.count = static_cast<uint32_t>(indexBuffer.size());
+//
+//	struct StagingBuffer
+//	{
+//		VkBuffer buffer;
+//		VkDeviceMemory memory;
+//	} vertexStaging, indexStaging;
+//
+//	// Create host visible staging buffers (source)
+//	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+//		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+//		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+//		vertexBufferSize,
+//		&vertexStaging.buffer,
+//		&vertexStaging.memory,
+//		vertexBuffer.data()));
+//	// Index data
+//	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+//		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+//		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+//		indexBufferSize,
+//		&indexStaging.buffer,
+//		&indexStaging.memory,
+//		indexBuffer.data()));
+//
+//	// Create device local buffers (target)
+//	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+//		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+//		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+//		vertexBufferSize,
+//		&m_glTFModel.vertices.buffer,
+//		&m_glTFModel.vertices.memory));
+//	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+//		VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+//		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+//		indexBufferSize,
+//		&m_glTFModel.indices.buffer,
+//		&m_glTFModel.indices.memory));
+//
+//	// Copy data from staging buffers (host) do device local buffer (gpu)
+//	VkCommandBuffer copyCmd = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+//	VkBufferCopy copyRegion = {};
+//
+//	copyRegion.size = vertexBufferSize;
+//	vkCmdCopyBuffer(
+//		copyCmd,
+//		vertexStaging.buffer,
+//		m_glTFModel.vertices.buffer,
+//		1,
+//		&copyRegion);
+//
+//	copyRegion.size = indexBufferSize;
+//	vkCmdCopyBuffer(
+//		copyCmd,
+//		indexStaging.buffer,
+//		m_glTFModel.indices.buffer,
+//		1,
+//		&copyRegion);
+//
+//	m_vulkanDevice->FlushCommandBuffer(copyCmd, m_queues.graphicsQueue, true);
+//
+//	// Free staging resources
+//	vkDestroyBuffer(m_device, vertexStaging.buffer, nullptr);
+//	vkFreeMemory(m_device, vertexStaging.memory, nullptr);
+//	vkDestroyBuffer(m_device, indexStaging.buffer, nullptr);
+//	vkFreeMemory(m_device, indexStaging.memory, nullptr);
+//
+//}

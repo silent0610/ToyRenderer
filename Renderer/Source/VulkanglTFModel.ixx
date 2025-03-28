@@ -202,9 +202,9 @@ namespace vkglTF
 	/*
 		glTF default vertex layout with easy Vulkan mapping functions
 	*/
-	enum class VertexComponent { Position, Normal, UV, Color, Tangent, Joint0, Weight0 };
+	export enum class VertexComponent { Position, Normal, UV, Color, Tangent, Joint0, Weight0 };
 
-	struct Vertex
+	export struct Vertex
 	{
 		glm::vec3 pos;
 		glm::vec3 normal;

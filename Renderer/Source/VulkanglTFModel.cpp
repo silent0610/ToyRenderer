@@ -7,8 +7,8 @@ module;
 #include "vulkan/vulkan.h"
 #include "tiny_gltf.h"
 
-#include "KTX/include/ktx.h"
-#include <KTX/include/ktxvulkan.h>
+#include "ktx.h"
+#include <ktxvulkan.h>
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
@@ -327,7 +327,7 @@ void vkglTF::Texture::fromglTfImage(tinygltf::Image& gltfimage, std::string path
 		mipLevels = ktxTexture->numLevels;
 
 		ktx_uint8_t* ktxTextureData = ktxTexture_GetData(ktxTexture);
-		ktx_size_t ktxTextureSize = ktxTexture_GetSize(ktxTexture);
+		ktx_size_t ktxTextureSize = ktxTexture_GetDataSize(ktxTexture);
 		format = ktxTexture_GetVkFormat(ktxTexture);
 
 		// Get device properties for the requested texture format
