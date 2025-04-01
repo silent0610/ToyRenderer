@@ -186,7 +186,7 @@ void Renderer::BuildCommandBuffers()
 		vkCmdPushConstants(m_drawCmdBuffers[i], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4x4), &model);
 		VkDeviceSize offsets[1] = { 0 };
 
-		m_glTFModel.draw(m_drawCmdBuffers[i]);
+		m_glTFModel.Draw(m_drawCmdBuffers[i]);
 		DrawUI(m_drawCmdBuffers[i]);
 		//vkCmdDrawIndexed(m_drawCmdBuffers[i], indices.count, 1, 0, 0, 0);
 		vkCmdEndRenderPass(m_drawCmdBuffers[i]);
@@ -271,8 +271,8 @@ void Renderer::CreateGraphicsPipeline()
 	//shaderStages[0] = LoadShader(Tool::GetShadersPath() + "glTFloading/Mesh.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 	//shaderStages[1] = LoadShader(Tool::GetShadersPath() + "glTFloading/Mesh.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
-	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "shadowmapping/scene.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "shadowmapping/scene.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Loading/Basic.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Loading/Basic.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	//pipelineCI.pVertexInputState = &vertexInputState;
 	pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position, vkglTF::VertexComponent::UV, vkglTF::VertexComponent::Color, vkglTF::VertexComponent::Normal });
@@ -290,11 +290,7 @@ void Renderer::CreateGraphicsPipeline()
 	// Enable depth test and write
 	depthStencilState.depthWriteEnable = VK_TRUE;
 	depthStencilState.depthTestEnable = VK_TRUE;
-
-	if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &m_pipeline) != VK_SUCCESS)
-	{
-		throw std::runtime_error("fail to create graphics pipelines");
-	};
+	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &m_pipeline));
 
 }
 void Renderer::CreateDepthResources()
@@ -321,10 +317,10 @@ void Renderer::CreateDepthResources()
 	FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAllloc, nullptr, &m_depthStencil.memory))
 
-		if (vkBindImageMemory(m_device, m_depthStencil.image, m_depthStencil.memory, 0) != VK_SUCCESS)
-		{
-			throw std::runtime_error("fail to allocate depth memory");
-		};
+	if (vkBindImageMemory(m_device, m_depthStencil.image, m_depthStencil.memory, 0) != VK_SUCCESS)
+	{
+		throw std::runtime_error("fail to allocate depth memory");
+	};
 
 	VkImageViewCreateInfo imageViewCI{};
 	imageViewCI.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -456,20 +452,13 @@ void Renderer::CreateUniformBuffer()
 }
 void Renderer::CreateDescriptors()
 {
-	// pool
-	std::vector<VkDescriptorPoolSize> poolSizes{};
-	poolSizes.emplace_back(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
-	//poolSizes.emplace_back(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(m_glTFModel.textures.size()));
-	VkDescriptorPoolCreateInfo descriptorPoolCI{};
-	descriptorPoolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	descriptorPoolCI.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-	descriptorPoolCI.maxSets = 1;//static_cast<uint32_t>(m_glTFModel.textures.size()) + ;
-	descriptorPoolCI.pPoolSizes = poolSizes.data();
-
-	if (vkCreateDescriptorPool(m_device, &descriptorPoolCI, nullptr, &m_descriptorPool) != VK_SUCCESS)
-	{
-		throw std::runtime_error("failed to create descriptor pool!");
+	// Pool
+	std::vector<VkDescriptorPoolSize> poolSizes = {
+		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3),
+		//Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3)
 	};
+	VkDescriptorPoolCreateInfo descriptorPoolInfo = Init::descriptorPoolCreateInfo(poolSizes, 3);
+	VK_CHECK_RESULT(vkCreateDescriptorPool(m_device, &descriptorPoolInfo, nullptr, &m_descriptorPool));
 
 	// create layout
 	VkDescriptorSetLayoutBinding setLayoutBinding = Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
@@ -1494,8 +1483,6 @@ void Renderer::Cleanup()
 	// cmd buffer
 	vkDestroyCommandPool(m_device, m_commandPool, nullptr);
 
-
-
 	// depth 
 	vkDestroyImageView(m_device, m_depthStencil.view, nullptr);
 	vkDestroyImage(m_device, m_depthStencil.image, nullptr);
@@ -1514,8 +1501,9 @@ void Renderer::Cleanup()
 	vkDestroyRenderPass(m_device, m_renderPass, nullptr);
 
 	for (auto& frameBuffer : m_frameBuffers)
+	{
 		vkDestroyFramebuffer(m_device, frameBuffer, nullptr);
-
+	}
 	for (auto& shaderModule : m_shaderModules)
 	{
 		vkDestroyShaderModule(m_device, shaderModule, nullptr);
@@ -1527,8 +1515,8 @@ void Renderer::Cleanup()
 	m_swapChain.Cleanup();
 
 	m_UI.FreeResources();
-	delete m_vulkanDevice;
-
+	
+	m_glTFModel.Destroy();
 	if (m_neededFeatures.validation)
 	{
 		DestroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
@@ -1536,6 +1524,9 @@ void Renderer::Cleanup()
 
 	glfwDestroyWindow(m_window);
 	glfwTerminate();
+
+	delete m_vulkanDevice;
+	vkDestroyInstance(m_instance, nullptr);
 }
 
 
@@ -1596,7 +1587,7 @@ void Renderer::CreateLogicalDevice()
 
 void Renderer::LoadAssets()
 {
-	const uint32_t glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors | vkglTF::FileLoadingFlags::FlipY;
+	const uint32_t glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors;
 	/*LoadglTFFile(Tool::GetAssetsPath() + "Models/FlightHelmet/glTF/FlightHelmet.gltf");*/
 	m_glTFModel.loadFromFile(Tool::GetAssetsPath() + "Models/samplescene.gltf", m_vulkanDevice, m_queues.graphicsQueue, glTFLoadingFlags);
 }

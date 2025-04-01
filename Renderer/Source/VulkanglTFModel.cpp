@@ -54,6 +54,38 @@ bool loadImageDataFuncEmpty(tinygltf::Image* image, const int imageIndex, std::s
 	glTF texture loading class
 */
 
+void vkglTF::Model::Destroy()
+{
+	vkDestroyBuffer(device->logicalDevice, vertices.buffer, nullptr);
+	vkFreeMemory(device->logicalDevice, vertices.memory, nullptr);
+	vkDestroyBuffer(device->logicalDevice, indices.buffer, nullptr);
+	vkFreeMemory(device->logicalDevice, indices.memory, nullptr);
+	for (auto texture : textures)
+	{
+		texture.destroy();
+	}
+	for (auto node : nodes)
+	{
+		delete node;
+	}
+	for (auto skin : skins)
+	{
+		delete skin;
+	}
+	if (descriptorSetLayoutUbo != VK_NULL_HANDLE)
+	{
+		vkDestroyDescriptorSetLayout(device->logicalDevice, descriptorSetLayoutUbo, nullptr);
+		descriptorSetLayoutUbo = VK_NULL_HANDLE;
+	}
+	if (descriptorSetLayoutImage != VK_NULL_HANDLE)
+	{
+		vkDestroyDescriptorSetLayout(device->logicalDevice, descriptorSetLayoutImage, nullptr);
+		descriptorSetLayoutImage = VK_NULL_HANDLE;
+	}
+	vkDestroyDescriptorPool(device->logicalDevice, descriptorPool, nullptr);
+	emptyTexture.destroy();
+}
+
 void vkglTF::Texture::updateDescriptor()
 {
 	descriptor.sampler = sampler;
@@ -770,34 +802,34 @@ void vkglTF::Model::createEmptyTexture(VkQueue transferQueue)
 */
 vkglTF::Model::~Model()
 {
-	vkDestroyBuffer(device->logicalDevice, vertices.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, vertices.memory, nullptr);
-	vkDestroyBuffer(device->logicalDevice, indices.buffer, nullptr);
-	vkFreeMemory(device->logicalDevice, indices.memory, nullptr);
-	for (auto texture : textures)
-	{
-		texture.destroy();
-	}
-	for (auto node : nodes)
-	{
-		delete node;
-	}
-	for (auto skin : skins)
-	{
-		delete skin;
-	}
-	if (descriptorSetLayoutUbo != VK_NULL_HANDLE)
-	{
-		vkDestroyDescriptorSetLayout(device->logicalDevice, descriptorSetLayoutUbo, nullptr);
-		descriptorSetLayoutUbo = VK_NULL_HANDLE;
-	}
-	if (descriptorSetLayoutImage != VK_NULL_HANDLE)
-	{
-		vkDestroyDescriptorSetLayout(device->logicalDevice, descriptorSetLayoutImage, nullptr);
-		descriptorSetLayoutImage = VK_NULL_HANDLE;
-	}
-	vkDestroyDescriptorPool(device->logicalDevice, descriptorPool, nullptr);
-	emptyTexture.destroy();
+	//vkDestroyBuffer(device->logicalDevice, vertices.buffer, nullptr);
+	//vkFreeMemory(device->logicalDevice, vertices.memory, nullptr);
+	//vkDestroyBuffer(device->logicalDevice, indices.buffer, nullptr);
+	//vkFreeMemory(device->logicalDevice, indices.memory, nullptr);
+	//for (auto texture : textures)
+	//{
+	//	texture.destroy();
+	//}
+	//for (auto node : nodes)
+	//{
+	//	delete node;
+	//}
+	//for (auto skin : skins)
+	//{
+	//	delete skin;
+	//}
+	//if (descriptorSetLayoutUbo != VK_NULL_HANDLE)
+	//{
+	//	vkDestroyDescriptorSetLayout(device->logicalDevice, descriptorSetLayoutUbo, nullptr);
+	//	descriptorSetLayoutUbo = VK_NULL_HANDLE;
+	//}
+	//if (descriptorSetLayoutImage != VK_NULL_HANDLE)
+	//{
+	//	vkDestroyDescriptorSetLayout(device->logicalDevice, descriptorSetLayoutImage, nullptr);
+	//	descriptorSetLayoutImage = VK_NULL_HANDLE;
+	//}
+	//vkDestroyDescriptorPool(device->logicalDevice, descriptorPool, nullptr);
+	//emptyTexture.destroy();
 }
 
 void vkglTF::Model::loadNode(vkglTF::Node* parent, const tinygltf::Node& node, uint32_t nodeIndex, const tinygltf::Model& model, std::vector<uint32_t>& indexBuffer, std::vector<Vertex>& vertexBuffer, float globalscale)
@@ -1600,7 +1632,7 @@ void vkglTF::Model::drawNode(Node* node, VkCommandBuffer commandBuffer, uint32_t
 	}
 }
 
-void vkglTF::Model::draw(VkCommandBuffer commandBuffer, uint32_t renderFlags, VkPipelineLayout pipelineLayout, uint32_t bindImageSet)
+void vkglTF::Model::Draw(VkCommandBuffer commandBuffer, uint32_t renderFlags, VkPipelineLayout pipelineLayout, uint32_t bindImageSet)
 {
 	if (!buffersBound)
 	{
