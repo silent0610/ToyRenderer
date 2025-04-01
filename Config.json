@@ -1,6 +1,6 @@
 {
     "modelPath": [
-        "Models/samplescene.gltf"
+        "Models/cat/scene.gltf"
     ],
     "shaderPath": [
         "BlingPhong/Basic.Vert.spv",
@@ -11,14 +11,15 @@
     "camera": {
         "pos": [
             0.0,
-            0.0,
-            -3.0
+            50.0,
+            -200.0
         ],
         "type": "lookat",
         "flipY": true,
         "fov": 60.0,
         "znear": 0.1,
-        "zfar": 256.0
+        "zfar": 512.0,
+        "movementSpeed": 30.0
     },
     "light": {
         "pos": [],

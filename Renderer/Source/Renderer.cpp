@@ -24,10 +24,10 @@ Renderer::Renderer(Config* config) :m_config(config)
 	m_neededFeatures.validation = config->enableValidation;
 	m_camera.type = Camera::CameraType::lookat;
 	m_camera.flipY = true;
-	m_camera.setPosition(glm::vec3(0.0f, 0.0f, -3.f));
+	m_camera.setPosition(config->camera.pos);
 	m_camera.setRotation(glm::vec3(0.0f));
 	m_camera.setPerspective(60.0f, (float)m_width / (float)m_height, 0.1f, 256.0f);
-	m_camera.setMovementSpeed(3.0f);
+	m_camera.setMovementSpeed(config->camera.movementSpeed);
 }
 
 
@@ -76,12 +76,18 @@ void Renderer::PreCreateSubmitInfo()
 	m_submitInfo.signalSemaphoreCount = 1;
 	m_submitInfo.pSignalSemaphores = &m_semaphores.renderComplete;
 }
-
+void Renderer::SetEnabledFeatures() {
+	vkGetPhysicalDeviceFeatures(m_physicalDevice, &m_deviceFeatures);
+	if (m_deviceFeatures.samplerAnisotropy)
+	{
+		m_enabledFeatures.samplerAnisotropy = VK_TRUE;
+	}
+}
 void Renderer::EncapsulationDevice()
 {
 	VkResult result;
 	m_vulkanDevice = new VulkanDevice(m_physicalDevice);
-
+	SetEnabledFeatures();
 	result = m_vulkanDevice->CreateLogicalDevice(m_enabledFeatures, m_enabledDeviceExtensions, m_deviceCreatepNextChain);
 	if (result != VK_SUCCESS)
 	{
@@ -1430,7 +1436,7 @@ void Renderer::UpdateUniformBuffers()
 	m_uboMatrices.lightPos = glm::vec3(0.0f, 100.0f, 0.0f);
 	//m_camera.position.x = -m_camera.position.x;
 	m_uboMatrices.camPos = m_camera.GetCameraPos();
-	std::cout << m_uboMatrices.camPos.x <<"," << m_uboMatrices.camPos.y <<"," << m_uboMatrices.camPos.z << std::endl;
+	//std::cout << m_uboMatrices.camPos.x <<"," << m_uboMatrices.camPos.y <<"," << m_uboMatrices.camPos.z << std::endl;
 	memcpy(m_uboBuffer.mapped, &m_uboMatrices, sizeof(m_uboMatrices));
 }
 
@@ -1592,6 +1598,8 @@ void Renderer::LoadAssets()
 	const uint32_t glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors;
 	/*LoadglTFFile(Tool::GetAssetsPath() + "Models/FlightHelmet/glTF/FlightHelmet.gltf");*/
 	m_glTFModel.loadFromFile(Tool::GetAssetsPath() + m_config->modelPath, m_vulkanDevice, m_queues.graphicsQueue, glTFLoadingFlags);
+	std::cout << std::endl << "sizeof material: " << m_glTFModel.materials.size() << std::endl;
+	std::cout <<std::endl<<"sizeof texture: " << m_glTFModel.textures.size() << std::endl;
 }
 void Renderer::LoadAssetsglTF()
 {

@@ -15,11 +15,8 @@ import SwapChainMod;
 import ConfigMod;
 import UIMod;
 import ConfigMod;
-//vulkanExample = new VulkanExample();															\
-//vulkanExample->initVulkan();																	\
-//vulkanExample->setupWindow(hInstance, WndProc);													\
-//vulkanExample->prepare();																		\
-//vulkanExample->renderLoop();
+import LightMod;
+
 
 struct DescriptorSetLayouts
 {
@@ -299,5 +296,7 @@ private:
 	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
 	void ResizeWindow();
 	void LoadAssetsglTF();
+	void SetEnabledFeatures();
+	VkPhysicalDeviceFeatures m_deviceFeatures{};
 };
 

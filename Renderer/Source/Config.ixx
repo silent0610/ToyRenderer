@@ -17,6 +17,7 @@ export struct Config
 		float fov;
 		float znear;
 		float zfar;
+		float movementSpeed;
 	}camera;
 
 	struct
