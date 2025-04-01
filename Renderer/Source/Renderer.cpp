@@ -220,7 +220,7 @@ VkPipelineShaderStageCreateInfo Renderer::LoadShader(std::string fileName, VkSha
 
 void Renderer::CreateGraphicsPipeline()
 {
-	std::array<VkDescriptorSetLayout, 2> setLayouts = { m_descriptorSetLayouts.Matrices }; //, m_descriptorSetLayouts.Textures
+	std::array<VkDescriptorSetLayout, 1> setLayouts = { m_descriptorSetLayouts.Matrices }; //, m_descriptorSetLayouts.Textures
 
 	VkPipelineLayoutCreateInfo pipelineLayoutCI = Init::pipelineLayoutCreateInfo(setLayouts.data(), static_cast<uint32_t>(setLayouts.size()));
 
