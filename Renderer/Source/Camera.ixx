@@ -13,6 +13,7 @@ private:
 	float fov;
 	float znear, zfar;
 
+	
 	void updateViewMatrix()
 	{
 		glm::mat4 currentMatrix = matrices.view;
@@ -76,6 +77,12 @@ public:
 		bool down = false;
 	} keys;
 
+	glm::vec3 GetCameraPos() 
+	{
+		glm::vec3 pos = position;
+		pos.x = -pos.x;
+		return 	pos;
+	};
 	bool moving() const
 	{
 		return keys.left || keys.right || keys.up || keys.down;

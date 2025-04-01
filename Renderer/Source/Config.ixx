@@ -8,7 +8,7 @@ export struct Config
 	Config(std::string configPath);
 	bool enableValidation;
 	std::string modelPath;
-	std::string shaderPath;
+	std::vector<std::string> shadersPath;
 	struct
 	{
 		glm::vec3 pos;

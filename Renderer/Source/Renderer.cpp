@@ -27,6 +27,7 @@ Renderer::Renderer(Config* config) :m_config(config)
 	m_camera.setPosition(glm::vec3(0.0f, 0.0f, -3.f));
 	m_camera.setRotation(glm::vec3(0.0f));
 	m_camera.setPerspective(60.0f, (float)m_width / (float)m_height, 0.1f, 256.0f);
+	m_camera.setMovementSpeed(3.0f);
 }
 
 
@@ -271,8 +272,8 @@ void Renderer::CreateGraphicsPipeline()
 	//shaderStages[0] = LoadShader(Tool::GetShadersPath() + "glTFloading/Mesh.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 	//shaderStages[1] = LoadShader(Tool::GetShadersPath() + "glTFloading/Mesh.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
-	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Loading/Basic.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Loading/Basic.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	shaderStages[0] = LoadShader(Tool::GetShadersPath() + m_config->shadersPath[0], VK_SHADER_STAGE_VERTEX_BIT);
+	shaderStages[1] = LoadShader(Tool::GetShadersPath() + m_config->shadersPath[1], VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	//pipelineCI.pVertexInputState = &vertexInputState;
 	pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position, vkglTF::VertexComponent::UV, vkglTF::VertexComponent::Color, vkglTF::VertexComponent::Normal });
@@ -1426,9 +1427,10 @@ void Renderer::UpdateUniformBuffers()
 	m_uboMatrices.proj = m_camera.matrices.perspective;
 	m_uboMatrices.view = m_camera.matrices.view;
 	//camera.matrices.view;
-	m_uboMatrices.lightPos = glm::vec3(5.0f, 5.0f, -5.0f);
-	m_uboMatrices.camPos = m_camera.position * -1.0f;
-
+	m_uboMatrices.lightPos = glm::vec3(0.0f, 100.0f, 0.0f);
+	//m_camera.position.x = -m_camera.position.x;
+	m_uboMatrices.camPos = m_camera.GetCameraPos();
+	std::cout << m_uboMatrices.camPos.x <<"," << m_uboMatrices.camPos.y <<"," << m_uboMatrices.camPos.z << std::endl;
 	memcpy(m_uboBuffer.mapped, &m_uboMatrices, sizeof(m_uboMatrices));
 }
 
@@ -1589,7 +1591,7 @@ void Renderer::LoadAssets()
 {
 	const uint32_t glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors;
 	/*LoadglTFFile(Tool::GetAssetsPath() + "Models/FlightHelmet/glTF/FlightHelmet.gltf");*/
-	m_glTFModel.loadFromFile(Tool::GetAssetsPath() + "Models/samplescene.gltf", m_vulkanDevice, m_queues.graphicsQueue, glTFLoadingFlags);
+	m_glTFModel.loadFromFile(Tool::GetAssetsPath() + m_config->modelPath, m_vulkanDevice, m_queues.graphicsQueue, glTFLoadingFlags);
 }
 void Renderer::LoadAssetsglTF()
 {

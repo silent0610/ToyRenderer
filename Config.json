@@ -1,9 +1,10 @@
 {
     "modelPath": [
-        "666"
+        "Models/samplescene.gltf"
     ],
     "shaderPath": [
-        "666"
+        "BlingPhong/Basic.Vert.spv",
+        "BlingPhong/Basic.Frag.spv"
     ],
     "pipelineType": "basic",
     "enableValidation": true,
