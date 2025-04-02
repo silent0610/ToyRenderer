@@ -1114,6 +1114,7 @@ void vkglTF::Model::loadImages(tinygltf::Model& gltfModel, VulkanDevice* device,
 
 void vkglTF::Model::loadMaterials(tinygltf::Model& gltfModel)
 {
+	std::cout << "sizeof matertial is " << gltfModel.materials.size();
 	for (tinygltf::Material& mat : gltfModel.materials)
 	{
 		vkglTF::Material material(device);

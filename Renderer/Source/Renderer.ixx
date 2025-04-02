@@ -118,6 +118,7 @@ public:
 	~Renderer() = default;
 
 private:
+
 	Config* m_config;
 	std::vector<VkFence> m_waitFences;
 	float m_timer;
@@ -167,6 +168,7 @@ private:
 	VkPipelineLayout m_pipelineLayout{ VK_NULL_HANDLE };
 	VkDescriptorPool m_descriptorPool{ nullptr };
 	VkDescriptorSet m_descriptorSet{ nullptr };
+	VkDescriptorSet m_texturesDescriptorSet{ nullptr };
 	VkPipeline m_pipeline{ nullptr };
 	VkRenderPass m_renderPass{ nullptr };
 

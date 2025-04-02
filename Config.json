@@ -3,8 +3,8 @@
         "Models/cat/scene.gltf"
     ],
     "shaderPath": [
-        "BlingPhong/Basic.Vert.spv",
-        "BlingPhong/Basic.Frag.spv"
+        "BlinnPhong/Basic.Vert.spv",
+        "BlinnPhong/Basic.Frag.spv"
     ],
     "pipelineType": "basic",
     "enableValidation": true,

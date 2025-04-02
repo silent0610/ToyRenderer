@@ -193,7 +193,7 @@ void Renderer::BuildCommandBuffers()
 		vkCmdPushConstants(m_drawCmdBuffers[i], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4x4), &model);
 		VkDeviceSize offsets[1] = { 0 };
 
-		m_glTFModel.Draw(m_drawCmdBuffers[i]);
+		m_glTFModel.Draw(m_drawCmdBuffers[i],vkglTF::RenderFlags::BindImages,m_pipelineLayout,1);
 		DrawUI(m_drawCmdBuffers[i]);
 		//vkCmdDrawIndexed(m_drawCmdBuffers[i], indices.count, 1, 0, 0, 0);
 		vkCmdEndRenderPass(m_drawCmdBuffers[i]);
@@ -227,7 +227,7 @@ VkPipelineShaderStageCreateInfo Renderer::LoadShader(std::string fileName, VkSha
 
 void Renderer::CreateGraphicsPipeline()
 {
-	std::array<VkDescriptorSetLayout, 1> setLayouts = { m_descriptorSetLayouts.Matrices }; //, m_descriptorSetLayouts.Textures
+	std::array<VkDescriptorSetLayout, 2> setLayouts = { m_descriptorSetLayouts.Matrices ,m_descriptorSetLayouts.Textures}; //, m_descriptorSetLayouts.Textures
 
 	VkPipelineLayoutCreateInfo pipelineLayoutCI = Init::pipelineLayoutCreateInfo(setLayouts.data(), static_cast<uint32_t>(setLayouts.size()));
 
@@ -461,19 +461,26 @@ void Renderer::CreateDescriptors()
 {
 	// Pool
 	std::vector<VkDescriptorPoolSize> poolSizes = {
-		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3),
-		//Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3)
+		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1),
+		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1)
 	};
-	VkDescriptorPoolCreateInfo descriptorPoolInfo = Init::descriptorPoolCreateInfo(poolSizes, 3);
+	VkDescriptorPoolCreateInfo descriptorPoolInfo = Init::descriptorPoolCreateInfo(poolSizes, 2);
 	VK_CHECK_RESULT(vkCreateDescriptorPool(m_device, &descriptorPoolInfo, nullptr, &m_descriptorPool));
 
 	// create layout
-	VkDescriptorSetLayoutBinding setLayoutBinding = Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
+	VkDescriptorSetLayoutBinding setLayoutBinding =
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
+
+
+
 	VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI = Init::descriptorSetLayoutCreateInfo(&setLayoutBinding, 1);
 	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorSetLayoutCI, nullptr, &m_descriptorSetLayouts.Matrices));
 	// Descriptor set layout for passing material textures
-	/*setLayoutBinding = Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorSetLayoutCI, nullptr, &m_descriptorSetLayouts.Textures));*/
+	std::vector<VkDescriptorSetLayoutBinding>setLayoutBindings = {
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0)
+	};
+	descriptorSetLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings.data(), 1);
+	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorSetLayoutCI, nullptr, &m_descriptorSetLayouts.Textures));
 
 	// allocate set
 	VkDescriptorSetAllocateInfo allocIF{};
@@ -486,6 +493,11 @@ void Renderer::CreateDescriptors()
 	{
 		throw std::runtime_error("failed to create descriptor set!");
 	}
+	//allocIF.pSetLayouts = &m_descriptorSetLayouts.Textures;
+	//if (vkAllocateDescriptorSets(m_device, &allocIF, &m_texturesDescriptorSet) != VK_SUCCESS)
+	//{
+	//	throw std::runtime_error("failed to create descriptor set!");
+	//}
 
 	// write 
 	VkWriteDescriptorSet writeUBO{};
