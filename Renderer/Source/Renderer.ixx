@@ -67,13 +67,26 @@ struct SwapChainSupportDetails
 
 struct FrameBufferAttachment
 {
-	VkImage image{ nullptr };
-	VkImageView view{ nullptr };
+	VkImage image;
+	VkDeviceMemory mem;
+	VkImageView view;
+	VkFormat format;
 
 	~FrameBufferAttachment()
 	{
 		// TODO
 	}
+};
+struct FrameBuffer
+{
+	int32_t width, height;
+	VkFramebuffer frameBuffer;
+	// One attachment for every component required for a deferred rendering setup
+	FrameBufferAttachment position;
+	FrameBufferAttachment normal;
+	FrameBufferAttachment albedo;
+	FrameBufferAttachment depth;
+	VkRenderPass renderPass;
 };
 
 struct VkQueues
@@ -98,17 +111,43 @@ struct NeededFeatures
 
 };
 
-struct Image
-{
-	VkImage image;
-	void* mapped;
-};
 
 struct Semaphores
 {
 	VkSemaphore presentComplete;
 	VkSemaphore renderComplete;
 };
+
+struct UniformDataOffscreen
+{
+	glm::mat4 view;
+	glm::mat4 projection;
+
+};
+struct UniformDataComposition
+{
+	Light lights[6];
+	glm::vec4 viewPos;
+	int debugDisplayTarget = 0;
+};
+struct UniformBuffers
+{
+	Buffer offscreen{ VK_NULL_HANDLE };
+	Buffer composition{ VK_NULL_HANDLE };
+};
+
+struct Pipelines
+{
+	VkPipeline offscreen{ VK_NULL_HANDLE };
+	VkPipeline composition{ VK_NULL_HANDLE };
+};
+
+struct DescriptorSets
+{
+	VkDescriptorSet model{ VK_NULL_HANDLE };
+	VkDescriptorSet composition{ VK_NULL_HANDLE };
+};
+
 
 export class Renderer
 {
@@ -118,6 +157,8 @@ public:
 	~Renderer() = default;
 
 private:
+
+
 
 	Config* m_config;
 	std::vector<VkFence> m_waitFences;
@@ -276,11 +317,10 @@ private:
 	void CreateUniformBuffer();
 	//std::string GetShadersPath();
 	VkPipelineShaderStageCreateInfo LoadShader(std::string fileName, VkShaderStageFlagBits stage);
-	void BuildCommandBuffers();
+
 	void PrepareFrame();
 	void PreCreateSubmitInfo();
 	void UpdateUniformBuffers();
-	void LoadglTFFile(std::string filename);
 	void EncapsulationDevice();
 	void LoadAssets();
 
@@ -297,8 +337,74 @@ private:
 	static void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
 	void ResizeWindow();
-	void LoadAssetsglTF();
 	void SetEnabledFeatures();
 	VkPhysicalDeviceFeatures m_deviceFeatures{};
+
+	// 
+private:
+	struct Defered
+	{
+		VkSampler colorSampler{ VK_NULL_HANDLE };
+		VkSemaphore offscreenSemaphore{ VK_NULL_HANDLE };
+		VkCommandBuffer offScreenCmdBuffer{ VK_NULL_HANDLE };
+		FrameBuffer offScreenFrameBuf{};
+		VkPipelineLayout pipelineLayout{ VK_NULL_HANDLE };
+		Pipelines pipelines;
+		UniformBuffers uniformBuffers;
+		UniformDataComposition uniformDataComposition;
+		UniformDataOffscreen uniformDataOffscreen;
+		DescriptorSets descriptorSets;
+		VkDescriptorSetLayout descriptorSetLayout{ VK_NULL_HANDLE };
+		int32_t debugDisplayTarget = 0;
+		void Destroy(VkDevice device)
+		{
+			vkDestroySampler(device, colorSampler, nullptr);
+
+			vkDestroyImageView(device, offScreenFrameBuf.position.view, nullptr);
+			vkDestroyImage(device, offScreenFrameBuf.position.image, nullptr);
+			vkFreeMemory(device, offScreenFrameBuf.position.mem, nullptr);
+
+			vkDestroyImageView(device, offScreenFrameBuf.normal.view, nullptr);
+			vkDestroyImage(device, offScreenFrameBuf.normal.image, nullptr);
+			vkFreeMemory(device, offScreenFrameBuf.normal.mem, nullptr);
+
+			vkDestroyImageView(device, offScreenFrameBuf.albedo.view, nullptr);
+			vkDestroyImage(device, offScreenFrameBuf.albedo.image, nullptr);
+			vkFreeMemory(device, offScreenFrameBuf.albedo.mem, nullptr);
+
+			// Depth attachment
+			vkDestroyImageView(device, offScreenFrameBuf.depth.view, nullptr);
+			vkDestroyImage(device, offScreenFrameBuf.depth.image, nullptr);
+			vkFreeMemory(device, offScreenFrameBuf.depth.mem, nullptr);
+
+			vkDestroyFramebuffer(device, offScreenFrameBuf.frameBuffer, nullptr);
+
+			vkDestroyPipeline(device, pipelines.composition, nullptr);
+			vkDestroyPipeline(device, pipelines.offscreen, nullptr);
+
+			vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+
+			vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+			uniformBuffers.offscreen.Destroy();
+			uniformBuffers.composition.Destroy();
+			vkDestroyRenderPass(device, offScreenFrameBuf.renderPass, nullptr);
+			vkDestroySemaphore(device, offscreenSemaphore, nullptr);
+		}
+	}m_defered;
+	void CreateAttachment(
+		VkFormat format,
+		VkImageUsageFlagBits usage,
+		FrameBufferAttachment* attachment);
+
+	void PrepareOffscreenFramebuffer();
+	void PrepareUniformBuffers();
+	void SetupDescriptors();
+	void PreparePipelines();
+	void BuildCommandBuffers();
+	void BuildDeferredCommandBuffer();
+
+	void UpdateUniformBufferOffscreen();
+	void UpdateUniformBufferComposition();
+
 };
 

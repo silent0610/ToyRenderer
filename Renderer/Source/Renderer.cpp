@@ -2,7 +2,10 @@ module;
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
 #include <memory>
-#include "glm/mat4x4.hpp"
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include "stb/stb_image.h"
 #include "tiny_gltf.h"
 #include "imgui.h"
@@ -76,7 +79,8 @@ void Renderer::PreCreateSubmitInfo()
 	m_submitInfo.signalSemaphoreCount = 1;
 	m_submitInfo.pSignalSemaphores = &m_semaphores.renderComplete;
 }
-void Renderer::SetEnabledFeatures() {
+void Renderer::SetEnabledFeatures()
+{
 	vkGetPhysicalDeviceFeatures(m_physicalDevice, &m_deviceFeatures);
 	if (m_deviceFeatures.samplerAnisotropy)
 	{
@@ -116,8 +120,6 @@ void Renderer::InitVulkan()
 	m_swapChain.InitSurface(m_surface);
 	m_swapChain.Create(m_width, m_height, false, false);
 
-	LoadAssets();
-
 	// prepare
 	//CreateSwapChain();
 	CreateCommandPool();
@@ -127,12 +129,13 @@ void Renderer::InitVulkan()
 	CreateFramebuffers();
 	InitUI();
 
+	// Main
+	LoadAssets();
 	CreateUniformBuffer();
 	CreateDescriptors();
 	CreateGraphicsPipeline();
 	//CreateVertexBuffer();
 	BuildCommandBuffers();
-
 
 }
 void Renderer::InitUI()
@@ -193,7 +196,7 @@ void Renderer::BuildCommandBuffers()
 		vkCmdPushConstants(m_drawCmdBuffers[i], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4x4), &model);
 		VkDeviceSize offsets[1] = { 0 };
 
-		m_glTFModel.Draw(m_drawCmdBuffers[i],vkglTF::RenderFlags::BindImages,m_pipelineLayout,1);
+		m_glTFModel.Draw(m_drawCmdBuffers[i], vkglTF::RenderFlags::BindImages, m_pipelineLayout, 1);
 		DrawUI(m_drawCmdBuffers[i]);
 		//vkCmdDrawIndexed(m_drawCmdBuffers[i], indices.count, 1, 0, 0, 0);
 		vkCmdEndRenderPass(m_drawCmdBuffers[i]);
@@ -227,7 +230,7 @@ VkPipelineShaderStageCreateInfo Renderer::LoadShader(std::string fileName, VkSha
 
 void Renderer::CreateGraphicsPipeline()
 {
-	std::array<VkDescriptorSetLayout, 2> setLayouts = { m_descriptorSetLayouts.Matrices ,m_descriptorSetLayouts.Textures}; //, m_descriptorSetLayouts.Textures
+	std::array<VkDescriptorSetLayout, 2> setLayouts = { m_descriptorSetLayouts.Matrices ,m_descriptorSetLayouts.Textures }; //, m_descriptorSetLayouts.Textures
 
 	VkPipelineLayoutCreateInfo pipelineLayoutCI = Init::pipelineLayoutCreateInfo(setLayouts.data(), static_cast<uint32_t>(setLayouts.size()));
 
@@ -324,10 +327,10 @@ void Renderer::CreateDepthResources()
 	FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAllloc, nullptr, &m_depthStencil.memory))
 
-	if (vkBindImageMemory(m_device, m_depthStencil.image, m_depthStencil.memory, 0) != VK_SUCCESS)
-	{
-		throw std::runtime_error("fail to allocate depth memory");
-	};
+		if (vkBindImageMemory(m_device, m_depthStencil.image, m_depthStencil.memory, 0) != VK_SUCCESS)
+		{
+			throw std::runtime_error("fail to allocate depth memory");
+		};
 
 	VkImageViewCreateInfo imageViewCI{};
 	imageViewCI.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -453,9 +456,78 @@ VkResult Renderer::CreateBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags 
 void Renderer::CreateUniformBuffer()
 {
 	CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uboBuffer, sizeof(m_uboMatrices));
-
 	m_uboBuffer.Map();
+	//VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_defered.uniformBuffers.offscreen, sizeof(UniformDataOffscreen)));
+	//VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_defered.uniformBuffers.composition, sizeof(UniformDataComposition)));
 
+	//// Map persistent
+	//VK_CHECK_RESULT(m_defered.uniformBuffers.offscreen.Map());
+	//VK_CHECK_RESULT(m_defered.uniformBuffers.composition.Map());
+
+	//// Update
+	//UpdateUniformBufferOffscreen();
+	//UpdateUniformBufferComposition();
+}
+// Update matrices used for the offscreen rendering of the scene
+void Renderer::UpdateUniformBufferOffscreen()
+{
+	m_defered.uniformDataOffscreen.projection = m_camera.matrices.perspective;
+	m_defered.uniformDataOffscreen.view = m_camera.matrices.view;
+	memcpy(m_defered.uniformBuffers.offscreen.mapped, &m_defered.uniformDataOffscreen, sizeof(UniformDataOffscreen));
+}
+
+// Update lights and parameters passed to the composition shaders
+void Renderer::UpdateUniformBufferComposition()
+{
+	// White
+	m_defered.uniformDataComposition.lights[0].position = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
+	m_defered.uniformDataComposition.lights[0].color = glm::vec3(1.5f);
+	m_defered.uniformDataComposition.lights[0].radius = 15.0f * 0.25f;
+	// Red
+	m_defered.uniformDataComposition.lights[1].position = glm::vec4(-2.0f, 0.0f, 0.0f, 0.0f);
+	m_defered.uniformDataComposition.lights[1].color = glm::vec3(1.0f, 0.0f, 0.0f);
+	m_defered.uniformDataComposition.lights[1].radius = 15.0f;
+	// Blue
+	m_defered.uniformDataComposition.lights[2].position = glm::vec4(2.0f, -1.0f, 0.0f, 0.0f);
+	m_defered.uniformDataComposition.lights[2].color = glm::vec3(0.0f, 0.0f, 2.5f);
+	m_defered.uniformDataComposition.lights[2].radius = 5.0f;
+	// Yellow
+	m_defered.uniformDataComposition.lights[3].position = glm::vec4(0.0f, -0.9f, 0.5f, 0.0f);
+	m_defered.uniformDataComposition.lights[3].color = glm::vec3(1.0f, 1.0f, 0.0f);
+	m_defered.uniformDataComposition.lights[3].radius = 2.0f;
+	// Green
+	m_defered.uniformDataComposition.lights[4].position = glm::vec4(0.0f, -0.5f, 0.0f, 0.0f);
+	m_defered.uniformDataComposition.lights[4].color = glm::vec3(0.0f, 1.0f, 0.2f);
+	m_defered.uniformDataComposition.lights[4].radius = 5.0f;
+	// Yellow
+	m_defered.uniformDataComposition.lights[5].position = glm::vec4(0.0f, -1.0f, 0.0f, 0.0f);
+	m_defered.uniformDataComposition.lights[5].color = glm::vec3(1.0f, 0.7f, 0.3f);
+	m_defered.uniformDataComposition.lights[5].radius = 25.0f;
+
+	// Animate the lights
+
+	m_defered.uniformDataComposition.lights[0].position.x = sin(glm::radians(360.0f * m_timer)) * 5.0f;
+	m_defered.uniformDataComposition.lights[0].position.z = cos(glm::radians(360.0f * m_timer)) * 5.0f;
+
+	m_defered.uniformDataComposition.lights[1].position.x = -4.0f + sin(glm::radians(360.0f * m_timer) + 45.0f) * 2.0f;
+	m_defered.uniformDataComposition.lights[1].position.z = 0.0f + cos(glm::radians(360.0f * m_timer) + 45.0f) * 2.0f;
+
+	m_defered.uniformDataComposition.lights[2].position.x = 4.0f + sin(glm::radians(360.0f * m_timer)) * 2.0f;
+	m_defered.uniformDataComposition.lights[2].position.z = 0.0f + cos(glm::radians(360.0f * m_timer)) * 2.0f;
+
+	m_defered.uniformDataComposition.lights[4].position.x = 0.0f + sin(glm::radians(360.0f * m_timer + 90.0f)) * 5.0f;
+	m_defered.uniformDataComposition.lights[4].position.z = 0.0f - cos(glm::radians(360.0f * m_timer + 45.0f)) * 5.0f;
+
+	m_defered.uniformDataComposition.lights[5].position.x = 0.0f + sin(glm::radians(-360.0f * m_timer + 135.0f)) * 10.0f;
+	m_defered.uniformDataComposition.lights[5].position.z = 0.0f - cos(glm::radians(-360.0f * m_timer - 45.0f)) * 10.0f;
+
+
+	// Current view position
+	m_defered.uniformDataComposition.viewPos = glm::vec4(m_camera.position, 0.0f) * glm::vec4(-1.0f, 1.0f, -1.0f, 1.0f);
+
+	m_defered.uniformDataComposition.debugDisplayTarget = m_defered.debugDisplayTarget;
+
+	memcpy(m_defered.uniformBuffers.composition.mapped, &m_defered.uniformDataComposition, sizeof(UniformDataComposition));
 }
 void Renderer::CreateDescriptors()
 {
@@ -1535,7 +1607,7 @@ void Renderer::Cleanup()
 	m_swapChain.Cleanup();
 
 	m_UI.FreeResources();
-	
+
 	m_glTFModel.Destroy();
 	if (m_neededFeatures.validation)
 	{
@@ -1610,120 +1682,303 @@ void Renderer::LoadAssets()
 	const uint32_t glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors;
 	/*LoadglTFFile(Tool::GetAssetsPath() + "Models/FlightHelmet/glTF/FlightHelmet.gltf");*/
 	m_glTFModel.loadFromFile(Tool::GetAssetsPath() + m_config->modelPath, m_vulkanDevice, m_queues.graphicsQueue, glTFLoadingFlags);
-	std::cout << std::endl << "sizeof material: " << m_glTFModel.materials.size() << std::endl;
-	std::cout <<std::endl<<"sizeof texture: " << m_glTFModel.textures.size() << std::endl;
+	//std::cout << std::endl << "sizeof material: " << m_glTFModel.materials.size() << std::endl;
+	//std::cout << std::endl << "sizeof texture: " << m_glTFModel.textures.size() << std::endl;
 }
-void Renderer::LoadAssetsglTF()
+void Renderer::CreateAttachment(
+	VkFormat format,
+	VkImageUsageFlagBits usage,
+	FrameBufferAttachment* attachment)
 {
-	const uint32_t glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors | vkglTF::FileLoadingFlags::FlipY;
-	//scenes.resize(2);
-	//scenes[0].loadFromFile(Tool::GetAssetsPath() + "models/vulkanscene_shadow.gltf", vulkanDevice, queue, glTFLoadingFlags);
-	//scenes[1].loadFromFile(Tool::GetAssetsPath() + "models/samplescene.gltf", vulkanDevice, queue, glTFLoadingFlags);
-	//sceneNames = { "Vulkan scene", "Teapots and pillars" };
+	VkImageAspectFlags aspectMask = 0;
+	VkImageLayout imageLayout;
+
+	attachment->format = format;
+
+	if (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+	{
+		aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	}
+	if (usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
+	{
+		aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		if (format >= VK_FORMAT_D16_UNORM_S8_UINT)
+			aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+		imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	}
+
+	assert(aspectMask > 0);
+
+	VkImageCreateInfo image = Init::imageCreateInfo();
+	image.imageType = VK_IMAGE_TYPE_2D;
+	image.format = format;
+	image.extent.width = m_defered.offScreenFrameBuf.width;
+	image.extent.height = m_defered.offScreenFrameBuf.height;
+	image.extent.depth = 1;
+	image.mipLevels = 1;
+	image.arrayLayers = 1;
+	image.samples = VK_SAMPLE_COUNT_1_BIT;
+	image.tiling = VK_IMAGE_TILING_OPTIMAL;
+	image.usage = usage | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+	VkMemoryAllocateInfo memAlloc = Init::memoryAllocateInfo();
+	VkMemoryRequirements memReqs;
+
+	VK_CHECK_RESULT(vkCreateImage(m_device, &image, nullptr, &attachment->image));
+	vkGetImageMemoryRequirements(m_device, attachment->image, &memReqs);
+	memAlloc.allocationSize = memReqs.size;
+	memAlloc.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &attachment->mem));
+	VK_CHECK_RESULT(vkBindImageMemory(m_device, attachment->image, attachment->mem, 0));
+
+	VkImageViewCreateInfo imageView = Init::imageViewCreateInfo();
+	imageView.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	imageView.format = format;
+	imageView.subresourceRange = {};
+	imageView.subresourceRange.aspectMask = aspectMask;
+	imageView.subresourceRange.baseMipLevel = 0;
+	imageView.subresourceRange.levelCount = 1;
+	imageView.subresourceRange.baseArrayLayer = 0;
+	imageView.subresourceRange.layerCount = 1;
+	imageView.image = attachment->image;
+	VK_CHECK_RESULT(vkCreateImageView(m_device, &imageView, nullptr, &attachment->view));
 }
-//void Renderer::LoadglTFFile(std::string fileName)
-//{
-//	tinygltf::Model glTFInput;
-//	tinygltf::TinyGLTF gltfContext;
-//	std::string error, warning;
-//	bool fileLoaded = gltfContext.LoadASCIIFromFile(&glTFInput, &error, &warning, fileName);
-//
-//	// Pass some Vulkan resources required for setup and rendering to the glTF model loading class
-//	m_glTFModel.vulkanDevice = m_vulkanDevice;
-//	m_glTFModel.copyQueue = m_queues.graphicsQueue;
-//
-//	std::vector<uint32_t> indexBuffer;
-//	std::vector<GLTFModel::Vertex> vertexBuffer;
-//
-//	if (fileLoaded)
-//	{
-//		m_glTFModel.LoadImages(glTFInput);
-//		m_glTFModel.LoadMaterials(glTFInput);
-//		m_glTFModel.LoadTextures(glTFInput);
-//		const tinygltf::Scene& scene = glTFInput.scenes[0];
-//		for (size_t i = 0; i < scene.nodes.size(); i++)
-//		{
-//			const tinygltf::Node node = glTFInput.nodes[scene.nodes[i]];
-//			m_glTFModel.LoadNode(node, glTFInput, nullptr, indexBuffer, vertexBuffer);
-//		}
-//	}
-//	else
-//	{
-//		throw std::runtime_error("Could not open the glTF file.\n\nMake sure the assets submodule has been checked out and is up-to-date.");
-//		return;
-//	}
-//
-//	// Create and upload vertex and index buffer
-//	// We will be using one single vertex buffer and one single index buffer for the whole glTF scene
-//	// Primitives (of the glTF model) will then index into these using index offsets
-//
-//	size_t vertexBufferSize = vertexBuffer.size() * sizeof(GLTFModel::Vertex);
-//	size_t indexBufferSize = indexBuffer.size() * sizeof(uint32_t);
-//	m_glTFModel.indices.count = static_cast<uint32_t>(indexBuffer.size());
-//
-//	struct StagingBuffer
-//	{
-//		VkBuffer buffer;
-//		VkDeviceMemory memory;
-//	} vertexStaging, indexStaging;
-//
-//	// Create host visible staging buffers (source)
-//	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
-//		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-//		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-//		vertexBufferSize,
-//		&vertexStaging.buffer,
-//		&vertexStaging.memory,
-//		vertexBuffer.data()));
-//	// Index data
-//	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
-//		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-//		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-//		indexBufferSize,
-//		&indexStaging.buffer,
-//		&indexStaging.memory,
-//		indexBuffer.data()));
-//
-//	// Create device local buffers (target)
-//	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
-//		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-//		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-//		vertexBufferSize,
-//		&m_glTFModel.vertices.buffer,
-//		&m_glTFModel.vertices.memory));
-//	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
-//		VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-//		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-//		indexBufferSize,
-//		&m_glTFModel.indices.buffer,
-//		&m_glTFModel.indices.memory));
-//
-//	// Copy data from staging buffers (host) do device local buffer (gpu)
-//	VkCommandBuffer copyCmd = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-//	VkBufferCopy copyRegion = {};
-//
-//	copyRegion.size = vertexBufferSize;
-//	vkCmdCopyBuffer(
-//		copyCmd,
-//		vertexStaging.buffer,
-//		m_glTFModel.vertices.buffer,
-//		1,
-//		&copyRegion);
-//
-//	copyRegion.size = indexBufferSize;
-//	vkCmdCopyBuffer(
-//		copyCmd,
-//		indexStaging.buffer,
-//		m_glTFModel.indices.buffer,
-//		1,
-//		&copyRegion);
-//
-//	m_vulkanDevice->FlushCommandBuffer(copyCmd, m_queues.graphicsQueue, true);
-//
-//	// Free staging resources
-//	vkDestroyBuffer(m_device, vertexStaging.buffer, nullptr);
-//	vkFreeMemory(m_device, vertexStaging.memory, nullptr);
-//	vkDestroyBuffer(m_device, indexStaging.buffer, nullptr);
-//	vkFreeMemory(m_device, indexStaging.memory, nullptr);
-//
-//}
+void Renderer::PrepareOffscreenFramebuffer()
+{
+	// Note: Instead of using fixed sizes, one could also match the window size and recreate the attachments on resize
+	m_defered.offScreenFrameBuf.width = 2048;
+	m_defered.offScreenFrameBuf.height = 2048;
+
+	// Color attachments
+
+	// (World space) Positions
+	CreateAttachment(
+		VK_FORMAT_R16G16B16A16_SFLOAT,
+		VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+		&m_defered.offScreenFrameBuf.position);
+
+	// (World space) Normals
+	CreateAttachment(
+		VK_FORMAT_R16G16B16A16_SFLOAT,
+		VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+		&m_defered.offScreenFrameBuf.normal);
+
+	// Albedo (color)
+	CreateAttachment(
+		VK_FORMAT_R8G8B8A8_UNORM,
+		VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+		&m_defered.offScreenFrameBuf.albedo);
+
+	// Depth attachment
+
+	// Find a suitable depth format
+	VkFormat attDepthFormat;
+	VkBool32 validDepthFormat = Tool::GetSupportedDepthFormat(m_physicalDevice, &attDepthFormat);
+	assert(validDepthFormat);
+
+	CreateAttachment(
+		attDepthFormat,
+		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+		&m_defered.offScreenFrameBuf.depth);
+
+	// Set up separate renderpass with references to the color and depth attachments
+	std::array<VkAttachmentDescription, 4> attachmentDescs = {};
+
+	// Init attachment properties
+	for (uint32_t i = 0; i < 4; ++i)
+	{
+		attachmentDescs[i].samples = VK_SAMPLE_COUNT_1_BIT;
+		attachmentDescs[i].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		attachmentDescs[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		attachmentDescs[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		attachmentDescs[i].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		if (i == 3)
+		{
+			attachmentDescs[i].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			attachmentDescs[i].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		}
+		else
+		{
+			attachmentDescs[i].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			attachmentDescs[i].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		}
+	}
+
+	// Formats
+	attachmentDescs[0].format = m_defered.offScreenFrameBuf.position.format;
+	attachmentDescs[1].format = m_defered.offScreenFrameBuf.normal.format;
+	attachmentDescs[2].format = m_defered.offScreenFrameBuf.albedo.format;
+	attachmentDescs[3].format = m_defered.offScreenFrameBuf.depth.format;
+
+	std::vector<VkAttachmentReference> colorReferences;
+	colorReferences.push_back({ 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL });
+	colorReferences.push_back({ 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL });
+	colorReferences.push_back({ 2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL });
+
+	VkAttachmentReference depthReference = {};
+	depthReference.attachment = 3;
+	depthReference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	VkSubpassDescription subpass = {};
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.pColorAttachments = colorReferences.data();
+	subpass.colorAttachmentCount = static_cast<uint32_t>(colorReferences.size());
+	subpass.pDepthStencilAttachment = &depthReference;
+
+	// Use subpass dependencies for attachment layout transitions
+	std::array<VkSubpassDependency, 2> dependencies;
+
+	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependencies[0].dstSubpass = 0;
+	dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+	dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+	dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+	dependencies[1].srcSubpass = 0;
+	dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+	dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+	dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+	dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+	VkRenderPassCreateInfo renderPassInfo = {};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	renderPassInfo.pAttachments = attachmentDescs.data();
+	renderPassInfo.attachmentCount = static_cast<uint32_t>(attachmentDescs.size());
+	renderPassInfo.subpassCount = 1;
+	renderPassInfo.pSubpasses = &subpass;
+	renderPassInfo.dependencyCount = 2;
+	renderPassInfo.pDependencies = dependencies.data();
+
+	VK_CHECK_RESULT(vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_defered.offScreenFrameBuf.renderPass));
+
+	std::array<VkImageView, 4> attachments;
+	attachments[0] = m_defered.offScreenFrameBuf.position.view;
+	attachments[1] = m_defered.offScreenFrameBuf.normal.view;
+	attachments[2] = m_defered.offScreenFrameBuf.albedo.view;
+	attachments[3] = m_defered.offScreenFrameBuf.depth.view;
+
+	VkFramebufferCreateInfo fbufCreateInfo = {};
+	fbufCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	fbufCreateInfo.pNext = NULL;
+	fbufCreateInfo.renderPass = m_defered.offScreenFrameBuf.renderPass;
+	fbufCreateInfo.pAttachments = attachments.data();
+	fbufCreateInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+	fbufCreateInfo.width = m_defered.offScreenFrameBuf.width;
+	fbufCreateInfo.height = m_defered.offScreenFrameBuf.height;
+	fbufCreateInfo.layers = 1;
+	VK_CHECK_RESULT(vkCreateFramebuffer(m_device, &fbufCreateInfo, nullptr, &m_defered.offScreenFrameBuf.frameBuffer));
+
+	// Create sampler to sample from the color attachments
+	VkSamplerCreateInfo sampler = Init::samplerCreateInfo();
+	sampler.magFilter = VK_FILTER_NEAREST;
+	sampler.minFilter = VK_FILTER_NEAREST;
+	sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	sampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler.addressModeV = sampler.addressModeU;
+	sampler.addressModeW = sampler.addressModeU;
+	sampler.mipLodBias = 0.0f;
+	sampler.maxAnisotropy = 1.0f;
+	sampler.minLod = 0.0f;
+	sampler.maxLod = 1.0f;
+	sampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+	VK_CHECK_RESULT(vkCreateSampler(m_device, &sampler, nullptr, &m_defered.colorSampler));
+}
+void Renderer::PrepareUniformBuffers()
+{
+	//CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uboBuffer, sizeof(m_uboMatrices));
+//m_uboBuffer.Map();
+	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_defered.uniformBuffers.offscreen, sizeof(UniformDataOffscreen)));
+	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_defered.uniformBuffers.composition, sizeof(UniformDataComposition)));
+
+	// Map persistent
+	VK_CHECK_RESULT(m_defered.uniformBuffers.offscreen.Map());
+	VK_CHECK_RESULT(m_defered.uniformBuffers.composition.Map());
+
+	// Update
+	UpdateUniformBufferOffscreen();
+	UpdateUniformBufferComposition();
+
+}
+void Renderer::SetupDescriptors()
+{
+	// Pool
+	std::vector<VkDescriptorPoolSize> poolSizes = {
+		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 8),
+		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 9)
+	};
+	VkDescriptorPoolCreateInfo descriptorPoolInfo = Init::descriptorPoolCreateInfo(poolSizes, 3);
+	VK_CHECK_RESULT(vkCreateDescriptorPool(m_device, &descriptorPoolInfo, nullptr, &m_descriptorPool));
+
+
+	// Layouts
+	std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
+		// Binding 0 : Vertex shader uniform buffer
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0),
+		// Binding 1 : Position texture target / Scene colormap
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1),
+		// Binding 2 : Normals texture target
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2),
+		// Binding 3 : Albedo texture target
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 3),
+		// Binding 4 : Fragment shader uniform buffer
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 4),
+	};
+	VkDescriptorSetLayoutCreateInfo descriptorLayout = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
+	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayout, nullptr, &m_defered.descriptorSetLayout));
+
+	// Sets
+	std::vector<VkWriteDescriptorSet> writeDescriptorSets;
+	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_defered.descriptorSetLayout, 1);
+
+	// Image descriptors for the offscreen color attachments
+	VkDescriptorImageInfo texDescriptorPosition =
+		Init::descriptorImageInfo(
+			m_defered.colorSampler,
+			m_defered.offScreenFrameBuf.position.view,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+	VkDescriptorImageInfo texDescriptorNormal =
+		Init::descriptorImageInfo(
+			m_defered.colorSampler,
+			m_defered.offScreenFrameBuf.normal.view,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+	VkDescriptorImageInfo texDescriptorAlbedo =
+		Init::descriptorImageInfo(
+			m_defered.colorSampler,
+			m_defered.offScreenFrameBuf.albedo.view,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+	// Deferred composition
+	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_defered.descriptorSets.composition));
+	writeDescriptorSets = {
+		// Binding 1 : Position texture target
+		Init::writeDescriptorSet(m_defered.descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &texDescriptorPosition),
+		// Binding 2 : Normals texture target
+		Init::writeDescriptorSet(m_defered.descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &texDescriptorNormal),
+		// Binding 3 : Albedo texture target
+		Init::writeDescriptorSet(m_defered.descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, &texDescriptorAlbedo),
+		// Binding 4 : Fragment shader uniform buffer
+		Init::writeDescriptorSet(m_defered.descriptorSets.composition, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &m_defered.uniformBuffers.composition.descriptor),
+	};
+	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+
+	// Offscreen (scene)
+
+	// Model
+	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_defered.descriptorSets.model));
+	writeDescriptorSets = {
+		// Binding 0: Vertex shader uniform buffer
+		Init::writeDescriptorSet(m_defered.descriptorSets.model, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_defered.uniformBuffers.offscreen.descriptor),
+		// Binding 1: Color map
+		//Init::writeDescriptorSet(m_defered.descriptorSets.model, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &textures.model.colorMap.descriptor),
+		//// Binding 2: Normal map
+		//Init::writeDescriptorSet(m_defered.descriptorSets.model, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &textures.model.normalMap.descriptor)
+	};
+	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+}

@@ -35,6 +35,7 @@ namespace Tool
 	export void ExitFatal(const std::string& message, int32_t exitCode);
 	export void ExitFatal(const std::string& message, VkResult resultCode);
 	export bool CheckFileExists(const std::string& filename);
+	export bool GetSupportedDepthFormat(VkPhysicalDevice physicalDevice, VkFormat* depthFormat);
 
 
 }

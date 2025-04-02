@@ -515,7 +515,7 @@ void vkglTF::Material::createDescriptorSet(VkDescriptorPool descriptorPool, VkDe
 		writeDescriptorSet.pImageInfo = &normalTexture->descriptor;
 		writeDescriptorSets.push_back(writeDescriptorSet);
 	}
-	std::cout <<"size:" << writeDescriptorSets.size()<<std::endl;
+	//std::cout << "size:" << writeDescriptorSets.size() << std::endl;
 	vkUpdateDescriptorSets(device->logicalDevice, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
 
@@ -1114,7 +1114,7 @@ void vkglTF::Model::loadImages(tinygltf::Model& gltfModel, VulkanDevice* device,
 
 void vkglTF::Model::loadMaterials(tinygltf::Model& gltfModel)
 {
-	std::cout << "sizeof matertial is " << gltfModel.materials.size();
+	//std::cout << "sizeof matertial is " << gltfModel.materials.size();
 	for (tinygltf::Material& mat : gltfModel.materials)
 	{
 		vkglTF::Material material(device);
@@ -1584,7 +1584,7 @@ void vkglTF::Model::loadFromFile(std::string filename, VulkanDevice* device, VkQ
 		{
 			if (material.baseColorTexture != nullptr)
 			{
-				std::cout << "notnull\n";
+				//std::cout << "notnull\n";
 				material.createDescriptorSet(descriptorPool, vkglTF::descriptorSetLayoutImage, descriptorBindingFlags);
 			}
 		}
