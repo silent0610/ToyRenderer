@@ -16,32 +16,16 @@ import ConfigMod;
 import UIMod;
 import ConfigMod;
 import LightMod;
+import FrameBufferMod;
 
-
-
-
-struct UBOMatrices
+const int LIGHT_COUNT = 3;
+struct ShadowSettings
 {
-	alignas(16)glm::mat4 view;
-	alignas(16)glm::mat4 proj;
-	alignas(16)glm::vec3 lightPos;
-	alignas(16)glm::vec3 camPos;
-};
+	bool enableShadows = true;
+	float lightFOV = 100.0f;
 
-struct UBOLights
-{
-	glm::vec3 pos;
-	glm::vec3 color;
-	glm::vec3 intensity;
-};
-
-struct ConstBuffers
-{
-	Buffer uboBuffer;
-	Buffer lightBuffer;
-
-	UBOMatrices uboBufferData;
-	UBOLights lightBufferData;
+	float depthBiasConstant = 1.25f;
+	float depthBiasSlope = 1.75f;
 };
 
 struct QueueFamilyIndices
@@ -61,29 +45,8 @@ struct SwapChainSupportDetails
 	std::vector<VkPresentModeKHR> presentModes;
 };
 
-struct FrameBufferAttachment
-{
-	VkImage image;
-	VkDeviceMemory mem;
-	VkImageView view;
-	VkFormat format;
 
-	~FrameBufferAttachment()
-	{
-		// TODO
-	}
-};
-struct FrameBuffer
-{
-	int32_t width, height;
-	VkFramebuffer frameBuffer;
-	// One attachment for every component required for a deferred rendering setup
-	FrameBufferAttachment position;
-	FrameBufferAttachment normal;
-	FrameBufferAttachment albedo;
-	FrameBufferAttachment depth;
-	VkRenderPass renderPass;
-};
+
 
 struct VkQueues
 {
@@ -91,13 +54,7 @@ struct VkQueues
 	VkQueue presentQueue{ nullptr };
 };
 
-struct Limits
-{
-	bool validation{ false };
-	float maxAnisotropy{ 0 };
-	VkSampleCountFlagBits maxMsaaSamples{ VK_SAMPLE_COUNT_1_BIT };
 
-};
 // 应该是键值对 使用map
 struct NeededFeatures
 {
@@ -119,30 +76,44 @@ struct UniformDataOffscreen
 	glm::mat4 model;
 	glm::mat4 view;
 	glm::mat4 projection;
-
+	alignas(16) int layer{ 0 };
 };
+
+// This UBO stores the shadow matrices for all of the light sources
+// The matrices are indexed using geometry shader instancing
+// The instancePos is used to place the models using instanced draws
+struct UniformDataShadows
+{
+	glm::mat4 mvp[LIGHT_COUNT];
+	glm::vec4 instancePos[3];
+};
+
 struct UniformDataComposition
 {
-	Light lights[6];
 	glm::vec4 viewPos;
-	int debugDisplayTarget = 0;
+	Light lights[LIGHT_COUNT];
+	uint32_t useShadows = 1;
+	int32_t debugDisplayTarget = 0;
 };
 struct UniformBuffers
 {
-	Buffer offscreen{ VK_NULL_HANDLE };
-	Buffer composition{ VK_NULL_HANDLE };
+	Buffer offscreen;
+	Buffer composition;
+	Buffer shadowGeometryShader;
 };
 
 struct Pipelines
 {
 	VkPipeline offscreen{ VK_NULL_HANDLE };
 	VkPipeline composition{ VK_NULL_HANDLE };
+	VkPipeline shadowpass{ VK_NULL_HANDLE };
 };
 
 struct DescriptorSets
 {
 	VkDescriptorSet model{ VK_NULL_HANDLE };
 	VkDescriptorSet composition{ VK_NULL_HANDLE };
+	VkDescriptorSet shadow{ VK_NULL_HANDLE };
 };
 
 struct RenderPass
@@ -152,7 +123,7 @@ struct RenderPass
 	VkPipelineLayout pipelineLayout;
 	VkPipeline pipeline;
 	VkRenderPass renderPass;
-	FrameBuffer frameBuffer;
+	Framebuffer frameBuffer;
 	std::vector<Buffer> buffers;
 	VkCommandBuffer commandBuffer;
 };
@@ -168,6 +139,13 @@ struct DescriptorSetLayouts
 	VkDescriptorSetLayout composition{ nullptr };
 	VkDescriptorSetLayout textures{ nullptr };
 };
+struct Framebuffers
+{
+	// Framebuffer resources for the deferred pass
+	Framebuffer* deferred{ nullptr };
+	// Framebuffer resources for the shadow pass
+	Framebuffer* shadow{ nullptr };
+};
 
 export class Renderer
 {
@@ -177,8 +155,6 @@ public:
 	~Renderer() = default;
 
 private:
-
-
 
 	Config* m_config;
 	std::vector<VkFence> m_waitFences;
@@ -224,7 +200,6 @@ private:
 	std::vector<VkShaderModule> m_shaderModules{};
 	VkFormat m_depthFormat{};
 	Buffer m_uboBuffer{};
-	UBOMatrices m_uboMatrices{};
 	VkDescriptorSetLayout m_descriptorSetLayout{ VK_NULL_HANDLE };
 	VkPipelineLayout m_pipelineLayout{ VK_NULL_HANDLE };
 	VkDescriptorPool m_descriptorPool{ nullptr };
@@ -256,7 +231,6 @@ private:
 	uint32_t m_height = 1200;
 	int m_inFlight = 2;
 	//bool m_enableValidation{ false };
-	Limits m_limits{};
 	NeededFeatures m_neededFeatures{};
 	VkSampleCountFlagBits m_msaaSamples = VK_SAMPLE_COUNT_1_BIT;
 	float m_maxAnisotropy;
@@ -372,7 +346,6 @@ private:
 		VkSampler colorSampler{ VK_NULL_HANDLE };
 		VkSemaphore offscreenSemaphore{ VK_NULL_HANDLE };
 		VkCommandBuffer offScreenCmdBuffer{ VK_NULL_HANDLE };
-		FrameBuffer offScreenFrameBuf{};
 		PipelineLayouts pipelineLayouts;
 		Pipelines pipelines;
 		UniformBuffers uniformBuffers;
@@ -382,48 +355,11 @@ private:
 		DescriptorSetLayouts descriptorSetLayouts;
 		VkDescriptorSetLayout descriptorSetLayout;
 		int32_t debugDisplayTarget = 0;
-		void Destroy(VkDevice device)
-		{
-			vkDestroySampler(device, colorSampler, nullptr);
-
-			vkDestroyImageView(device, offScreenFrameBuf.position.view, nullptr);
-			vkDestroyImage(device, offScreenFrameBuf.position.image, nullptr);
-			vkFreeMemory(device, offScreenFrameBuf.position.mem, nullptr);
-
-			vkDestroyImageView(device, offScreenFrameBuf.normal.view, nullptr);
-			vkDestroyImage(device, offScreenFrameBuf.normal.image, nullptr);
-			vkFreeMemory(device, offScreenFrameBuf.normal.mem, nullptr);
-
-			vkDestroyImageView(device, offScreenFrameBuf.albedo.view, nullptr);
-			vkDestroyImage(device, offScreenFrameBuf.albedo.image, nullptr);
-			vkFreeMemory(device, offScreenFrameBuf.albedo.mem, nullptr);
-
-			// Depth attachment
-			vkDestroyImageView(device, offScreenFrameBuf.depth.view, nullptr);
-			vkDestroyImage(device, offScreenFrameBuf.depth.image, nullptr);
-			vkFreeMemory(device, offScreenFrameBuf.depth.mem, nullptr);
-
-			vkDestroyFramebuffer(device, offScreenFrameBuf.frameBuffer, nullptr);
-
-			vkDestroyPipeline(device, pipelines.composition, nullptr);
-			vkDestroyPipeline(device, pipelines.offscreen, nullptr);
-
-			vkDestroyPipelineLayout(device, pipelineLayouts.composition, nullptr);
-			vkDestroyPipelineLayout(device, pipelineLayouts.model, nullptr);
-			vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.model, nullptr);
-			vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.textures, nullptr);
-			vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.composition, nullptr);
-			uniformBuffers.offscreen.Destroy();
-			uniformBuffers.composition.Destroy();
-			vkDestroyRenderPass(device, offScreenFrameBuf.renderPass, nullptr);
-			vkDestroySemaphore(device, offscreenSemaphore, nullptr);
-		}
-	}m_defered;
-	void CreateAttachment(
-		VkFormat format,
-		VkImageUsageFlagBits usage,
-		FrameBufferAttachment* attachment);
-
+	};
+	UniformBuffers m_uniformBuffers;
+	DescriptorSetLayouts m_descriptorSetLayouts;
+	DescriptorSets m_descriptorSets;
+	Defered m_defered;
 	void PrepareOffscreenFramebuffer();
 	void PrepareUniformBuffers();
 	void SetupDescriptors();
@@ -433,6 +369,14 @@ private:
 
 	void UpdateUniformBufferOffscreen();
 	void UpdateUniformBufferComposition();
+
+	;
+	Framebuffers m_framebuffers{ nullptr,nullptr };
+	void SetupShadow();
+	void SetupDefered();
+	void InitLights();
+
+	void SetupDescriptorsDD();
 
 };
 

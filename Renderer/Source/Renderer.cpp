@@ -82,6 +82,10 @@ void Renderer::PreCreateSubmitInfo()
 void Renderer::SetEnabledFeatures()
 {
 	vkGetPhysicalDeviceFeatures(m_physicalDevice, &m_deviceFeatures);
+	if (m_deviceFeatures.geometryShader)
+	{
+		m_enabledFeatures.geometryShader = VK_TRUE;
+	}
 	if (m_deviceFeatures.samplerAnisotropy)
 	{
 		m_enabledFeatures.samplerAnisotropy = VK_TRUE;
@@ -137,12 +141,14 @@ void Renderer::InitVulkan()
 	////CreateVertexBuffer();
 	//BuildCommandBuffers();
 
-	PrepareOffscreenFramebuffer();
-	PrepareUniformBuffers();
-	SetupDescriptors();
-	PreparePipelines();
-	BuildCommandBuffers();
-	BuildDeferredCommandBuffer();
+	//PrepareOffscreenFramebuffer();
+	//PrepareUniformBuffers();
+	//SetupDescriptors();
+	//PreparePipelines();
+	//BuildCommandBuffers();
+	//BuildDeferredCommandBuffer();
+
+
 
 }
 void Renderer::InitUI()
@@ -462,21 +468,21 @@ VkResult Renderer::CreateBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags 
 	// vkBindBufferMemory(m_device, buffer->buffer, buffer->memory, 0);
 	return buffer->Bind();
 }
-void Renderer::CreateUniformBuffer()
-{
-	CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uboBuffer, sizeof(m_uboMatrices));
-	m_uboBuffer.Map();
-	//VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_defered.uniformBuffers.offscreen, sizeof(UniformDataOffscreen)));
-	//VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_defered.uniformBuffers.composition, sizeof(UniformDataComposition)));
-
-	//// Map persistent
-	//VK_CHECK_RESULT(m_defered.uniformBuffers.offscreen.Map());
-	//VK_CHECK_RESULT(m_defered.uniformBuffers.composition.Map());
-
-	//// Update
-	//UpdateUniformBufferOffscreen();
-	//UpdateUniformBufferComposition();
-}
+//void Renderer::CreateUniformBuffer()
+//{
+//	CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uboBuffer, sizeof(m_uboMatrices));
+//	m_uboBuffer.Map();
+//	//VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_defered.uniformBuffers.offscreen, sizeof(UniformDataOffscreen)));
+//	//VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_defered.uniformBuffers.composition, sizeof(UniformDataComposition)));
+//
+//	//// Map persistent
+//	//VK_CHECK_RESULT(m_defered.uniformBuffers.offscreen.Map());
+//	//VK_CHECK_RESULT(m_defered.uniformBuffers.composition.Map());
+//
+//	//// Update
+//	//UpdateUniformBufferOffscreen();
+//	//UpdateUniformBufferComposition();
+//}
 // Update matrices used for the offscreen rendering of the scene
 void Renderer::UpdateUniformBufferOffscreen()
 {
@@ -785,71 +791,71 @@ VkSurfaceFormatKHR Renderer::ChooseSwapSurfaceFormat(const std::vector<VkSurface
 	return availableFormats[0];
 }
 
-void Renderer::CreateSwapChain()
-{
-	SwapChainSupportDetails& swapChainSupport = m_swapChainSupport;
-	VkSurfaceFormatKHR surfaceFormat = ChooseSwapSurfaceFormat(swapChainSupport.formats);
-	VkPresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
-	VkExtent2D extent = ChooseSwapExtent(swapChainSupport.capabilities);
-
-	// 设置交换链图像数量
-	uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
-	if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount)
-	{
-		imageCount = swapChainSupport.capabilities.maxImageCount;
-	}
-
-	VkSwapchainCreateInfoKHR createInfo{};
-	createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-	createInfo.surface = m_surface;
-	createInfo.minImageCount = imageCount;
-	createInfo.imageFormat = surfaceFormat.format;
-	createInfo.imageColorSpace = surfaceFormat.colorSpace;
-	createInfo.imageExtent = extent;
-	createInfo.imageArrayLayers = 1;
-	createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-
-	QueueFamilyIndices& indices = m_indices;
-	uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
-	// 如果是两个队列族，交换链就需要在两个队列族之间共享图像
-	if (indices.graphicsFamily != indices.presentFamily)
-	{
-		createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-		createInfo.queueFamilyIndexCount = 2;
-		createInfo.pQueueFamilyIndices = queueFamilyIndices;
-	}
-	else
-	{
-		createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		createInfo.queueFamilyIndexCount = 0; // Optional
-		createInfo.pQueueFamilyIndices = nullptr; // Optional
-	}
-	// 预变换，这里是不变换
-	createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
-	createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-	createInfo.presentMode = presentMode;
-	createInfo.clipped = VK_TRUE;
-	createInfo.oldSwapchain = VK_NULL_HANDLE;
-
-	if (vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapChain.swapChain) != VK_SUCCESS)
-	{
-		throw std::runtime_error("failed to create swap chain!");
-	}
-
-	//查询交换链包含的图像数量，但不会返回图像句柄。这一步的目的是确定需要分配多少内存来存储这些图像。
-	vkGetSwapchainImagesKHR(m_device, m_swapChain.swapChain, &imageCount, nullptr);
-	m_swapChain.images.resize(imageCount);
-
-	//第二次调用 vkGetSwapchainImagesKHR：
-	//传递 mSwapChainImages.data()，将交换链的图像句柄存储到向量中。
-	// mSwapChainImages 现在包含交换链的所有图像句柄，后续可通过这些句柄操作每帧的渲染目标。
-	// Vulkan 管理这些图像的内存。开发者无需手动分配或释放，只需通过 VkSwapchainImagesKHR 获取句柄即可。
-	vkGetSwapchainImagesKHR(m_device, m_swapChain.swapChain, &imageCount, m_swapChain.images.data());
-	m_swapChain.colorFormat = surfaceFormat.format;
-	//m_swapChain.swapChainExtent = extent;
-
-	CreateSwapChainImageViews();
-}
+//void Renderer::CreateSwapChain()
+//{
+//	SwapChainSupportDetails& swapChainSupport = m_swapChainSupport;
+//	VkSurfaceFormatKHR surfaceFormat = ChooseSwapSurfaceFormat(swapChainSupport.formats);
+//	VkPresentModeKHR presentMode = ChooseSwapPresentMode(swapChainSupport.presentModes);
+//	VkExtent2D extent = ChooseSwapExtent(swapChainSupport.capabilities);
+//
+//	// 设置交换链图像数量
+//	uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
+//	if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount)
+//	{
+//		imageCount = swapChainSupport.capabilities.maxImageCount;
+//	}
+//
+//	VkSwapchainCreateInfoKHR createInfo{};
+//	createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+//	createInfo.surface = m_surface;
+//	createInfo.minImageCount = imageCount;
+//	createInfo.imageFormat = surfaceFormat.format;
+//	createInfo.imageColorSpace = surfaceFormat.colorSpace;
+//	createInfo.imageExtent = extent;
+//	createInfo.imageArrayLayers = 1;
+//	createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+//
+//	QueueFamilyIndices& indices = m_indices;
+//	uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
+//	// 如果是两个队列族，交换链就需要在两个队列族之间共享图像
+//	if (indices.graphicsFamily != indices.presentFamily)
+//	{
+//		createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+//		createInfo.queueFamilyIndexCount = 2;
+//		createInfo.pQueueFamilyIndices = queueFamilyIndices;
+//	}
+//	else
+//	{
+//		createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+//		createInfo.queueFamilyIndexCount = 0; // Optional
+//		createInfo.pQueueFamilyIndices = nullptr; // Optional
+//	}
+//	// 预变换，这里是不变换
+//	createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
+//	createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+//	createInfo.presentMode = presentMode;
+//	createInfo.clipped = VK_TRUE;
+//	createInfo.oldSwapchain = VK_NULL_HANDLE;
+//
+//	if (vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapChain.swapChain) != VK_SUCCESS)
+//	{
+//		throw std::runtime_error("failed to create swap chain!");
+//	}
+//
+//	//查询交换链包含的图像数量，但不会返回图像句柄。这一步的目的是确定需要分配多少内存来存储这些图像。
+//	vkGetSwapchainImagesKHR(m_device, m_swapChain.swapChain, &imageCount, nullptr);
+//	m_swapChain.images.resize(imageCount);
+//
+//	//第二次调用 vkGetSwapchainImagesKHR：
+//	//传递 mSwapChainImages.data()，将交换链的图像句柄存储到向量中。
+//	// mSwapChainImages 现在包含交换链的所有图像句柄，后续可通过这些句柄操作每帧的渲染目标。
+//	// Vulkan 管理这些图像的内存。开发者无需手动分配或释放，只需通过 VkSwapchainImagesKHR 获取句柄即可。
+//	vkGetSwapchainImagesKHR(m_device, m_swapChain.swapChain, &imageCount, m_swapChain.images.data());
+//	m_swapChain.colorFormat = surfaceFormat.format;
+//	//m_swapChain.swapChainExtent = extent;
+//
+//	CreateSwapChainImageViews();
+//}
 /// @brief 1. 检查是否支持验证层 2. 获取需要的扩展（glfw + valid），好像没有检查扩展是否可用
 void Renderer::CreateInstance()
 {
@@ -1521,17 +1527,17 @@ void Renderer::PrepareFrame()
 		VK_CHECK_RESULT(result);
 	}
 }
-void Renderer::UpdateUniformBuffers()
-{
-	m_uboMatrices.proj = m_camera.matrices.perspective;
-	m_uboMatrices.view = m_camera.matrices.view;
-	//camera.matrices.view;
-	m_uboMatrices.lightPos = glm::vec3(0.0f, 100.0f, 0.0f);
-	//m_camera.position.x = -m_camera.position.x;
-	m_uboMatrices.camPos = m_camera.GetCameraPos();
-	//std::cout << m_uboMatrices.camPos.x <<"," << m_uboMatrices.camPos.y <<"," << m_uboMatrices.camPos.z << std::endl;
-	memcpy(m_uboBuffer.mapped, &m_uboMatrices, sizeof(m_uboMatrices));
-}
+//void Renderer::UpdateUniformBuffers()
+//{
+//	m_uboMatrices.proj = m_camera.matrices.perspective;
+//	m_uboMatrices.view = m_camera.matrices.view;
+//	//camera.matrices.view;
+//	m_uboMatrices.lightPos = glm::vec3(0.0f, 100.0f, 0.0f);
+//	//m_camera.position.x = -m_camera.position.x;
+//	m_uboMatrices.camPos = m_camera.GetCameraPos();
+//	//std::cout << m_uboMatrices.camPos.x <<"," << m_uboMatrices.camPos.y <<"," << m_uboMatrices.camPos.z << std::endl;
+//	memcpy(m_uboBuffer.mapped, &m_uboMatrices, sizeof(m_uboMatrices));
+//}
 
 void Renderer::Draw()
 {
@@ -1960,6 +1966,7 @@ void Renderer::SetupDescriptors()
 	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
 	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_defered.descriptorSetLayouts.textures));
 
+
 	// Sets
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets;
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_defered.descriptorSetLayout, 1);
@@ -2135,4 +2142,183 @@ void Renderer::BuildDeferredCommandBuffer()
 	vkCmdEndRenderPass(m_defered.offScreenCmdBuffer);
 
 	VK_CHECK_RESULT(vkEndCommandBuffer(m_defered.offScreenCmdBuffer));
+}
+
+void Renderer::SetupShadow()
+{
+	m_framebuffers.shadow = new Framebuffer(m_vulkanDevice);
+
+	m_framebuffers.shadow->width = 2048;
+	m_framebuffers.shadow->height = 2048;
+
+	// Find a suitable depth format
+	VkFormat shadowMapFormat;
+	VkBool32 validShadowMapFormat = Tool::GetSupportedDepthFormat(m_physicalDevice, &shadowMapFormat);
+	assert(validShadowMapFormat);
+
+	// Create a layered depth attachment for rendering the depth maps from the lights' point of view
+	// Each layer corresponds to one of the lights
+	// The actual output to the separate layers is done in the geometry shader using shader instancing
+	// We will pass the matrices of the lights to the GS that selects the layer by the current invocation
+	AttachmentCreateInfo attachmentInfo = {};
+	attachmentInfo.format = shadowMapFormat;
+	attachmentInfo.width = m_framebuffers.shadow->width;
+	attachmentInfo.height = m_framebuffers.shadow->height;
+	attachmentInfo.layerCount = LIGHT_COUNT;
+	attachmentInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	m_framebuffers.shadow->AddAttachment(attachmentInfo);
+
+	// Create sampler to sample from to depth attachment
+	// Used to sample in the fragment shader for shadowed rendering
+	VK_CHECK_RESULT(m_framebuffers.shadow->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+
+	// Create default renderpass for the framebuffer
+	VK_CHECK_RESULT(m_framebuffers.shadow->CreateRenderPass());
+};
+void Renderer::SetupDefered()
+{
+	m_framebuffers.deferred = new Framebuffer(m_vulkanDevice);
+	m_framebuffers.deferred->width = 2048;
+	m_framebuffers.deferred->height = 2048;
+
+	AttachmentCreateInfo attachmentInfo = {};
+	attachmentInfo.width = m_framebuffers.deferred->width;
+	attachmentInfo.height = m_framebuffers.deferred->height;
+	attachmentInfo.layerCount = 1;
+	attachmentInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+	// Color attachments
+	// Attachment 0: (World space) Positions
+	attachmentInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	m_framebuffers.deferred->AddAttachment(attachmentInfo);
+
+	// Attachment 1: (World space) Normals
+	attachmentInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	m_framebuffers.deferred->AddAttachment(attachmentInfo);
+
+	// Attachment 2: Albedo (color)
+	attachmentInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+	m_framebuffers.deferred->AddAttachment(attachmentInfo);
+
+	// Depth attachment
+	// Find a suitable depth format
+	VkFormat attDepthFormat;
+	VkBool32 validDepthFormat = Tool::GetSupportedDepthFormat(m_physicalDevice, &attDepthFormat);
+	assert(validDepthFormat);
+
+	attachmentInfo.format = attDepthFormat;
+	attachmentInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	m_framebuffers.deferred->AddAttachment(attachmentInfo);
+
+	// Create sampler to sample from the color attachments
+	VK_CHECK_RESULT(m_framebuffers.deferred->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+
+	// Create default renderpass for the framebuffer
+	VK_CHECK_RESULT(m_framebuffers.deferred->CreateRenderPass());
+
+};
+void Renderer::InitLights()
+{
+	m_defered.uniformDataComposition.lights[0] = InitLight(glm::vec3(-14.0f, -0.5f, 15.0f), glm::vec3(-2.0f, 0.0f, 0.0f), glm::vec3(1.0f, 0.5f, 0.5f));
+	m_defered.uniformDataComposition.lights[1] = InitLight(glm::vec3(14.0f, -4.0f, 12.0f), glm::vec3(2.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	m_defered.uniformDataComposition.lights[2] = InitLight(glm::vec3(0.0f, -10.0f, 4.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f));
+};
+
+void Renderer::SetupDescriptorsDD()
+{
+	// Pool
+	std::vector<VkDescriptorPoolSize> poolSizes = {
+		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 16),
+		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 20)
+	};
+	VkDescriptorPoolCreateInfo descriptorPoolInfo = Init::descriptorPoolCreateInfo(poolSizes, 5);
+	VK_CHECK_RESULT(vkCreateDescriptorPool(m_device, &descriptorPoolInfo, nullptr, &m_descriptorPool));
+
+	// Layout
+	std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
+		// Binding 0: Vertex shader uniform buffer
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT, 0),
+		// Binding 1: Position texture
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1),
+		// Binding 2: Normals texture
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2),
+		// Binding 3: Albedo texture
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 3),
+		// Binding 4: Fragment shader uniform buffer
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 4),
+		// Binding 5: Shadow map
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 5),
+	};
+	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
+	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.composition));
+
+
+	setLayoutBindings = {
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0)
+	};
+	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
+	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_defered.descriptorSetLayouts.textures));
+
+
+	// Sets
+	std::vector<VkWriteDescriptorSet> writeDescriptorSets;
+	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.composition, 1);
+	// Deferred composition
+	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.composition));
+
+	// Image descriptors for the offscreen color attachments
+	VkDescriptorImageInfo texDescriptorPosition =
+		Init::descriptorImageInfo(
+			m_framebuffers.deferred->sampler,
+			m_framebuffers.deferred->attachments[0].view,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+	VkDescriptorImageInfo texDescriptorNormal =
+		Init::descriptorImageInfo(
+			m_framebuffers.deferred->sampler,
+			m_framebuffers.deferred->attachments[1].view,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+	VkDescriptorImageInfo texDescriptorAlbedo =
+		Init::descriptorImageInfo(
+			m_framebuffers.deferred->sampler,
+			m_framebuffers.deferred->attachments[2].view,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+	VkDescriptorImageInfo texDescriptorShadowMap =
+		Init::descriptorImageInfo(
+			m_framebuffers.shadow->sampler,
+			m_framebuffers.shadow->attachments[0].view,
+			VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+	writeDescriptorSets = {
+		// Binding 1: World space position texture
+		Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &texDescriptorPosition),
+		// Binding 2: World space normals texture
+		Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &texDescriptorNormal),
+		// Binding 3: Albedo texture
+		Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, &texDescriptorAlbedo),
+		// Binding 4: Fragment shader uniform buffer
+		Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &m_uniformBuffers.composition.descriptor),
+		// Binding 5: Shadow map
+		Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, &texDescriptorShadowMap),
+	};
+	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+
+
+	// offscreen
+	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.model));
+
+	writeDescriptorSets = {
+		// Binding 0: Vertex shader uniform buffer
+		Init::writeDescriptorSet(m_descriptorSets.model, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_uniformBuffers.offscreen.descriptor)
+	};
+	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+
+	// Shadow mapping
+	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.shadow));
+	writeDescriptorSets = {
+		// Binding 0: Vertex shader uniform buffer
+		Init::writeDescriptorSet(m_descriptorSets.shadow, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_uniformBuffers.shadowGeometryShader.descriptor),
+	};
+	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
