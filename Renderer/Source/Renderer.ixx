@@ -18,13 +18,9 @@ import ConfigMod;
 import LightMod;
 
 
-struct DescriptorSetLayouts
-{
-	VkDescriptorSetLayout Matrices{ nullptr };
-	VkDescriptorSetLayout Textures{ nullptr };
-};
 
-struct  UBOMatrices
+
+struct UBOMatrices
 {
 	alignas(16)glm::mat4 view;
 	alignas(16)glm::mat4 proj;
@@ -120,6 +116,7 @@ struct Semaphores
 
 struct UniformDataOffscreen
 {
+	glm::mat4 model;
 	glm::mat4 view;
 	glm::mat4 projection;
 
@@ -148,6 +145,29 @@ struct DescriptorSets
 	VkDescriptorSet composition{ VK_NULL_HANDLE };
 };
 
+struct RenderPass
+{
+	VkDescriptorSetLayout descriptorSetLayout;
+	VkDescriptorSet descriptorSet;
+	VkPipelineLayout pipelineLayout;
+	VkPipeline pipeline;
+	VkRenderPass renderPass;
+	FrameBuffer frameBuffer;
+	std::vector<Buffer> buffers;
+	VkCommandBuffer commandBuffer;
+};
+
+struct PipelineLayouts
+{
+	VkPipelineLayout model;
+	VkPipelineLayout composition;
+};
+struct DescriptorSetLayouts
+{
+	VkDescriptorSetLayout model{ nullptr };
+	VkDescriptorSetLayout composition{ nullptr };
+	VkDescriptorSetLayout textures{ nullptr };
+};
 
 export class Renderer
 {
@@ -163,7 +183,7 @@ private:
 	Config* m_config;
 	std::vector<VkFence> m_waitFences;
 	float m_timer;
-	float m_timerSpeed;
+	float m_timerSpeed = 0.25f;
 	uint32_t m_frameCounter = 0;
 	uint32_t m_lastFPS = 0;
 	float m_frameTimer{};
@@ -338,9 +358,12 @@ private:
 	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
 	void ResizeWindow();
 	void SetEnabledFeatures();
+	VkPipelineCache m_pipelineCache{ VK_NULL_HANDLE };
+	void CreatePipelineCache();
 	VkPhysicalDeviceFeatures m_deviceFeatures{};
 
-	// 
+	void Draw();
+	void SubmitFrame();
 private:
 	struct Defered
 	{
@@ -348,13 +371,14 @@ private:
 		VkSemaphore offscreenSemaphore{ VK_NULL_HANDLE };
 		VkCommandBuffer offScreenCmdBuffer{ VK_NULL_HANDLE };
 		FrameBuffer offScreenFrameBuf{};
-		VkPipelineLayout pipelineLayout{ VK_NULL_HANDLE };
+		PipelineLayouts pipelineLayouts;
 		Pipelines pipelines;
 		UniformBuffers uniformBuffers;
 		UniformDataComposition uniformDataComposition;
 		UniformDataOffscreen uniformDataOffscreen;
 		DescriptorSets descriptorSets;
-		VkDescriptorSetLayout descriptorSetLayout{ VK_NULL_HANDLE };
+		DescriptorSetLayouts descriptorSetLayouts;
+		VkDescriptorSetLayout descriptorSetLayout;
 		int32_t debugDisplayTarget = 0;
 		void Destroy(VkDevice device)
 		{
@@ -382,9 +406,11 @@ private:
 			vkDestroyPipeline(device, pipelines.composition, nullptr);
 			vkDestroyPipeline(device, pipelines.offscreen, nullptr);
 
-			vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-
-			vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+			vkDestroyPipelineLayout(device, pipelineLayouts.composition, nullptr);
+			vkDestroyPipelineLayout(device, pipelineLayouts.model, nullptr);
+			vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.model, nullptr);
+			vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.textures, nullptr);
+			vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.composition, nullptr);
 			uniformBuffers.offscreen.Destroy();
 			uniformBuffers.composition.Destroy();
 			vkDestroyRenderPass(device, offScreenFrameBuf.renderPass, nullptr);

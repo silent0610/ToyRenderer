@@ -11,8 +11,8 @@
     "camera": {
         "pos": [
             0.0,
-            50.0,
-            -200.0
+            5.0,
+            -10.0
         ],
         "type": "lookat",
         "flipY": true,
