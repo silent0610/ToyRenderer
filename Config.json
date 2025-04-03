@@ -1,6 +1,6 @@
 {
     "modelPath": [
-        "Models/cat/scene.gltf"
+        "Models/Cat/scene.gltf"
     ],
     "shaderPath": [
         "BlinnPhong/Basic.Vert.spv",

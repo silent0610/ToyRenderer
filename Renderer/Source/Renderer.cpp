@@ -1355,10 +1355,9 @@ void Renderer::DisplayUI(UIOverlay* overlay)
 {
 	if (overlay->Header("Settings"))
 	{
-		if (overlay->CheckBox("Click", &click))
-		{
-			BuildCommandBuffers();
-		}
+
+		overlay->ComboBox("Display", &m_defered.debugDisplayTarget, { "Final composition", "Position", "Normals", "Albedo", "Specular" });
+
 	}
 }
 void Renderer::UpdateOverlay()
@@ -2046,7 +2045,7 @@ void Renderer::PreparePipelines()
 	pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
 	pipelineCI.pStages = shaderStages.data();
 
-	// Final fullscreen composition pass pipeline
+	// Final fullscreen composition pass pipeline，这里与着色器顶点顺序相关
 	rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
 	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Defered/Composition.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Defered/Composition.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);

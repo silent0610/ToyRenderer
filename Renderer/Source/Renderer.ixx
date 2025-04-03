@@ -346,6 +346,8 @@ private:
 
 	void DrawUI(const VkCommandBuffer commandBuffer);
 	void InitUI();
+	/// @brief 设置ui
+	/// @param overlay 
 	void DisplayUI(UIOverlay* overlay);
 	void UpdateOverlay();
 	std::string GetWindowTitle()const;
