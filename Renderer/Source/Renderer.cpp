@@ -148,8 +148,14 @@ void Renderer::InitVulkan()
 	//BuildCommandBuffers();
 	//BuildDeferredCommandBuffer();
 
-
-
+	SetupDefered();
+	SetupShadow();
+	InitLights();
+	PrepareUniformBuffers();
+	SetupDescriptorsDD();
+	PreparePipelinesDD();
+	BuildCommandBuffers();
+	BuildDeferredCommandBuffer();
 }
 void Renderer::InitUI()
 {
@@ -204,8 +210,8 @@ void Renderer::BuildCommandBuffers()
 		vkCmdSetViewport(m_drawCmdBuffers[i], 0, 1, &viewport);
 		vkCmdSetScissor(m_drawCmdBuffers[i], 0, 1, &scissor);
 
-		vkCmdBindPipeline(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_defered.pipelines.composition);
-		vkCmdBindDescriptorSets(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_defered.pipelineLayouts.composition, 0, 1, &m_defered.descriptorSets.composition, 0, NULL);
+		vkCmdBindPipeline(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.composition);
+		vkCmdBindDescriptorSets(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.composition, 0, 1, &m_descriptorSets.composition, 0, NULL);
 
 		//glm::mat4x4 model{ 1.0f };
 		//vkCmdPushConstants(m_drawCmdBuffers[i], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4x4), &model);
@@ -486,64 +492,55 @@ VkResult Renderer::CreateBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags 
 // Update matrices used for the offscreen rendering of the scene
 void Renderer::UpdateUniformBufferOffscreen()
 {
-	m_defered.uniformDataOffscreen.projection = m_camera.matrices.perspective;
-	m_defered.uniformDataOffscreen.view = m_camera.matrices.view;
-	m_defered.uniformDataOffscreen.model = glm::mat4(1.0f);
-	memcpy(m_defered.uniformBuffers.offscreen.mapped, &m_defered.uniformDataOffscreen, sizeof(UniformDataOffscreen));
+	m_uniformDataOffscreen.projection = m_camera.matrices.perspective;
+	m_uniformDataOffscreen.view = m_camera.matrices.view;
+	m_uniformDataOffscreen.model = glm::mat4(1.0f);
+	memcpy(m_uniformBuffers.defered.mapped, &m_uniformDataOffscreen, sizeof(UniformDataOffscreen));
 }
 
 // Update lights and parameters passed to the composition shaders
 void Renderer::UpdateUniformBufferComposition()
 {
-	// White
-	m_defered.uniformDataComposition.lights[0].position = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
-	m_defered.uniformDataComposition.lights[0].color = glm::vec3(1.5f);
-	m_defered.uniformDataComposition.lights[0].radius = 15.0f * 0.25f;
-	// Red
-	m_defered.uniformDataComposition.lights[1].position = glm::vec4(-2.0f, 0.0f, 0.0f, 0.0f);
-	m_defered.uniformDataComposition.lights[1].color = glm::vec3(1.0f, 0.0f, 0.0f);
-	m_defered.uniformDataComposition.lights[1].radius = 15.0f;
-	// Blue
-	m_defered.uniformDataComposition.lights[2].position = glm::vec4(2.0f, -1.0f, 0.0f, 0.0f);
-	m_defered.uniformDataComposition.lights[2].color = glm::vec3(0.0f, 0.0f, 2.5f);
-	m_defered.uniformDataComposition.lights[2].radius = 5.0f;
-	// Yellow
-	m_defered.uniformDataComposition.lights[3].position = glm::vec4(0.0f, -0.9f, 0.5f, 0.0f);
-	m_defered.uniformDataComposition.lights[3].color = glm::vec3(1.0f, 1.0f, 0.0f);
-	m_defered.uniformDataComposition.lights[3].radius = 2.0f;
-	// Green
-	m_defered.uniformDataComposition.lights[4].position = glm::vec4(0.0f, -0.5f, 0.0f, 0.0f);
-	m_defered.uniformDataComposition.lights[4].color = glm::vec3(0.0f, 1.0f, 0.2f);
-	m_defered.uniformDataComposition.lights[4].radius = 5.0f;
-	// Yellow
-	m_defered.uniformDataComposition.lights[5].position = glm::vec4(0.0f, -1.0f, 0.0f, 0.0f);
-	m_defered.uniformDataComposition.lights[5].color = glm::vec3(1.0f, 0.7f, 0.3f);
-	m_defered.uniformDataComposition.lights[5].radius = 25.0f;
+	//// Animate
+	//m_uniformDataComposition.lights[0].position.x = -14.0f + std::abs(sin(glm::radians(m_timer * 360.0f)) * 20.0f);
+	//m_uniformDataComposition.lights[0].position.z = 15.0f + cos(glm::radians(m_timer * 360.0f)) * 1.0f;
 
-	// Animate the lights
+	//m_uniformDataComposition.lights[1].position.x = 14.0f - std::abs(sin(glm::radians(m_timer * 360.0f)) * 2.5f);
+	//m_uniformDataComposition.lights[1].position.z = 13.0f + cos(glm::radians(m_timer * 360.0f)) * 4.0f;
 
-	m_defered.uniformDataComposition.lights[0].position.x = sin(glm::radians(360.0f * m_timer)) * 5.0f;
-	m_defered.uniformDataComposition.lights[0].position.z = cos(glm::radians(360.0f * m_timer)) * 5.0f;
-
-	m_defered.uniformDataComposition.lights[1].position.x = -4.0f + sin(glm::radians(360.0f * m_timer) + 45.0f) * 2.0f;
-	m_defered.uniformDataComposition.lights[1].position.z = 0.0f + cos(glm::radians(360.0f * m_timer) + 45.0f) * 2.0f;
-
-	m_defered.uniformDataComposition.lights[2].position.x = 4.0f + sin(glm::radians(360.0f * m_timer)) * 2.0f;
-	m_defered.uniformDataComposition.lights[2].position.z = 0.0f + cos(glm::radians(360.0f * m_timer)) * 2.0f;
-
-	m_defered.uniformDataComposition.lights[4].position.x = 0.0f + sin(glm::radians(360.0f * m_timer + 90.0f)) * 5.0f;
-	m_defered.uniformDataComposition.lights[4].position.z = 0.0f - cos(glm::radians(360.0f * m_timer + 45.0f)) * 5.0f;
-
-	m_defered.uniformDataComposition.lights[5].position.x = 0.0f + sin(glm::radians(-360.0f * m_timer + 135.0f)) * 10.0f;
-	m_defered.uniformDataComposition.lights[5].position.z = 0.0f - cos(glm::radians(-360.0f * m_timer - 45.0f)) * 10.0f;
+	//m_uniformDataComposition.lights[2].position.x = 0.0f + sin(glm::radians(m_timer * 360.0f)) * 4.0f;
+	//m_uniformDataComposition.lights[2].position.z = 4.0f + cos(glm::radians(m_timer * 360.0f)) * 2.0f;
 
 
-	// Current view position
-	m_defered.uniformDataComposition.viewPos = glm::vec4(m_camera.position, 0.0f) * glm::vec4(-1.0f, 1.0f, -1.0f, 1.0f);
+	//m_uniformDataComposition.lights[0].position.x = 0.0f;
+	//m_uniformDataComposition.lights[0].position.y = 65.0f;
+	//m_uniformDataComposition.lights[0].position.z = 0.0f;
 
-	m_defered.uniformDataComposition.debugDisplayTarget = m_defered.debugDisplayTarget;
+	//m_uniformDataComposition.lights[1].position.x = 0.0f;
+	//m_uniformDataComposition.lights[1].position.z = -4.0f;
 
-	memcpy(m_defered.uniformBuffers.composition.mapped, &m_defered.uniformDataComposition, sizeof(UniformDataComposition));
+	//m_uniformDataComposition.lights[2].position.x = 0.0f;
+	//m_uniformDataComposition.lights[2].position.z = 4.0f;
+
+	for (uint32_t i = 0; i < LIGHT_COUNT; i++)
+	{
+		// mvp from light's pov (for shadows)
+		glm::mat4 shadowProj = glm::perspective(glm::radians(m_shadowSettings.lightFOV), 1.0f, m_shadowSettings.zNear, m_shadowSettings.zFar);
+		glm::mat4 shadowView = glm::lookAt(glm::vec3(m_uniformDataComposition.lights[i].position), glm::vec3(m_uniformDataComposition.lights[i].target), glm::vec3(0.0f, 1.0f, 0.0f));
+		glm::mat4 shadowModel = glm::mat4(1.0f);
+
+		m_uniformDataShadows.mvp[i] = shadowProj * shadowView * shadowModel;
+		m_uniformDataComposition.lights[i].viewMatrix = m_uniformDataShadows.mvp[i];
+	}
+
+	//memcpy(m_uniformDataShadows.instancePos, m_uniformDataOffscreen.instancePos, sizeof(UniformDataOffscreen::instancePos));
+	memcpy(m_uniformBuffers.shadowGeometryShader.mapped, &m_uniformDataShadows, sizeof(UniformDataShadows));
+
+	m_uniformDataComposition.viewPos = glm::vec4(m_camera.position, 0.0f) * glm::vec4(-1.0f, 1.0f, -1.0f, 1.0f);;
+	std::cout << m_uniformDataComposition.viewPos.x << "," << m_uniformDataComposition.viewPos.y << "," << m_uniformDataComposition.viewPos.z << std::endl;
+	m_uniformDataComposition.debugDisplayTarget = m_debugDisplayTarget;
+
+	memcpy(m_uniformBuffers.composition.mapped, &m_uniformDataComposition, sizeof(m_uniformDataComposition));
 }
 //void Renderer::CreateDescriptors()
 //{
@@ -1362,8 +1359,12 @@ void Renderer::DisplayUI(UIOverlay* overlay)
 	if (overlay->Header("Settings"))
 	{
 
-		overlay->ComboBox("Display", &m_defered.debugDisplayTarget, { "Final composition", "Position", "Normals", "Albedo", "Specular" });
-
+		overlay->ComboBox("Display", &m_debugDisplayTarget, { "Final composition", "Shadows", "Position", "Normals", "Albedo", "Specular" });
+		bool shadows = (m_uniformDataComposition.useShadows == 1);
+		if (overlay->CheckBox("Shadows", &shadows))
+		{
+			m_uniformDataComposition.useShadows = shadows;
+		}
 	}
 }
 void Renderer::UpdateOverlay()
@@ -1542,12 +1543,12 @@ void Renderer::PrepareFrame()
 void Renderer::Draw()
 {
 	m_submitInfo.pWaitSemaphores = &m_semaphores.presentComplete;
-	m_submitInfo.pSignalSemaphores = &m_defered.offscreenSemaphore;
+	m_submitInfo.pSignalSemaphores = &m_semaphores.deferedSemaphore;
 	m_submitInfo.commandBufferCount = 1;
-	m_submitInfo.pCommandBuffers = &m_defered.offScreenCmdBuffer; //TODO
+	m_submitInfo.pCommandBuffers = &m_offScreenCmdBuffer;
 	VK_CHECK_RESULT(vkQueueSubmit(m_queues.graphicsQueue, 1, &m_submitInfo, VK_NULL_HANDLE));
 
-	m_submitInfo.pWaitSemaphores = &m_defered.offscreenSemaphore;
+	m_submitInfo.pWaitSemaphores = &m_semaphores.deferedSemaphore;
 	m_submitInfo.pSignalSemaphores = &m_semaphores.renderComplete;
 	m_submitInfo.pCommandBuffers = &m_drawCmdBuffers[currentBuffer];
 	VK_CHECK_RESULT(vkQueueSubmit(m_queues.graphicsQueue, 1, &m_submitInfo, VK_NULL_HANDLE));
@@ -1715,378 +1716,175 @@ void Renderer::LoadAssets()
 	//std::cout << std::endl << "sizeof material: " << m_glTFModel.materials.size() << std::endl;
 	//std::cout << std::endl << "sizeof texture: " << m_glTFModel.textures.size() << std::endl;
 }
-void Renderer::CreateAttachment(
-	VkFormat format,
-	VkImageUsageFlagBits usage,
-	FrameBufferAttachment* attachment)
-{
-	VkImageAspectFlags aspectMask = 0;
-	VkImageLayout imageLayout;
 
-	attachment->format = format;
 
-	if (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
-	{
-		aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	}
-	if (usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
-	{
-		aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-		if (format >= VK_FORMAT_D16_UNORM_S8_UINT)
-			aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-		imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-	}
-
-	assert(aspectMask > 0);
-
-	VkImageCreateInfo image = Init::imageCreateInfo();
-	image.imageType = VK_IMAGE_TYPE_2D;
-	image.format = format;
-	image.extent.width = m_defered.offScreenFrameBuf.width;
-	image.extent.height = m_defered.offScreenFrameBuf.height;
-	image.extent.depth = 1;
-	image.mipLevels = 1;
-	image.arrayLayers = 1;
-	image.samples = VK_SAMPLE_COUNT_1_BIT;
-	image.tiling = VK_IMAGE_TILING_OPTIMAL;
-	image.usage = usage | VK_IMAGE_USAGE_SAMPLED_BIT;
-
-	VkMemoryAllocateInfo memAlloc = Init::memoryAllocateInfo();
-	VkMemoryRequirements memReqs;
-
-	VK_CHECK_RESULT(vkCreateImage(m_device, &image, nullptr, &attachment->image));
-	vkGetImageMemoryRequirements(m_device, attachment->image, &memReqs);
-	memAlloc.allocationSize = memReqs.size;
-	memAlloc.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &attachment->mem));
-	VK_CHECK_RESULT(vkBindImageMemory(m_device, attachment->image, attachment->mem, 0));
-
-	VkImageViewCreateInfo imageView = Init::imageViewCreateInfo();
-	imageView.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	imageView.format = format;
-	imageView.subresourceRange = {};
-	imageView.subresourceRange.aspectMask = aspectMask;
-	imageView.subresourceRange.baseMipLevel = 0;
-	imageView.subresourceRange.levelCount = 1;
-	imageView.subresourceRange.baseArrayLayer = 0;
-	imageView.subresourceRange.layerCount = 1;
-	imageView.image = attachment->image;
-	VK_CHECK_RESULT(vkCreateImageView(m_device, &imageView, nullptr, &attachment->view));
-}
-void Renderer::PrepareOffscreenFramebuffer()
-{
-	// Note: Instead of using fixed sizes, one could also match the window size and recreate the attachments on resize
-	m_defered.offScreenFrameBuf.width = 2048;
-	m_defered.offScreenFrameBuf.height = 2048;
-
-	// Color attachments
-
-	// (World space) Positions
-	CreateAttachment(
-		VK_FORMAT_R16G16B16A16_SFLOAT,
-		VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-		&m_defered.offScreenFrameBuf.position);
-
-	// (World space) Normals
-	CreateAttachment(
-		VK_FORMAT_R16G16B16A16_SFLOAT,
-		VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-		&m_defered.offScreenFrameBuf.normal);
-
-	// Albedo (color)
-	CreateAttachment(
-		VK_FORMAT_R8G8B8A8_UNORM,
-		VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-		&m_defered.offScreenFrameBuf.albedo);
-
-	// Depth attachment
-
-	// Find a suitable depth format
-	VkFormat attDepthFormat;
-	VkBool32 validDepthFormat = Tool::GetSupportedDepthFormat(m_physicalDevice, &attDepthFormat);
-	assert(validDepthFormat);
-
-	CreateAttachment(
-		attDepthFormat,
-		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-		&m_defered.offScreenFrameBuf.depth);
-
-	// Set up separate renderpass with references to the color and depth attachments
-	std::array<VkAttachmentDescription, 4> attachmentDescs = {};
-
-	// Init attachment properties
-	for (uint32_t i = 0; i < 4; ++i)
-	{
-		attachmentDescs[i].samples = VK_SAMPLE_COUNT_1_BIT;
-		attachmentDescs[i].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		attachmentDescs[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		attachmentDescs[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		attachmentDescs[i].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		if (i == 3)
-		{
-			attachmentDescs[i].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			attachmentDescs[i].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-		}
-		else
-		{
-			attachmentDescs[i].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			attachmentDescs[i].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		}
-	}
-
-	// Formats
-	attachmentDescs[0].format = m_defered.offScreenFrameBuf.position.format;
-	attachmentDescs[1].format = m_defered.offScreenFrameBuf.normal.format;
-	attachmentDescs[2].format = m_defered.offScreenFrameBuf.albedo.format;
-	attachmentDescs[3].format = m_defered.offScreenFrameBuf.depth.format;
-
-	std::vector<VkAttachmentReference> colorReferences;
-	colorReferences.push_back({ 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL });
-	colorReferences.push_back({ 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL });
-	colorReferences.push_back({ 2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL });
-
-	VkAttachmentReference depthReference = {};
-	depthReference.attachment = 3;
-	depthReference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-	VkSubpassDescription subpass = {};
-	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	subpass.pColorAttachments = colorReferences.data();
-	subpass.colorAttachmentCount = static_cast<uint32_t>(colorReferences.size());
-	subpass.pDepthStencilAttachment = &depthReference;
-
-	// Use subpass dependencies for attachment layout transitions
-	std::array<VkSubpassDependency, 2> dependencies;
-
-	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-	dependencies[0].dstSubpass = 0;
-	dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-	dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-	dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-	dependencies[1].srcSubpass = 0;
-	dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-	dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-	dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-	dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-	VkRenderPassCreateInfo renderPassInfo = {};
-	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	renderPassInfo.pAttachments = attachmentDescs.data();
-	renderPassInfo.attachmentCount = static_cast<uint32_t>(attachmentDescs.size());
-	renderPassInfo.subpassCount = 1;
-	renderPassInfo.pSubpasses = &subpass;
-	renderPassInfo.dependencyCount = 2;
-	renderPassInfo.pDependencies = dependencies.data();
-
-	VK_CHECK_RESULT(vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_defered.offScreenFrameBuf.renderPass));
-
-	std::array<VkImageView, 4> attachments;
-	attachments[0] = m_defered.offScreenFrameBuf.position.view;
-	attachments[1] = m_defered.offScreenFrameBuf.normal.view;
-	attachments[2] = m_defered.offScreenFrameBuf.albedo.view;
-	attachments[3] = m_defered.offScreenFrameBuf.depth.view;
-
-	VkFramebufferCreateInfo fbufCreateInfo = {};
-	fbufCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-	fbufCreateInfo.pNext = NULL;
-	fbufCreateInfo.renderPass = m_defered.offScreenFrameBuf.renderPass;
-	fbufCreateInfo.pAttachments = attachments.data();
-	fbufCreateInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-	fbufCreateInfo.width = m_defered.offScreenFrameBuf.width;
-	fbufCreateInfo.height = m_defered.offScreenFrameBuf.height;
-	fbufCreateInfo.layers = 1;
-	VK_CHECK_RESULT(vkCreateFramebuffer(m_device, &fbufCreateInfo, nullptr, &m_defered.offScreenFrameBuf.frameBuffer));
-
-	// Create sampler to sample from the color attachments
-	VkSamplerCreateInfo sampler = Init::samplerCreateInfo();
-	sampler.magFilter = VK_FILTER_NEAREST;
-	sampler.minFilter = VK_FILTER_NEAREST;
-	sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-	sampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-	sampler.addressModeV = sampler.addressModeU;
-	sampler.addressModeW = sampler.addressModeU;
-	sampler.mipLodBias = 0.0f;
-	sampler.maxAnisotropy = 1.0f;
-	sampler.minLod = 0.0f;
-	sampler.maxLod = 1.0f;
-	sampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-	VK_CHECK_RESULT(vkCreateSampler(m_device, &sampler, nullptr, &m_defered.colorSampler));
-}
 void Renderer::PrepareUniformBuffers()
 {
 	//CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uboBuffer, sizeof(m_uboMatrices));
 //m_uboBuffer.Map();
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_defered.uniformBuffers.offscreen, sizeof(UniformDataOffscreen)));
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_defered.uniformBuffers.composition, sizeof(UniformDataComposition)));
+	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.defered, sizeof(UniformDataOffscreen)));
+	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.composition, sizeof(UniformDataComposition)));
+	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.shadowGeometryShader, sizeof(UniformDataShadows)));
 
 	// Map persistent
-	VK_CHECK_RESULT(m_defered.uniformBuffers.offscreen.Map());
-	VK_CHECK_RESULT(m_defered.uniformBuffers.composition.Map());
-
-	// Update
-	UpdateUniformBufferOffscreen();
-	UpdateUniformBufferComposition();
+	VK_CHECK_RESULT(m_uniformBuffers.defered.Map());
+	VK_CHECK_RESULT(m_uniformBuffers.composition.Map());
+	VK_CHECK_RESULT(m_uniformBuffers.shadowGeometryShader.Map());
 
 }
-void Renderer::SetupDescriptors()
-{
-	// Pool
-	std::vector<VkDescriptorPoolSize> poolSizes = {
-		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 12),
-		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 15)
-	};
-	VkDescriptorPoolCreateInfo descriptorPoolInfo = Init::descriptorPoolCreateInfo(poolSizes, 4);
-	VK_CHECK_RESULT(vkCreateDescriptorPool(m_device, &descriptorPoolInfo, nullptr, &m_descriptorPool));
+//void Renderer::SetupDescriptors()
+//{
+//	// Pool
+//	std::vector<VkDescriptorPoolSize> poolSizes = {
+//		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 12),
+//		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 15)
+//	};
+//	VkDescriptorPoolCreateInfo descriptorPoolInfo = Init::descriptorPoolCreateInfo(poolSizes, 4);
+//	VK_CHECK_RESULT(vkCreateDescriptorPool(m_device, &descriptorPoolInfo, nullptr, &m_descriptorPool));
+//
+//	// Layouts 通用 
+//	std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
+//		// Binding 0 : Vertex shader uniform buffer
+//		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0),
+//		// Binding 1 : Position texture target / Scene colormap
+//		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1),
+//		// Binding 2 : Normals texture target
+//		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2),
+//		// Binding 3 : Albedo texture target
+//		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 3),
+//		// Binding 4 : Fragment shader uniform buffer
+//		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 4),
+//	};
+//	VkDescriptorSetLayoutCreateInfo descriptorLayout = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
+//	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayout, nullptr, &m_defered.descriptorSetLayout));
+//
+//	setLayoutBindings = {
+//		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0)
+//	};
+//	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
+//	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_defered.descriptorSetLayouts.textures));
+//
+//
+//	// Sets
+//	std::vector<VkWriteDescriptorSet> writeDescriptorSets;
+//	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_defered.descriptorSetLayout, 1);
+//	// Deferred composition
+//	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_defered.descriptorSets.composition));
+//
+//	// Image descriptors for the offscreen color attachments
+//	VkDescriptorImageInfo texDescriptorPosition =
+//		Init::descriptorImageInfo(
+//			m_defered.colorSampler,
+//			m_defered.offScreenFrameBuf.position.view,
+//			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+//
+//	VkDescriptorImageInfo texDescriptorNormal =
+//		Init::descriptorImageInfo(
+//			m_defered.colorSampler,
+//			m_defered.offScreenFrameBuf.normal.view,
+//			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+//
+//	VkDescriptorImageInfo texDescriptorAlbedo =
+//		Init::descriptorImageInfo(
+//			m_defered.colorSampler,
+//			m_defered.offScreenFrameBuf.albedo.view,
+//			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+//
+//	writeDescriptorSets = {
+//		// Binding 1 : Position texture target
+//		Init::writeDescriptorSet(m_defered.descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &texDescriptorPosition),
+//		// Binding 2 : Normals texture target
+//		Init::writeDescriptorSet(m_defered.descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &texDescriptorNormal),
+//		// Binding 3 : Albedo texture target
+//		Init::writeDescriptorSet(m_defered.descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, &texDescriptorAlbedo),
+//		// Binding 4 : Fragment shader uniform buffer
+//		Init::writeDescriptorSet(m_defered.descriptorSets.composition, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &m_defered.uniformBuffers.composition.descriptor),
+//	};
+//	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+//
+//	// Offscreen (scene)
+//
+//	// Model
+//	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_defered.descriptorSets.model));
+//	writeDescriptorSets = {
+//		// Binding 0: Vertex shader uniform buffer
+//		Init::writeDescriptorSet(m_defered.descriptorSets.model, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_defered.uniformBuffers.offscreen.descriptor),
+//		// Binding 1: Color map
+//		//Init::writeDescriptorSet(m_defered.descriptorSets.model, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &textures.model.colorMap.descriptor),
+//		//// Binding 2: Normal map
+//		//Init::writeDescriptorSet(m_defered.descriptorSets.model, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &textures.model.normalMap.descriptor)
+//	};
+//	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+//}
 
-	// Layouts 通用 
-	std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
-		// Binding 0 : Vertex shader uniform buffer
-		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0),
-		// Binding 1 : Position texture target / Scene colormap
-		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1),
-		// Binding 2 : Normals texture target
-		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2),
-		// Binding 3 : Albedo texture target
-		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 3),
-		// Binding 4 : Fragment shader uniform buffer
-		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 4),
-	};
-	VkDescriptorSetLayoutCreateInfo descriptorLayout = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayout, nullptr, &m_defered.descriptorSetLayout));
-
-	setLayoutBindings = {
-		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0)
-	};
-	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_defered.descriptorSetLayouts.textures));
-
-
-	// Sets
-	std::vector<VkWriteDescriptorSet> writeDescriptorSets;
-	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_defered.descriptorSetLayout, 1);
-	// Deferred composition
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_defered.descriptorSets.composition));
-
-	// Image descriptors for the offscreen color attachments
-	VkDescriptorImageInfo texDescriptorPosition =
-		Init::descriptorImageInfo(
-			m_defered.colorSampler,
-			m_defered.offScreenFrameBuf.position.view,
-			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-	VkDescriptorImageInfo texDescriptorNormal =
-		Init::descriptorImageInfo(
-			m_defered.colorSampler,
-			m_defered.offScreenFrameBuf.normal.view,
-			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-	VkDescriptorImageInfo texDescriptorAlbedo =
-		Init::descriptorImageInfo(
-			m_defered.colorSampler,
-			m_defered.offScreenFrameBuf.albedo.view,
-			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-	writeDescriptorSets = {
-		// Binding 1 : Position texture target
-		Init::writeDescriptorSet(m_defered.descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &texDescriptorPosition),
-		// Binding 2 : Normals texture target
-		Init::writeDescriptorSet(m_defered.descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &texDescriptorNormal),
-		// Binding 3 : Albedo texture target
-		Init::writeDescriptorSet(m_defered.descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, &texDescriptorAlbedo),
-		// Binding 4 : Fragment shader uniform buffer
-		Init::writeDescriptorSet(m_defered.descriptorSets.composition, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &m_defered.uniformBuffers.composition.descriptor),
-	};
-	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-
-	// Offscreen (scene)
-
-	// Model
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_defered.descriptorSets.model));
-	writeDescriptorSets = {
-		// Binding 0: Vertex shader uniform buffer
-		Init::writeDescriptorSet(m_defered.descriptorSets.model, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_defered.uniformBuffers.offscreen.descriptor),
-		// Binding 1: Color map
-		//Init::writeDescriptorSet(m_defered.descriptorSets.model, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &textures.model.colorMap.descriptor),
-		//// Binding 2: Normal map
-		//Init::writeDescriptorSet(m_defered.descriptorSets.model, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &textures.model.normalMap.descriptor)
-	};
-	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-}
-
-void Renderer::PreparePipelines()
-{
-	std::vector<VkDescriptorSetLayout> setLayouts = { m_defered.descriptorSetLayout };
-	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(setLayouts.data(), 1);
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_defered.pipelineLayouts.composition));
-
-	setLayouts.push_back(m_defered.descriptorSetLayouts.textures);
-	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(setLayouts.data(), 2);
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_defered.pipelineLayouts.model));
-
-	// Pipelines
-	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
-	VkPipelineRasterizationStateCreateInfo rasterizationState = Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE, 0);
-	VkPipelineColorBlendAttachmentState blendAttachmentState = Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE);
-	VkPipelineColorBlendStateCreateInfo colorBlendState = Init::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
-	VkPipelineDepthStencilStateCreateInfo depthStencilState = Init::pipelineDepthStencilStateCreateInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
-	VkPipelineViewportStateCreateInfo viewportState = Init::pipelineViewportStateCreateInfo(1, 1, 0);
-	VkPipelineMultisampleStateCreateInfo multisampleState = Init::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_1_BIT, 0);
-	std::vector<VkDynamicState> dynamicStateEnables = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-	VkPipelineDynamicStateCreateInfo dynamicState = Init::pipelineDynamicStateCreateInfo(dynamicStateEnables);
-	std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
-
-	VkGraphicsPipelineCreateInfo pipelineCI = Init::pipelineCreateInfo(m_defered.pipelineLayouts.composition, m_renderPass);
-	pipelineCI.pInputAssemblyState = &inputAssemblyState;
-	pipelineCI.pRasterizationState = &rasterizationState;
-	pipelineCI.pColorBlendState = &colorBlendState;
-	pipelineCI.pMultisampleState = &multisampleState;
-	pipelineCI.pViewportState = &viewportState;
-	pipelineCI.pDepthStencilState = &depthStencilState;
-	pipelineCI.pDynamicState = &dynamicState;
-	pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
-	pipelineCI.pStages = shaderStages.data();
-
-	// Final fullscreen composition pass pipeline，这里与着色器顶点顺序相关
-	rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
-	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Defered/Composition.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Defered/Composition.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
-
-	VkPipelineVertexInputStateCreateInfo emptyInputState = Init::pipelineVertexInputStateCreateInfo();
-	pipelineCI.pVertexInputState = &emptyInputState;
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_defered.pipelines.composition));
-
-	// model
-	pipelineCI.layout = m_defered.pipelineLayouts.model;
-	// Vertex input state from glTF model for pipeline rendering models
-	pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position, vkglTF::VertexComponent::UV, vkglTF::VertexComponent::Color, vkglTF::VertexComponent::Normal });
-	rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;
-
-	// Offscreen pipeline
-	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Defered/Model.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Defered/Model.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
-
-	// Separate render pass
-	pipelineCI.renderPass = m_defered.offScreenFrameBuf.renderPass;
-
-	// Blend attachment states required for all color attachments
-	// This is important, as color write mask will otherwise be 0x0 and you
-	// won't see anything rendered to the attachment
-	std::array<VkPipelineColorBlendAttachmentState, 3> blendAttachmentStates = {
-		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
-		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
-		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE)
-	};
-	colorBlendState.attachmentCount = static_cast<uint32_t>(blendAttachmentStates.size());
-	colorBlendState.pAttachments = blendAttachmentStates.data();
-
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_defered.pipelines.offscreen));
-}
+//void Renderer::PreparePipelines()
+//{
+//	std::vector<VkDescriptorSetLayout> setLayouts = { m_defered.descriptorSetLayout };
+//	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(setLayouts.data(), 1);
+//	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_defered.pipelineLayouts.composition));
+//
+//	setLayouts.push_back(m_defered.descriptorSetLayouts.textures);
+//	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(setLayouts.data(), 2);
+//	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_defered.pipelineLayouts.model));
+//
+//	// Pipelines
+//	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
+//	VkPipelineRasterizationStateCreateInfo rasterizationState = Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE, 0);
+//	VkPipelineColorBlendAttachmentState blendAttachmentState = Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE);
+//	VkPipelineColorBlendStateCreateInfo colorBlendState = Init::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
+//	VkPipelineDepthStencilStateCreateInfo depthStencilState = Init::pipelineDepthStencilStateCreateInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
+//	VkPipelineViewportStateCreateInfo viewportState = Init::pipelineViewportStateCreateInfo(1, 1, 0);
+//	VkPipelineMultisampleStateCreateInfo multisampleState = Init::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_1_BIT, 0);
+//	std::vector<VkDynamicState> dynamicStateEnables = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+//	VkPipelineDynamicStateCreateInfo dynamicState = Init::pipelineDynamicStateCreateInfo(dynamicStateEnables);
+//	std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
+//
+//	VkGraphicsPipelineCreateInfo pipelineCI = Init::pipelineCreateInfo(m_defered.pipelineLayouts.composition, m_renderPass);
+//	pipelineCI.pInputAssemblyState = &inputAssemblyState;
+//	pipelineCI.pRasterizationState = &rasterizationState;
+//	pipelineCI.pColorBlendState = &colorBlendState;
+//	pipelineCI.pMultisampleState = &multisampleState;
+//	pipelineCI.pViewportState = &viewportState;
+//	pipelineCI.pDepthStencilState = &depthStencilState;
+//	pipelineCI.pDynamicState = &dynamicState;
+//	pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
+//	pipelineCI.pStages = shaderStages.data();
+//
+//	// Final fullscreen composition pass pipeline，这里与着色器顶点顺序相关
+//	rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
+//	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Defered/Composition.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+//	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Defered/Composition.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+//
+//	VkPipelineVertexInputStateCreateInfo emptyInputState = Init::pipelineVertexInputStateCreateInfo();
+//	pipelineCI.pVertexInputState = &emptyInputState;
+//	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_defered.pipelines.composition));
+//
+//	// model
+//	pipelineCI.layout = m_defered.pipelineLayouts.model;
+//	// Vertex input state from glTF model for pipeline rendering models
+//	pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position, vkglTF::VertexComponent::UV, vkglTF::VertexComponent::Color, vkglTF::VertexComponent::Normal });
+//	rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;
+//
+//	// Offscreen pipeline
+//	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Defered/Model.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+//	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Defered/Model.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+//
+//	// Separate render pass
+//	pipelineCI.renderPass = m_defered.offScreenFrameBuf.renderPass;
+//
+//	// Blend attachment states required for all color attachments
+//	// This is important, as color write mask will otherwise be 0x0 and you
+//	// won't see anything rendered to the attachment
+//	std::array<VkPipelineColorBlendAttachmentState, 3> blendAttachmentStates = {
+//		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
+//		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
+//		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE)
+//	};
+//	colorBlendState.attachmentCount = static_cast<uint32_t>(blendAttachmentStates.size());
+//	colorBlendState.pAttachments = blendAttachmentStates.data();
+//
+//	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_defered.pipelines.offscreen));
+//}
 
 void Renderer::CreatePipelineCache()
 {
@@ -2097,51 +1895,83 @@ void Renderer::CreatePipelineCache()
 // model
 void Renderer::BuildDeferredCommandBuffer()
 {
-	if (m_defered.offScreenCmdBuffer == VK_NULL_HANDLE)
+	if (m_offScreenCmdBuffer == VK_NULL_HANDLE)
 	{
-		m_defered.offScreenCmdBuffer = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, false);
+		m_offScreenCmdBuffer = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, false);
 	}
 
 	// Create a semaphore used to synchronize offscreen rendering and usage
 	VkSemaphoreCreateInfo semaphoreCreateInfo = Init::semaphoreCreateInfo();
-	VK_CHECK_RESULT(vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_defered.offscreenSemaphore));
+	VK_CHECK_RESULT(vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_semaphores.deferedSemaphore));
 
 	VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
 
 	// Clear values for all attachments written in the fragment shader
-	std::array<VkClearValue, 4> clearValues;
+	std::array<VkClearValue, 4> clearValues = {};
+	clearValues[0].depthStencil = { 1.0f, 0 };
+	// First pass: Shadow map generation
+
+	VkRenderPassBeginInfo renderPassBeginInfo = Init::renderPassBeginInfo();
+	renderPassBeginInfo.renderPass = m_framebuffers.shadow->renderPass;
+	renderPassBeginInfo.framebuffer = m_framebuffers.shadow->framebuffer;
+	renderPassBeginInfo.renderArea.extent.width = m_framebuffers.shadow->width;
+	renderPassBeginInfo.renderArea.extent.height = m_framebuffers.shadow->height;
+	renderPassBeginInfo.clearValueCount = 1;
+	renderPassBeginInfo.pClearValues = clearValues.data();
+
+	VK_CHECK_RESULT(vkBeginCommandBuffer(m_offScreenCmdBuffer, &cmdBufInfo));
+
+	vkCmdBeginRenderPass(m_offScreenCmdBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+	VkViewport viewport = Init::viewport((float)m_framebuffers.shadow->width, (float)m_framebuffers.shadow->height, 0.0f, 1.0f);
+	vkCmdSetViewport(m_offScreenCmdBuffer, 0, 1, &viewport);
+
+	VkRect2D scissor = Init::rect2D(m_framebuffers.shadow->width, m_framebuffers.shadow->height, 0, 0);
+	vkCmdSetScissor(m_offScreenCmdBuffer, 0, 1, &scissor);
+
+	// Set depth bias (aka "Polygon offset")
+	vkCmdSetDepthBias(
+		m_offScreenCmdBuffer,
+		m_shadowSettings.depthBiasConstant,
+		0.0f,
+		m_shadowSettings.depthBiasSlope);
+
+	vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.shadow);
+
+	// We render multiple instances of a model
+	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.composition, 0, 1, &m_descriptorSets.shadow, 0, nullptr);
+	m_glTFModel.Draw(m_offScreenCmdBuffer);
+
+	vkCmdEndRenderPass(m_offScreenCmdBuffer);
+
+	// second pass
 	clearValues[0].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
 	clearValues[1].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
 	clearValues[2].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
 	clearValues[3].depthStencil = { 1.0f, 0 };
 
-	VkRenderPassBeginInfo renderPassBeginInfo = Init::renderPassBeginInfo();
-	renderPassBeginInfo.renderPass = m_defered.offScreenFrameBuf.renderPass;
-	renderPassBeginInfo.framebuffer = m_defered.offScreenFrameBuf.frameBuffer;
-	renderPassBeginInfo.renderArea.extent.width = m_defered.offScreenFrameBuf.width;
-	renderPassBeginInfo.renderArea.extent.height = m_defered.offScreenFrameBuf.height;
+	renderPassBeginInfo.renderPass = m_framebuffers.deferred->renderPass;
+	renderPassBeginInfo.framebuffer = m_framebuffers.deferred->framebuffer;
+	renderPassBeginInfo.renderArea.extent.width = m_framebuffers.deferred->width;
+	renderPassBeginInfo.renderArea.extent.height = m_framebuffers.deferred->height;
 	renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 	renderPassBeginInfo.pClearValues = clearValues.data();
 
-	VK_CHECK_RESULT(vkBeginCommandBuffer(m_defered.offScreenCmdBuffer, &cmdBufInfo));
+	vkCmdBeginRenderPass(m_offScreenCmdBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	vkCmdBeginRenderPass(m_defered.offScreenCmdBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+	viewport = Init::viewport((float)m_framebuffers.deferred->width, (float)m_framebuffers.deferred->height, 0.0f, 1.0f);
+	vkCmdSetViewport(m_offScreenCmdBuffer, 0, 1, &viewport);
 
-	VkViewport viewport = Init::viewport((float)m_defered.offScreenFrameBuf.width, (float)m_defered.offScreenFrameBuf.height, 0.0f, 1.0f);
-	vkCmdSetViewport(m_defered.offScreenCmdBuffer, 0, 1, &viewport);
+	scissor = Init::rect2D(m_framebuffers.deferred->width, m_framebuffers.deferred->height, 0, 0);
+	vkCmdSetScissor(m_offScreenCmdBuffer, 0, 1, &scissor);
 
-	VkRect2D scissor = Init::rect2D(m_defered.offScreenFrameBuf.width, m_defered.offScreenFrameBuf.height, 0, 0);
-	vkCmdSetScissor(m_defered.offScreenCmdBuffer, 0, 1, &scissor);
+	vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.defered);
+	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.defered, 0, 1, &m_descriptorSets.deferedModel, 0, nullptr);
+	m_glTFModel.Draw(m_offScreenCmdBuffer, vkglTF::RenderFlags::BindImages, m_pipelineLayouts.defered, 1);
 
-	vkCmdBindPipeline(m_defered.offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_defered.pipelines.offscreen);
+	vkCmdEndRenderPass(m_offScreenCmdBuffer);
 
-	// We render multiple instances of a model
-	vkCmdBindDescriptorSets(m_defered.offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_defered.pipelineLayouts.model, 0, 1, &m_defered.descriptorSets.model, 0, nullptr);
-	m_glTFModel.Draw(m_defered.offScreenCmdBuffer, vkglTF::RenderFlags::BindImages, m_defered.pipelineLayouts.model, 1);
-
-	vkCmdEndRenderPass(m_defered.offScreenCmdBuffer);
-
-	VK_CHECK_RESULT(vkEndCommandBuffer(m_defered.offScreenCmdBuffer));
+	VK_CHECK_RESULT(vkEndCommandBuffer(m_offScreenCmdBuffer));
 }
 
 void Renderer::SetupShadow()
@@ -2219,9 +2049,9 @@ void Renderer::SetupDefered()
 };
 void Renderer::InitLights()
 {
-	m_defered.uniformDataComposition.lights[0] = InitLight(glm::vec3(-14.0f, -0.5f, 15.0f), glm::vec3(-2.0f, 0.0f, 0.0f), glm::vec3(1.0f, 0.5f, 0.5f));
-	m_defered.uniformDataComposition.lights[1] = InitLight(glm::vec3(14.0f, -4.0f, 12.0f), glm::vec3(2.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-	m_defered.uniformDataComposition.lights[2] = InitLight(glm::vec3(0.0f, -10.0f, 4.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f));
+	m_uniformDataComposition.lights[0] = InitLight(glm::vec3(0.0f, 10.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+	m_uniformDataComposition.lights[1] = InitLight(glm::vec3(0.0f, 0.0f, 10.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	m_uniformDataComposition.lights[2] = InitLight(glm::vec3(0.0f, -10.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f));
 };
 
 void Renderer::SetupDescriptorsDD()
@@ -2251,14 +2081,12 @@ void Renderer::SetupDescriptorsDD()
 	};
 	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
 	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.composition));
-
-
+	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.deferedModel));
 	setLayoutBindings = {
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0)
 	};
-	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_defered.descriptorSetLayouts.textures));
-
+	descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
+	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.deferedTextures));
 
 	// Sets
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets;
@@ -2306,11 +2134,11 @@ void Renderer::SetupDescriptorsDD()
 
 
 	// offscreen
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.model));
+	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.deferedModel));
 
 	writeDescriptorSets = {
 		// Binding 0: Vertex shader uniform buffer
-		Init::writeDescriptorSet(m_descriptorSets.model, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_uniformBuffers.offscreen.descriptor)
+		Init::writeDescriptorSet(m_descriptorSets.deferedModel, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_uniformBuffers.defered.descriptor)
 	};
 	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 
@@ -2322,3 +2150,102 @@ void Renderer::SetupDescriptorsDD()
 	};
 	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
+void Renderer::PreparePipelinesDD()
+{
+	// Layout
+	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.composition, 1);
+	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.composition));
+
+	std::array<VkDescriptorSetLayout, 2> setLayouts = { m_descriptorSetLayouts.deferedModel ,m_descriptorSetLayouts.deferedTextures };
+	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(setLayouts.data(), 2);
+	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.defered));
+
+	// Pipelines
+
+	// composition
+	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
+	VkPipelineRasterizationStateCreateInfo rasterizationState = Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE, 0);
+	VkPipelineColorBlendAttachmentState blendAttachmentState = Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE);
+	VkPipelineColorBlendStateCreateInfo colorBlendState = Init::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
+	VkPipelineDepthStencilStateCreateInfo depthStencilState = Init::pipelineDepthStencilStateCreateInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
+	VkPipelineViewportStateCreateInfo viewportState = Init::pipelineViewportStateCreateInfo(1, 1, 0);
+	VkPipelineMultisampleStateCreateInfo multisampleState = Init::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_1_BIT, 0);
+	std::vector<VkDynamicState> dynamicStateEnables = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+	VkPipelineDynamicStateCreateInfo dynamicState = Init::pipelineDynamicStateCreateInfo(dynamicStateEnables);
+	std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
+
+	VkGraphicsPipelineCreateInfo pipelineCI = Init::pipelineCreateInfo(m_pipelineLayouts.composition, m_renderPass);
+	pipelineCI.pInputAssemblyState = &inputAssemblyState;
+	pipelineCI.pRasterizationState = &rasterizationState;
+	pipelineCI.pColorBlendState = &colorBlendState;
+	pipelineCI.pMultisampleState = &multisampleState;
+	pipelineCI.pViewportState = &viewportState;
+	pipelineCI.pDepthStencilState = &depthStencilState;
+	pipelineCI.pDynamicState = &dynamicState;
+	pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
+	pipelineCI.pStages = shaderStages.data();
+
+	// Final fullscreen composition pass pipeline
+	rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
+	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Deferedshadows/Composition.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Deferedshadows/Composition.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	// Empty vertex input state, vertices are generated by the vertex shader
+	VkPipelineVertexInputStateCreateInfo emptyInputState = Init::pipelineVertexInputStateCreateInfo();
+	pipelineCI.pVertexInputState = &emptyInputState;
+	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.composition));
+
+	// Vertex input state from glTF model for pipeline rendering models
+	pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position, vkglTF::VertexComponent::UV, vkglTF::VertexComponent::Color, vkglTF::VertexComponent::Normal });
+	rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;
+
+	// Offscreen pipeline
+	// Separate render pass
+	pipelineCI.layout = m_pipelineLayouts.defered;
+	pipelineCI.renderPass = m_framebuffers.deferred->renderPass;
+
+	// Blend attachment states required for all color attachments
+	// This is important, as color write mask will otherwise be 0x0 and you
+	// won't see anything rendered to the attachment
+	std::array<VkPipelineColorBlendAttachmentState, 3> blendAttachmentStates =
+	{
+		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
+		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
+		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE)
+	};
+	colorBlendState.attachmentCount = static_cast<uint32_t>(blendAttachmentStates.size());
+	colorBlendState.pAttachments = blendAttachmentStates.data();
+
+	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Deferedshadows/Model.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Deferedshadows/Model.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.defered));
+
+	// Shadow mapping pipeline
+	// The shadow mapping pipeline uses geometry shader instancing (invocations layout modifier) to output
+	// shadow maps for multiple lights sources into the different shadow map layers in one single render pass
+
+	pipelineCI.layout = m_pipelineLayouts.composition;
+
+	std::array<VkPipelineShaderStageCreateInfo, 2> shadowStages;
+	shadowStages[0] = LoadShader(Tool::GetShadersPath() + "Deferedshadows/Shadow.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shadowStages[1] = LoadShader(Tool::GetShadersPath() + "Deferedshadows/Shadow.Geom.spv", VK_SHADER_STAGE_GEOMETRY_BIT);
+
+	pipelineCI.pStages = shadowStages.data();
+	pipelineCI.stageCount = static_cast<uint32_t>(shadowStages.size());
+
+	// Shadow pass doesn't use any color attachments
+	colorBlendState.attachmentCount = 0;
+	colorBlendState.pAttachments = nullptr;
+	// Cull front faces
+	rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
+	depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+	// Enable depth bias
+	rasterizationState.depthBiasEnable = VK_TRUE;
+	// Add depth bias to dynamic state, so we can change it at runtime
+	dynamicStateEnables.push_back(VK_DYNAMIC_STATE_DEPTH_BIAS);
+	dynamicState = Init::pipelineDynamicStateCreateInfo(dynamicStateEnables);
+	// Reset blend attachment state
+	pipelineCI.renderPass = m_framebuffers.shadow->renderPass;
+	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.shadow));
+
+}
+

@@ -24,8 +24,11 @@ struct ShadowSettings
 	bool enableShadows = true;
 	float lightFOV = 100.0f;
 
-	float depthBiasConstant = 1.25f;
-	float depthBiasSlope = 1.75f;
+	float depthBiasConstant = 0.0f;
+	float depthBiasSlope = 0.0f;
+
+	float zNear = 0.1f;
+	float zFar = 64.0f;
 };
 
 struct QueueFamilyIndices
@@ -69,6 +72,7 @@ struct Semaphores
 {
 	VkSemaphore presentComplete;
 	VkSemaphore renderComplete;
+	VkSemaphore deferedSemaphore;
 };
 
 struct UniformDataOffscreen
@@ -85,7 +89,6 @@ struct UniformDataOffscreen
 struct UniformDataShadows
 {
 	glm::mat4 mvp[LIGHT_COUNT];
-	glm::vec4 instancePos[3];
 };
 
 struct UniformDataComposition
@@ -97,21 +100,21 @@ struct UniformDataComposition
 };
 struct UniformBuffers
 {
-	Buffer offscreen;
+	Buffer defered;
 	Buffer composition;
 	Buffer shadowGeometryShader;
 };
 
 struct Pipelines
 {
-	VkPipeline offscreen{ VK_NULL_HANDLE };
+	VkPipeline defered{ VK_NULL_HANDLE };
 	VkPipeline composition{ VK_NULL_HANDLE };
-	VkPipeline shadowpass{ VK_NULL_HANDLE };
+	VkPipeline shadow{ VK_NULL_HANDLE };
 };
 
 struct DescriptorSets
 {
-	VkDescriptorSet model{ VK_NULL_HANDLE };
+	VkDescriptorSet deferedModel{ VK_NULL_HANDLE };
 	VkDescriptorSet composition{ VK_NULL_HANDLE };
 	VkDescriptorSet shadow{ VK_NULL_HANDLE };
 };
@@ -130,14 +133,14 @@ struct RenderPass
 
 struct PipelineLayouts
 {
-	VkPipelineLayout model;
+	VkPipelineLayout defered;
 	VkPipelineLayout composition;
 };
 struct DescriptorSetLayouts
 {
-	VkDescriptorSetLayout model{ nullptr };
+	VkDescriptorSetLayout deferedModel{ nullptr };
+	VkDescriptorSetLayout deferedTextures{ nullptr };
 	VkDescriptorSetLayout composition{ nullptr };
-	VkDescriptorSetLayout textures{ nullptr };
 };
 struct Framebuffers
 {
@@ -145,6 +148,11 @@ struct Framebuffers
 	Framebuffer* deferred{ nullptr };
 	// Framebuffer resources for the shadow pass
 	Framebuffer* shadow{ nullptr };
+};
+
+struct CmdBuffers
+{
+	VkCommandBuffer offScreenCmdBuffer;
 };
 
 export class Renderer
@@ -179,7 +187,6 @@ private:
 	} m_mouseState;
 
 	UIOverlay m_UI;
-	DescriptorSetLayouts m_descriptorSetLayouts;
 	VkPhysicalDeviceFeatures m_enabledFeatures{};
 	/** @brief Set of device extensions to be enabled for this example (must be set in the derived constructor) */
 	std::vector<const char*> m_enabledDeviceExtensions;
@@ -196,7 +203,7 @@ private:
 	uint32_t currentBuffer = 0;
 	VkPipelineStageFlags m_submitPipelineStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 	VkSubmitInfo m_submitInfo{};
-	Semaphores m_semaphores{};
+
 	std::vector<VkShaderModule> m_shaderModules{};
 	VkFormat m_depthFormat{};
 	Buffer m_uboBuffer{};
@@ -341,25 +348,19 @@ private:
 	void Draw();
 	void SubmitFrame();
 private:
-	struct Defered
-	{
-		VkSampler colorSampler{ VK_NULL_HANDLE };
-		VkSemaphore offscreenSemaphore{ VK_NULL_HANDLE };
-		VkCommandBuffer offScreenCmdBuffer{ VK_NULL_HANDLE };
-		PipelineLayouts pipelineLayouts;
-		Pipelines pipelines;
-		UniformBuffers uniformBuffers;
-		UniformDataComposition uniformDataComposition;
-		UniformDataOffscreen uniformDataOffscreen;
-		DescriptorSets descriptorSets;
-		DescriptorSetLayouts descriptorSetLayouts;
-		VkDescriptorSetLayout descriptorSetLayout;
-		int32_t debugDisplayTarget = 0;
-	};
+	ShadowSettings m_shadowSettings;
 	UniformBuffers m_uniformBuffers;
 	DescriptorSetLayouts m_descriptorSetLayouts;
 	DescriptorSets m_descriptorSets;
-	Defered m_defered;
+	PipelineLayouts m_pipelineLayouts;
+	Pipelines m_pipelines;
+	VkCommandBuffer m_offScreenCmdBuffer{ VK_NULL_HANDLE };
+	Semaphores m_semaphores{};
+	UniformDataComposition m_uniformDataComposition;
+	UniformDataOffscreen m_uniformDataOffscreen;
+	UniformDataShadows m_uniformDataShadows;
+	int32_t m_debugDisplayTarget = 0;
+
 	void PrepareOffscreenFramebuffer();
 	void PrepareUniformBuffers();
 	void SetupDescriptors();
@@ -377,6 +378,9 @@ private:
 	void InitLights();
 
 	void SetupDescriptorsDD();
+	void PreparePipelinesDD();
+	void BuildCommandBuffersDD();
+
 
 };
 
