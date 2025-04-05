@@ -20,7 +20,7 @@ struct GSOutput
 	int Layer : SV_RenderTargetArrayIndex;
 };
 
-[maxvertexcount(9)] // 3 layers × 3 vertices
+[maxvertexcount(9)] // 3 layers × 3 vertices !!!
 	void
 	main(triangle VSOutput input[3], inout TriangleStream<GSOutput> outStream)
 {
@@ -33,7 +33,7 @@ struct GSOutput
 			output.Layer = layer;
 			outStream.Append(output);
 		}
-		
+		outStream.RestartStrip();
 	}
-	outStream.RestartStrip();
+	
 }

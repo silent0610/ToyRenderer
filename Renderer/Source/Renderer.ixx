@@ -24,8 +24,8 @@ struct ShadowSettings
 	bool enableShadows = true;
 	float lightFOV = 100.0f;
 
-	float depthBiasConstant = 0.0f;
-	float depthBiasSlope = 0.0f;
+	float depthBiasConstant = 2.0f;
+	float depthBiasSlope = 2.0f;
 
 	float zNear = 0.1f;
 	float zFar = 64.0f;

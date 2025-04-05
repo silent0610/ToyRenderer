@@ -185,7 +185,7 @@ float4 main([[vk::location(0)]] float2 inUV : TEXCOORD0) : SV_TARGET
 		fragcolor = float3((diff + spec) * spotEffect * heightAttenuation) * ubo.lights[i].color.rgb * albedo.rgb;
 		if (ubo.useShadows > 0)
 		{
-			fragcolor = shadow1(fragcolor, fragPos,i-1);
+			fragcolor = shadow1(fragcolor, fragPos,i);
 		}
 		color += fragcolor;
 	}

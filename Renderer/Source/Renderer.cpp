@@ -868,7 +868,7 @@ void Renderer::CreateInstance()
 	appIF.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
 	appIF.pEngineName = "No Engine";
 	appIF.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-	appIF.apiVersion = VK_API_VERSION_1_0;
+	appIF.apiVersion = VK_API_VERSION_1_1;
 	appIF.pNext = nullptr;
 
 	VkInstanceCreateInfo createIF{};
@@ -2049,9 +2049,9 @@ void Renderer::SetupDefered()
 };
 void Renderer::InitLights()
 {
-	m_uniformDataComposition.lights[0] = InitLight(glm::vec3(0.0f, 10.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-	m_uniformDataComposition.lights[1] = InitLight(glm::vec3(0.0f, 0.0f, 10.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-	m_uniformDataComposition.lights[2] = InitLight(glm::vec3(0.0f, -10.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f));
+	m_uniformDataComposition.lights[0] = InitLight(glm::vec3(10.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+	m_uniformDataComposition.lights[1] = InitLight(glm::vec3(0.0f, 0.0f, 10.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	m_uniformDataComposition.lights[2] = InitLight(glm::vec3(-10.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 };
 
 void Renderer::SetupDescriptorsDD()
