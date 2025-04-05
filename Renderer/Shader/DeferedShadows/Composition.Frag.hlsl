@@ -12,7 +12,7 @@ Texture2DArray textureShadowMap : register(t5);
 SamplerState samplerShadowMap : register(s5);
 
 #define LIGHT_COUNT 3
-#define SHADOW_FACTOR 0.25
+#define SHADOW_FACTOR 0
 #define AMBIENT_LIGHT 0.1
 #define USE_PCF
 
@@ -94,6 +94,22 @@ float3 shadow(float3 fragcolor, float3 fragPos)
 	return fragcolor;
 }
 
+float3 shadow1(float3 fragcolor, float3 fragPos,int index)
+{
+
+		float4 shadowClip = mul(ubo.lights[index].viewMatrix, float4(fragPos.xyz, 1.0));
+
+		float shadowFactor;
+#ifdef USE_PCF
+		shadowFactor = filterPCF(shadowClip, index);
+#else
+		shadowFactor = textureProj(shadowClip, index, float2(0.0, 0.0));
+#endif
+
+		fragcolor *= shadowFactor;
+
+	return fragcolor;
+}
 float4 main([[vk::location(0)]] float2 inUV : TEXCOORD0) : SV_TARGET
 {
 	// Get G-Buffer values
@@ -101,7 +117,7 @@ float4 main([[vk::location(0)]] float2 inUV : TEXCOORD0) : SV_TARGET
 	float3 normal = textureNormal.Sample(samplerNormal, inUV).rgb;
 	float4 albedo = textureAlbedo.Sample(samplerAlbedo, inUV);
 
-	float3 fragcolor;
+	float3 fragcolor =0;
 
 	// Debug display
 	if (ubo.displayDebugTarget > 0)
@@ -128,12 +144,14 @@ float4 main([[vk::location(0)]] float2 inUV : TEXCOORD0) : SV_TARGET
 	}
 
 	// Ambient part
-	fragcolor = albedo.rgb * AMBIENT_LIGHT;
+	float3 evir = albedo.rgb * AMBIENT_LIGHT;
 
+	float3 color = 0;
 	float3 N = normalize(normal);
 
 	for (int i = 0; i < LIGHT_COUNT; ++i)
 	{
+		fragcolor =0;
 		// Vector to light
 		float3 L = ubo.lights[i].position.xyz - fragPos;
 		// Distance from light to fragment position
@@ -164,15 +182,17 @@ float4 main([[vk::location(0)]] float2 inUV : TEXCOORD0) : SV_TARGET
 		float3 R = reflect(-L, N);
 		float NdotR = max(0.0, dot(R, V));
 		float3 spec = (pow(NdotR, 16.0) * albedo.a * 2.5).xxx;
-
-		fragcolor += float3((diff + spec) * spotEffect * heightAttenuation) * ubo.lights[i].color.rgb * albedo.rgb;
+		fragcolor = float3((diff + spec) * spotEffect * heightAttenuation) * ubo.lights[i].color.rgb * albedo.rgb;
+		if (ubo.useShadows > 0)
+		{
+			fragcolor = shadow1(fragcolor, fragPos,i-1);
+		}
+		color += fragcolor;
 	}
 
+	color +=evir;
 	// Shadow calculations in a separate pass
-	if (ubo.useShadows > 0)
-	{
-		fragcolor = shadow(fragcolor, fragPos);
-	}
 
-	return float4(fragcolor, 1);
+
+	return float4(color, 1);
 }

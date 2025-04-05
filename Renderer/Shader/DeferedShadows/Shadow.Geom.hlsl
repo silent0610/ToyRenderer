@@ -33,6 +33,7 @@ struct GSOutput
 			output.Layer = layer;
 			outStream.Append(output);
 		}
-		outStream.RestartStrip();
+		
 	}
+	outStream.RestartStrip();
 }
