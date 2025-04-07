@@ -210,9 +210,12 @@ void Renderer::BuildCommandBuffers()
 		vkCmdSetViewport(m_drawCmdBuffers[i], 0, 1, &viewport);
 		vkCmdSetScissor(m_drawCmdBuffers[i], 0, 1, &scissor);
 
+		//vkCmdBindPipeline(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.skyBox);
+		//vkCmdBindDescriptorSets(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.skyBox, 0, 1, &m_descriptorSets.skyBox, 0, NULL);
+		//scene.skybox.Draw(m_drawCmdBuffers[i]);
+
 		vkCmdBindPipeline(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.composition);
 		vkCmdBindDescriptorSets(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.composition, 0, 1, &m_descriptorSets.composition, 0, NULL);
-
 		//glm::mat4x4 model{ 1.0f };
 		//vkCmdPushConstants(m_drawCmdBuffers[i], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4x4), &model);
 		//VkDeviceSize offsets[1] = { 0 };
@@ -522,6 +525,11 @@ void Renderer::UpdateUniformBufferComposition()
 
 	//m_uniformDataComposition.lights[2].position.x = 0.0f;
 	//m_uniformDataComposition.lights[2].position.z = 4.0f;
+
+	scene.uniformDataSkybox.model = glm::mat4(glm::mat3(m_camera.matrices.view));
+	scene.uniformDataSkybox.model[1][1] = -scene.uniformDataSkybox.model[1][1];
+	scene.uniformDataSkybox.projection = m_camera.matrices.perspective;
+	memcpy(m_uniformBuffers.skyBox.mapped, &scene.uniformDataSkybox, sizeof(scene.uniformDataSkybox));
 
 	for (uint32_t i = 0; i < LIGHT_COUNT; i++)
 	{
@@ -1723,7 +1731,7 @@ void Renderer::CreateLogicalDevice()
 
 void Renderer::LoadAssets()
 {
-	const uint32_t glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors;
+	uint32_t glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors;
 	/*LoadglTFFile(Tool::GetAssetsPath() + "Models/FlightHelmet/glTF/FlightHelmet.gltf");*/
 	m_glTFModel.loadFromFile(Tool::GetAssetsPath() + m_config->modelPath, m_vulkanDevice, m_queues.graphicsQueue, glTFLoadingFlags);
 	//std::cout << std::endl << "sizeof material: " << m_glTFModel.materials.size() << std::endl;
@@ -1740,12 +1748,12 @@ void Renderer::PrepareUniformBuffers()
 	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.defered, sizeof(UniformDataOffscreen)));
 	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.composition, sizeof(UniformDataComposition)));
 	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.shadowGeometryShader, sizeof(UniformDataShadows)));
-
+	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.skyBox, sizeof(UniformDataSkybox)));
 	// Map persistent
 	VK_CHECK_RESULT(m_uniformBuffers.defered.Map());
 	VK_CHECK_RESULT(m_uniformBuffers.composition.Map());
 	VK_CHECK_RESULT(m_uniformBuffers.shadowGeometryShader.Map());
-
+	VK_CHECK_RESULT(m_uniformBuffers.skyBox.Map());
 }
 //void Renderer::SetupDescriptors()
 //{
@@ -1914,7 +1922,8 @@ void Renderer::BuildDeferredCommandBuffer()
 	{
 		m_offScreenCmdBuffer = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, false);
 	}
-	else {
+	else
+	{
 		vkResetCommandBuffer(m_offScreenCmdBuffer, 0);
 	}
 
@@ -1924,7 +1933,7 @@ void Renderer::BuildDeferredCommandBuffer()
 		VkSemaphoreCreateInfo semaphoreCreateInfo = Init::semaphoreCreateInfo();
 		VK_CHECK_RESULT(vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_semaphores.deferedSemaphore));
 	}
-	
+
 	VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
 
 	// Clear values for all attachments written in the fragment shader
@@ -1950,6 +1959,7 @@ void Renderer::BuildDeferredCommandBuffer()
 	VkRect2D scissor = Init::rect2D(m_framebuffers.shadow->width, m_framebuffers.shadow->height, 0, 0);
 	vkCmdSetScissor(m_offScreenCmdBuffer, 0, 1, &scissor);
 
+
 	// Set depth bias (aka "Polygon offset")
 	vkCmdSetDepthBias(
 		m_offScreenCmdBuffer,
@@ -1962,7 +1972,7 @@ void Renderer::BuildDeferredCommandBuffer()
 	// We render multiple instances of a model
 	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.composition, 0, 1, &m_descriptorSets.shadow, 0, nullptr);
 	m_glTFModel.Draw(m_offScreenCmdBuffer);
-	
+
 	vkCmdEndRenderPass(m_offScreenCmdBuffer);
 
 	// second pass
@@ -1985,6 +1995,11 @@ void Renderer::BuildDeferredCommandBuffer()
 
 	scissor = Init::rect2D(m_framebuffers.deferred->width, m_framebuffers.deferred->height, 0, 0);
 	vkCmdSetScissor(m_offScreenCmdBuffer, 0, 1, &scissor);
+
+
+	vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.skyBox);
+	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.skyBox, 0, 1, &m_descriptorSets.skyBox, 0, NULL);
+	scene.skybox.Draw(m_offScreenCmdBuffer);
 
 	vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.defered);
 	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.defered, 0, 1, &m_descriptorSets.deferedModel, 0, nullptr);
@@ -2108,6 +2123,16 @@ void Renderer::SetupDescriptorsDD()
 	descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
 	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.deferedTextures));
 
+	setLayoutBindings =
+	{
+		// Binding 0: Vertex shader uniform buffer
+	Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT, 0),
+	// Binding 1: Position texture
+	Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
+	};
+	descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
+	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.skyBox));
+
 	// Sets
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets;
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.composition, 1);
@@ -2169,12 +2194,27 @@ void Renderer::SetupDescriptorsDD()
 		Init::writeDescriptorSet(m_descriptorSets.shadow, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_uniformBuffers.shadowGeometryShader.descriptor),
 	};
 	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+
+	// skyBox
+	allocInfo.pSetLayouts = &m_descriptorSetLayouts.skyBox;
+	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.skyBox));
+	writeDescriptorSets =
+	{
+		Init::writeDescriptorSet(m_descriptorSets.skyBox,VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,0,&m_uniformBuffers.skyBox.descriptor),
+		Init::writeDescriptorSet(m_descriptorSets.skyBox,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1,&scene.textures.environmentCube.descriptor),
+	};
+	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, NULL);
+
 }
 void Renderer::PreparePipelinesDD()
 {
 	// Layout
 	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.composition, 1);
 	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.composition));
+
+	// Layout
+	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.skyBox, 1);
+	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.skyBox));
 
 	std::array<VkDescriptorSetLayout, 2> setLayouts = { m_descriptorSetLayouts.deferedModel ,m_descriptorSetLayouts.deferedTextures };
 	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(setLayouts.data(), 2);
@@ -2214,19 +2254,46 @@ void Renderer::PreparePipelinesDD()
 	pipelineCI.pVertexInputState = &emptyInputState;
 	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.composition));
 
+
 	// Vertex input state from glTF model for pipeline rendering models
-	pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position, vkglTF::VertexComponent::UV, vkglTF::VertexComponent::Color, vkglTF::VertexComponent::Normal });
-	rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;
+
+
 
 	// Offscreen pipeline
 	// Separate render pass
+	pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position, vkglTF::VertexComponent::Normal, vkglTF::VertexComponent::UV });
+	// skybox
+	rasterizationState.cullMode = VK_CULL_MODE_NONE;
+	pipelineCI.layout = m_pipelineLayouts.skyBox;
+	pipelineCI.renderPass = m_framebuffers.deferred->renderPass;
+	std::array<VkPipelineColorBlendAttachmentState, 3> blendAttachmentStates =
+	{
+		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
+		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
+		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE)
+	};
+	colorBlendState.attachmentCount = static_cast<uint32_t>(blendAttachmentStates.size());
+	colorBlendState.pAttachments = blendAttachmentStates.data();
+	depthStencilState.depthWriteEnable = VK_FALSE;
+	depthStencilState.depthTestEnable = VK_FALSE;
+
+
+	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "skybox/skybox.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "skybox/skybox.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.skyBox));
+
+	// defered model
+	rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;
+	depthStencilState.depthWriteEnable = VK_TRUE;
+	depthStencilState.depthTestEnable = VK_TRUE;
 	pipelineCI.layout = m_pipelineLayouts.defered;
 	pipelineCI.renderPass = m_framebuffers.deferred->renderPass;
 
 	// Blend attachment states required for all color attachments
 	// This is important, as color write mask will otherwise be 0x0 and you
 	// won't see anything rendered to the attachment
-	std::array<VkPipelineColorBlendAttachmentState, 3> blendAttachmentStates =
+	pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position, vkglTF::VertexComponent::UV, vkglTF::VertexComponent::Color, vkglTF::VertexComponent::Normal });
+	blendAttachmentStates =
 	{
 		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
 		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
@@ -2239,10 +2306,12 @@ void Renderer::PreparePipelinesDD()
 	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Deferedshadows/Model.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.defered));
 
+
 	// Shadow mapping pipeline
 	// The shadow mapping pipeline uses geometry shader instancing (invocations layout modifier) to output
 	// shadow maps for multiple lights sources into the different shadow map layers in one single render pass
-
+	depthStencilState.depthWriteEnable = VK_TRUE;
+	depthStencilState.depthTestEnable = VK_TRUE;
 	pipelineCI.layout = m_pipelineLayouts.composition;
 
 	std::array<VkPipelineShaderStageCreateInfo, 2> shadowStages;

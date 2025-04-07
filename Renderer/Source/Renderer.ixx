@@ -83,7 +83,7 @@ struct Semaphores
 {
 	VkSemaphore presentComplete;
 	VkSemaphore renderComplete;
-	VkSemaphore deferedSemaphore{nullptr};
+	VkSemaphore deferedSemaphore{ nullptr };
 };
 
 struct UniformDataOffscreen
@@ -102,6 +102,12 @@ struct UniformDataShadows
 	glm::mat4 mvp[LIGHT_COUNT];
 };
 
+struct UniformDataSkybox
+{
+	glm::mat4 model;
+	glm::mat4 projection;
+};
+
 struct UniformDataComposition
 {
 	glm::vec4 viewPos;
@@ -114,6 +120,7 @@ struct UniformBuffers
 	Buffer defered;
 	Buffer composition;
 	Buffer shadowGeometryShader;
+	Buffer skyBox;
 };
 
 struct Pipelines
@@ -146,6 +153,7 @@ struct SmallScene
 	std::vector<vkglTF::Model> objects;
 	int32_t objectIndex = 0;
 	Textures textures;
+	UniformDataSkybox uniformDataSkybox;
 };
 struct RenderPass
 {
@@ -163,12 +171,14 @@ struct PipelineLayouts
 {
 	VkPipelineLayout defered;
 	VkPipelineLayout composition;
+	VkPipelineLayout skyBox;
 };
 struct DescriptorSetLayouts
 {
 	VkDescriptorSetLayout deferedModel{ nullptr };
 	VkDescriptorSetLayout deferedTextures{ nullptr };
 	VkDescriptorSetLayout composition{ nullptr };
+	VkDescriptorSetLayout skyBox{ nullptr };
 };
 struct Framebuffers
 {

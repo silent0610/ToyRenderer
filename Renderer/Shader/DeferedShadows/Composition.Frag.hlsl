@@ -117,6 +117,10 @@ float4 main([[vk::location(0)]] float2 inUV : TEXCOORD0) : SV_TARGET
 	float3 normal = textureNormal.Sample(samplerNormal, inUV).rgb;
 	float4 albedo = textureAlbedo.Sample(samplerAlbedo, inUV);
 
+	if (length(fragPos) < 1e-5)
+	{
+		return albedo;
+	}
 	float3 fragcolor =0;
 
 	// Debug display
