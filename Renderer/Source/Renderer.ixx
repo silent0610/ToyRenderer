@@ -72,7 +72,7 @@ struct Semaphores
 {
 	VkSemaphore presentComplete;
 	VkSemaphore renderComplete;
-	VkSemaphore deferedSemaphore;
+	VkSemaphore deferedSemaphore{nullptr};
 };
 
 struct UniformDataOffscreen

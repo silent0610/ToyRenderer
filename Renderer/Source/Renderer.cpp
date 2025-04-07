@@ -1365,6 +1365,18 @@ void Renderer::DisplayUI(UIOverlay* overlay)
 		{
 			m_uniformDataComposition.useShadows = shadows;
 		}
+		float depthBiasCons = m_shadowSettings.depthBiasConstant;
+		if (overlay->SliderFloat("DepthBiasCons", &depthBiasCons, 0.0f, 10.0f))
+		{
+			m_shadowSettings.depthBiasConstant = depthBiasCons;
+			BuildDeferredCommandBuffer();
+		}
+		float depthBiasSlope = m_shadowSettings.depthBiasSlope;
+		if (overlay->SliderFloat("DepthBiasSlope", &depthBiasSlope, 0.0f, 10.0f))
+		{
+			m_shadowSettings.depthBiasSlope = depthBiasSlope;
+			BuildDeferredCommandBuffer();
+		}
 	}
 }
 void Renderer::UpdateOverlay()
@@ -1899,11 +1911,17 @@ void Renderer::BuildDeferredCommandBuffer()
 	{
 		m_offScreenCmdBuffer = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, false);
 	}
+	else {
+		vkResetCommandBuffer(m_offScreenCmdBuffer, 0);
+	}
 
 	// Create a semaphore used to synchronize offscreen rendering and usage
-	VkSemaphoreCreateInfo semaphoreCreateInfo = Init::semaphoreCreateInfo();
-	VK_CHECK_RESULT(vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_semaphores.deferedSemaphore));
-
+	if (!m_semaphores.deferedSemaphore)
+	{
+		VkSemaphoreCreateInfo semaphoreCreateInfo = Init::semaphoreCreateInfo();
+		VK_CHECK_RESULT(vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_semaphores.deferedSemaphore));
+	}
+	
 	VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
 
 	// Clear values for all attachments written in the fragment shader
