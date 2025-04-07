@@ -1,5 +1,7 @@
 module;
 #include "vulkan/vulkan.h"
+#include "ktx.h"
+#include <ktxvulkan.h>
 export module TextureMod;
 import std;
 import DeviceMod;
@@ -20,7 +22,7 @@ public:
 
 	void      UpdateDescriptor();
 	void      Destroy();
-	//ktxResult loadKTXFile(std::string filename, ktxTexture** target);
+	ktxResult LoadKTXFile(std::string filename, ktxTexture** target);
 };
 
 
@@ -60,7 +62,7 @@ public:
 		VkImageLayout      imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 };
 
-class TextureCubeMap : public Texture
+export class TextureCubeMap : public Texture
 {
 public:
 	void LoadFromFile(

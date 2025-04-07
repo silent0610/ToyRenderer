@@ -217,6 +217,7 @@ void Renderer::BuildCommandBuffers()
 		//vkCmdPushConstants(m_drawCmdBuffers[i], m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4x4), &model);
 		//VkDeviceSize offsets[1] = { 0 };
 		vkCmdDraw(m_drawCmdBuffers[i], 3, 1, 0, 0);
+
 		//m_glTFModel.Draw(m_drawCmdBuffers[i], vkglTF::RenderFlags::BindImages, m_pipelineLayout, 1);
 		DrawUI(m_drawCmdBuffers[i]);
 		//vkCmdDrawIndexed(m_drawCmdBuffers[i], indices.count, 1, 0, 0, 0);
@@ -537,7 +538,7 @@ void Renderer::UpdateUniformBufferComposition()
 	memcpy(m_uniformBuffers.shadowGeometryShader.mapped, &m_uniformDataShadows, sizeof(UniformDataShadows));
 
 	m_uniformDataComposition.viewPos = glm::vec4(m_camera.position, 0.0f) * glm::vec4(-1.0f, 1.0f, -1.0f, 1.0f);;
-	std::cout << m_uniformDataComposition.viewPos.x << "," << m_uniformDataComposition.viewPos.y << "," << m_uniformDataComposition.viewPos.z << std::endl;
+	//std::cout << m_uniformDataComposition.viewPos.x << "," << m_uniformDataComposition.viewPos.y << "," << m_uniformDataComposition.viewPos.z << std::endl;
 	m_uniformDataComposition.debugDisplayTarget = m_debugDisplayTarget;
 
 	memcpy(m_uniformBuffers.composition.mapped, &m_uniformDataComposition, sizeof(m_uniformDataComposition));
@@ -1727,6 +1728,8 @@ void Renderer::LoadAssets()
 	m_glTFModel.loadFromFile(Tool::GetAssetsPath() + m_config->modelPath, m_vulkanDevice, m_queues.graphicsQueue, glTFLoadingFlags);
 	//std::cout << std::endl << "sizeof material: " << m_glTFModel.materials.size() << std::endl;
 	//std::cout << std::endl << "sizeof texture: " << m_glTFModel.textures.size() << std::endl;
+	scene.skybox.loadFromFile(Tool::GetAssetsPath() + "models/Cube/cube.gltf", m_vulkanDevice, m_queues.graphicsQueue, glTFLoadingFlags);
+	scene.textures.environmentCube.LoadFromFile(Tool::GetAssetsPath() + "textures/hdr/pisa_cube.ktx", VK_FORMAT_R16G16B16A16_SFLOAT, m_vulkanDevice, m_queues.graphicsQueue);
 }
 
 
@@ -1959,7 +1962,7 @@ void Renderer::BuildDeferredCommandBuffer()
 	// We render multiple instances of a model
 	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.composition, 0, 1, &m_descriptorSets.shadow, 0, nullptr);
 	m_glTFModel.Draw(m_offScreenCmdBuffer);
-
+	
 	vkCmdEndRenderPass(m_offScreenCmdBuffer);
 
 	// second pass
@@ -1986,7 +1989,6 @@ void Renderer::BuildDeferredCommandBuffer()
 	vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.defered);
 	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.defered, 0, 1, &m_descriptorSets.deferedModel, 0, nullptr);
 	m_glTFModel.Draw(m_offScreenCmdBuffer, vkglTF::RenderFlags::BindImages, m_pipelineLayouts.defered, 1);
-
 	vkCmdEndRenderPass(m_offScreenCmdBuffer);
 
 	VK_CHECK_RESULT(vkEndCommandBuffer(m_offScreenCmdBuffer));

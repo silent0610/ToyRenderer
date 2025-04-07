@@ -17,6 +17,8 @@ import UIMod;
 import ConfigMod;
 import LightMod;
 import FrameBufferMod;
+import TextureMod;
+
 
 const int LIGHT_COUNT = 3;
 struct ShadowSettings
@@ -48,7 +50,16 @@ struct SwapChainSupportDetails
 	std::vector<VkPresentModeKHR> presentModes;
 };
 
-
+struct MouseState
+{
+	struct
+	{
+		bool Left = false;
+		bool Right = false;
+		bool Middle = false;
+	} Buttons;
+	glm::vec2 Position;
+};
 
 
 struct VkQueues
@@ -110,6 +121,7 @@ struct Pipelines
 	VkPipeline defered{ VK_NULL_HANDLE };
 	VkPipeline composition{ VK_NULL_HANDLE };
 	VkPipeline shadow{ VK_NULL_HANDLE };
+	VkPipeline skyBox{ VK_NULL_HANDLE };
 };
 
 struct DescriptorSets
@@ -117,8 +129,24 @@ struct DescriptorSets
 	VkDescriptorSet deferedModel{ VK_NULL_HANDLE };
 	VkDescriptorSet composition{ VK_NULL_HANDLE };
 	VkDescriptorSet shadow{ VK_NULL_HANDLE };
+	VkDescriptorSet skyBox{ VK_NULL_HANDLE };
 };
 
+struct Textures
+{
+	TextureCubeMap environmentCube;
+	// Generated at runtime
+	Texture2D lutBrdf;
+	TextureCubeMap irradianceCube;
+	TextureCubeMap prefilteredCube;
+};
+struct SmallScene
+{
+	vkglTF::Model skybox;
+	std::vector<vkglTF::Model> objects;
+	int32_t objectIndex = 0;
+	Textures textures;
+};
 struct RenderPass
 {
 	VkDescriptorSetLayout descriptorSetLayout;
@@ -163,7 +191,7 @@ public:
 	~Renderer() = default;
 
 private:
-
+	SmallScene scene;
 	Config* m_config;
 	std::vector<VkFence> m_waitFences;
 	float m_timer;
@@ -175,16 +203,7 @@ private:
 	std::string m_title = "Vulkan Example";
 	bool click{ false };
 
-	struct
-	{
-		struct
-		{
-			bool Left = false;
-			bool Right = false;
-			bool Middle = false;
-		} Buttons;
-		glm::vec2 Position;
-	} m_mouseState;
+	MouseState m_mouseState;
 
 	UIOverlay m_UI;
 	VkPhysicalDeviceFeatures m_enabledFeatures{};
