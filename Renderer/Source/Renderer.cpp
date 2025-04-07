@@ -527,7 +527,7 @@ void Renderer::UpdateUniformBufferComposition()
 	//m_uniformDataComposition.lights[2].position.z = 4.0f;
 
 	scene.uniformDataSkybox.model = glm::mat4(glm::mat3(m_camera.matrices.view));
-	scene.uniformDataSkybox.model[1][1] = -scene.uniformDataSkybox.model[1][1];
+	//scene.uniformDataSkybox.model[1][1] = -scene.uniformDataSkybox.model[1][1];
 	scene.uniformDataSkybox.projection = m_camera.matrices.perspective;
 	memcpy(m_uniformBuffers.skyBox.mapped, &scene.uniformDataSkybox, sizeof(scene.uniformDataSkybox));
 
@@ -1736,6 +1736,7 @@ void Renderer::LoadAssets()
 	m_glTFModel.loadFromFile(Tool::GetAssetsPath() + m_config->modelPath, m_vulkanDevice, m_queues.graphicsQueue, glTFLoadingFlags);
 	//std::cout << std::endl << "sizeof material: " << m_glTFModel.materials.size() << std::endl;
 	//std::cout << std::endl << "sizeof texture: " << m_glTFModel.textures.size() << std::endl;
+	//glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors | vkglTF::FileLoadingFlags::FlipY;
 	scene.skybox.loadFromFile(Tool::GetAssetsPath() + "models/Cube/cube.gltf", m_vulkanDevice, m_queues.graphicsQueue, glTFLoadingFlags);
 	scene.textures.environmentCube.LoadFromFile(Tool::GetAssetsPath() + "textures/hdr/pisa_cube.ktx", VK_FORMAT_R16G16B16A16_SFLOAT, m_vulkanDevice, m_queues.graphicsQueue);
 }

@@ -15,5 +15,6 @@ FSOutput main([[vk::location(0)]] float3 inUVW : POSITION0)
 	float3 color = textureEnv.Sample(samplerEnv, inUVW).rgb;
 
 	output.Albedo = float4(color ,1.0f);
+	// output.Albedo = float4(inUVW ,1.0f);
 	return output;
 }
