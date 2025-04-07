@@ -6,7 +6,6 @@ struct VSInput
 [[vk::location(1)]] float2 UV : TEXCOORD0;
 [[vk::location(2)]] float3 Color : COLOR0;
 [[vk::location(3)]] float3 Normal : NORMAL0;
-[[vk::location(4)]] float3 Tangent : TEXCOORD1;
 };
 
 struct UBO
@@ -25,7 +24,6 @@ struct VSOutput
 [[vk::location(1)]] float2 UV : TEXCOORD0;
 [[vk::location(2)]] float3 Color : COLOR0;
 [[vk::location(3)]] float3 WorldPos : POSITION0;
-[[vk::location(4)]] float3 Tangent : TEXCOORD1;
 };
 
 VSOutput main(VSInput input)
@@ -42,7 +40,6 @@ VSOutput main(VSInput input)
     // Normal in world space
     output.Normal = normalize(input.Normal);
 
-    output.Tangent = normalize(input.Tangent);
     // Currently just vertex color
     output.Color = input.Color;
     return output;
