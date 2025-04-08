@@ -184,6 +184,10 @@ void::Renderer::CreateCommandBuffers()
 // composition
 void Renderer::BuildCommandBuffers()
 {
+	for (int32_t i = 0; i < m_drawCmdBuffers.size(); ++i)
+	{
+		vkResetCommandBuffer(m_drawCmdBuffers[i], 0);
+	}
 
 	VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
 
@@ -214,6 +218,7 @@ void Renderer::BuildCommandBuffers()
 		vkCmdSetViewport(m_drawCmdBuffers[i], 0, 1, &viewport);
 		vkCmdSetScissor(m_drawCmdBuffers[i], 0, 1, &scissor);
 
+		vkCmdPushConstants(m_drawCmdBuffers[i], m_pipelineLayouts.composition, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushBlock), &m_block);
 		//vkCmdBindPipeline(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.skyBox);
 		//vkCmdBindDescriptorSets(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.skyBox, 0, 1, &m_descriptorSets.skyBox, 0, NULL);
 		//scene.skybox.Draw(m_drawCmdBuffers[i]);
@@ -1372,7 +1377,7 @@ void Renderer::DisplayUI(UIOverlay* overlay)
 	if (overlay->Header("Settings"))
 	{
 
-		overlay->ComboBox("Display", &m_debugDisplayTarget, { "Final composition", "Shadows", "Position", "Normals", "Albedo", "Specular" });
+		overlay->ComboBox("Display", &m_debugDisplayTarget, { "Final composition", "Shadows", "Position", "Normals", "Albedo", "Specular","MRAO" });
 		bool shadows = (m_uniformDataComposition.useShadows == 1);
 		if (overlay->CheckBox("Shadows", &shadows))
 		{
@@ -1389,6 +1394,18 @@ void Renderer::DisplayUI(UIOverlay* overlay)
 		{
 			m_shadowSettings.depthBiasSlope = depthBiasSlope;
 			BuildDeferredCommandBuffer();
+		}
+		float metallicFactor = m_block.metallicFactor;
+		if (overlay->SliderFloat("metallicFactor", &metallicFactor, 0.0f, 1.0f))
+		{
+			m_block.metallicFactor = metallicFactor;
+			BuildCommandBuffers();
+		}
+		float roughnessFactor = m_block.roughnessFactor;
+		if (overlay->SliderFloat("roughnessFactor", &roughnessFactor, 0.0f, 1.0f))
+		{
+			m_block.roughnessFactor = roughnessFactor;
+			BuildCommandBuffers();
 		}
 	}
 }
@@ -1942,7 +1959,7 @@ void Renderer::BuildDeferredCommandBuffer()
 	VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
 
 	// Clear values for all attachments written in the fragment shader
-	std::array<VkClearValue, 4> clearValues = {};
+	std::array<VkClearValue, 5> clearValues = {};
 	clearValues[0].depthStencil = { 1.0f, 0 };
 	// First pass: Shadow map generation
 
@@ -1975,16 +1992,17 @@ void Renderer::BuildDeferredCommandBuffer()
 	vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.shadow);
 
 	// We render multiple instances of a model
-	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.composition, 0, 1, &m_descriptorSets.shadow, 0, nullptr);
+	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.shadow, 0, 1, &m_descriptorSets.shadow, 0, nullptr);
 	m_glTFModel.Draw(m_offScreenCmdBuffer);
 
 	vkCmdEndRenderPass(m_offScreenCmdBuffer);
 
-	// second pass
+	// second pass skybox
 	clearValues[0].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
 	clearValues[1].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
 	clearValues[2].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
-	clearValues[3].depthStencil = { 1.0f, 0 };
+	clearValues[3].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
+	clearValues[4].depthStencil = { 1.0f, 0 };
 
 	renderPassBeginInfo.renderPass = m_framebuffers.deferred->renderPass;
 	renderPassBeginInfo.framebuffer = m_framebuffers.deferred->framebuffer;
@@ -2006,6 +2024,7 @@ void Renderer::BuildDeferredCommandBuffer()
 	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.skyBox, 0, 1, &m_descriptorSets.skyBox, 0, NULL);
 	scene.skybox.Draw(m_offScreenCmdBuffer);
 
+	// third pass model
 	vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.defered);
 	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.defered, 0, 1, &m_descriptorSets.deferedModel, 0, nullptr);
 	m_glTFModel.Draw(m_offScreenCmdBuffer, vkglTF::RenderFlags::BindImages, m_pipelineLayouts.defered, 1);
@@ -2070,6 +2089,10 @@ void Renderer::SetupDefered()
 	attachmentInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
 	m_framebuffers.deferred->AddAttachment(attachmentInfo);
 
+	// Attachment 3: metallic Roughness AO ? (color)
+	attachmentInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+	m_framebuffers.deferred->AddAttachment(attachmentInfo);
+
 	// Depth attachment
 	// Find a suitable depth format
 	VkFormat attDepthFormat;
@@ -2105,6 +2128,7 @@ void Renderer::SetupDescriptorsDD()
 	VK_CHECK_RESULT(vkCreateDescriptorPool(m_device, &descriptorPoolInfo, nullptr, &m_descriptorPool));
 
 	// Layout
+	// composition light
 	std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
 		// Binding 0: Vertex shader uniform buffer
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT, 0),
@@ -2118,23 +2142,36 @@ void Renderer::SetupDescriptorsDD()
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 4),
 		// Binding 5: Shadow map
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 5),
+		// irradiance cube
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 6),
+		// BrdfLut
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 7),
+		// prefilter cube
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 8),
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 9)
 	};
 	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
 	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.composition));
+	// deferred model
+	setLayoutBindings = {
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT, 0),
+	};
+	descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
 	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.deferedModel));
+	// deferedTextures
 	setLayoutBindings = {
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0),
-		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1),
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2)
 	};
 	descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
 	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.deferedTextures));
-
-	setLayoutBindings =
-	{
+	// skybox
+	setLayoutBindings = {
 		// Binding 0: Vertex shader uniform buffer
-	Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT, 0),
-	// Binding 1: Position texture
-	Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT, 0),
+		// Binding 1: Position texture
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
 	};
 	descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
 	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.skyBox));
@@ -2163,12 +2200,19 @@ void Renderer::SetupDescriptorsDD()
 			m_framebuffers.deferred->sampler,
 			m_framebuffers.deferred->attachments[2].view,
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	VkDescriptorImageInfo texDescriptorMRAO =
+		Init::descriptorImageInfo(
+			m_framebuffers.deferred->sampler,
+			m_framebuffers.deferred->attachments[3].view,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 	VkDescriptorImageInfo texDescriptorShadowMap =
 		Init::descriptorImageInfo(
 			m_framebuffers.shadow->sampler,
 			m_framebuffers.shadow->attachments[0].view,
 			VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+
+
 	writeDescriptorSets = {
 		// Binding 1: World space position texture
 		Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &texDescriptorPosition),
@@ -2180,11 +2224,16 @@ void Renderer::SetupDescriptorsDD()
 		Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4, &m_uniformBuffers.composition.descriptor),
 		// Binding 5: Shadow map
 		Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, &texDescriptorShadowMap),
+		Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6, &scene.textures.irradianceCube.descriptor),
+		Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7, &scene.textures.lutBrdf.descriptor),
+		Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8, &scene.textures.prefilteredCube.descriptor),
+		Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 9, &texDescriptorMRAO)
 	};
 	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 
 
 	// offscreen
+	allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.deferedModel, 1);
 	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.deferedModel));
 
 	writeDescriptorSets = {
@@ -2193,7 +2242,8 @@ void Renderer::SetupDescriptorsDD()
 	};
 	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 
-	// Shadow mapping
+	// Shadow mapping shadow 只用一个 ubo, 所以这里和 model 共用
+	allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.deferedModel, 1);
 	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.shadow));
 	writeDescriptorSets = {
 		// Binding 0: Vertex shader uniform buffer
@@ -2214,18 +2264,29 @@ void Renderer::SetupDescriptorsDD()
 }
 void Renderer::PreparePipelinesDD()
 {
-	// Layout
+	// Layout light composition
+	VkPushConstantRange pushConstantRange = {};
+	pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	pushConstantRange.offset = 0;
+	pushConstantRange.size = sizeof(PushBlock);
 	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.composition, 1);
+	pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
+	pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
 	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.composition));
 
-	// Layout
+	pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
+	pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
+	// Layout skybox
 	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.skyBox, 1);
 	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.skyBox));
 
+	// model
 	std::array<VkDescriptorSetLayout, 2> setLayouts = { m_descriptorSetLayouts.deferedModel ,m_descriptorSetLayouts.deferedTextures };
 	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(setLayouts.data(), 2);
 	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.defered));
 
+	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.deferedModel, 1);
+	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.shadow));
 	// Pipelines
 
 	// composition
@@ -2262,18 +2323,16 @@ void Renderer::PreparePipelinesDD()
 
 
 	// Vertex input state from glTF model for pipeline rendering models
-
-
-
 	// Offscreen pipeline
 	// Separate render pass
-	pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position });
 	// skybox
+	pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position });
 	rasterizationState.cullMode = VK_CULL_MODE_NONE;
 	pipelineCI.layout = m_pipelineLayouts.skyBox;
 	pipelineCI.renderPass = m_framebuffers.deferred->renderPass;
-	std::array<VkPipelineColorBlendAttachmentState, 3> blendAttachmentStates =
+	std::array<VkPipelineColorBlendAttachmentState, 4> blendAttachmentStates =
 	{
+		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
 		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
 		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
 		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE)
@@ -2282,8 +2341,6 @@ void Renderer::PreparePipelinesDD()
 	colorBlendState.pAttachments = blendAttachmentStates.data();
 	depthStencilState.depthWriteEnable = VK_FALSE;
 	depthStencilState.depthTestEnable = VK_FALSE;
-
-
 	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "skybox/skybox.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "skybox/skybox.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.skyBox));
@@ -2299,26 +2356,17 @@ void Renderer::PreparePipelinesDD()
 	// This is important, as color write mask will otherwise be 0x0 and you
 	// won't see anything rendered to the attachment
 	pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position, vkglTF::VertexComponent::UV, vkglTF::VertexComponent::Color, vkglTF::VertexComponent::Normal ,vkglTF::VertexComponent::Tangent });
-	blendAttachmentStates =
-	{
-		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
-		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
-		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE)
-	};
-	colorBlendState.attachmentCount = static_cast<uint32_t>(blendAttachmentStates.size());
-	colorBlendState.pAttachments = blendAttachmentStates.data();
 
 	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Deferedshadows/Model.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Deferedshadows/Model.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.defered));
-
 
 	// Shadow mapping pipeline
 	// The shadow mapping pipeline uses geometry shader instancing (invocations layout modifier) to output
 	// shadow maps for multiple lights sources into the different shadow map layers in one single render pass
 	depthStencilState.depthWriteEnable = VK_TRUE;
 	depthStencilState.depthTestEnable = VK_TRUE;
-	pipelineCI.layout = m_pipelineLayouts.composition;
+	pipelineCI.layout = m_pipelineLayouts.defered;
 
 	std::array<VkPipelineShaderStageCreateInfo, 2> shadowStages;
 	shadowStages[0] = LoadShader(Tool::GetShadersPath() + "Deferedshadows/Shadow.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);

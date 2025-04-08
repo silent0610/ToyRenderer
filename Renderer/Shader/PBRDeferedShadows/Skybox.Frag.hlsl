@@ -6,7 +6,6 @@ struct FSOutput
 	float4 Position : SV_TARGET0;
 	float4 Normal : SV_TARGET1;
 	float4 Albedo : SV_TARGET2;
-	float4 MRAO : SV_TARGET3;
 };
 float3 Uncharted2Tonemap(float3 color)
 {

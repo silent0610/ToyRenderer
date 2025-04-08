@@ -32,7 +32,11 @@ struct ShadowSettings
 	float zNear = 0.1f;
 	float zFar = 64.0f;
 };
-
+struct PushBlock
+{
+	float metallicFactor{ 1.0f };
+	float roughnessFactor{ 1.0f };
+};
 struct QueueFamilyIndices
 {
 	std::optional<uint32_t> graphicsFamily;
@@ -172,6 +176,7 @@ struct PipelineLayouts
 	VkPipelineLayout defered;
 	VkPipelineLayout composition;
 	VkPipelineLayout skyBox;
+	VkPipelineLayout shadow;
 };
 struct DescriptorSetLayouts
 {
@@ -201,6 +206,7 @@ public:
 	~Renderer() = default;
 
 private:
+	PushBlock m_block;
 	SmallScene scene;
 	Config* m_config;
 	std::vector<VkFence> m_waitFences;

@@ -6,6 +6,8 @@ SamplerState samplerColor : register(s0, space1);
 Texture2D textureNormalMap : register(t1, space1);
 SamplerState samplerNormalMap : register(s1, space1);
 
+Texture2D textureMR : register(t2, space1);
+SamplerState samplerMR : register(s2, space1);
 struct VSOutput
 {
 	[[vk::location(0)]] float3 Normal : NORMAL0;
@@ -20,6 +22,7 @@ struct FSOutput
 	float4 Position : SV_TARGET0;
 	float4 Normal : SV_TARGET1;
 	float4 Albedo : SV_TARGET2;
+	float4 MRAO : SV_TARGET3;
 };
 
 FSOutput main(VSOutput input)
@@ -36,6 +39,6 @@ FSOutput main(VSOutput input)
 	output.Normal = float4(tnorm, 1.0);
 
 	output.Albedo = textureColor.Sample(samplerColor, input.UV);
-
+	output.MRAO = textureMR.Sample(samplerMR, input.UV);
 	return output;
 }

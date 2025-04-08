@@ -1,18 +1,34 @@
 import os
 import subprocess
 import sys
+import time
 # 获取当前目录
 
 def CompileFile(file):
+    
+    # 获取文件的最后修改时间
+    last_modified_time = os.path.getmtime(file)
+
+    # 获取当前时间
+    current_time = time.time()
+
+    # 设置一个时间阈值，例如过去 1 小时
+    threshold = 60 * 60  # 1 小时 = 60 分钟 * 60 秒
+
+    # 判断文件是否在过去1小时内被修改
+    if current_time - last_modified_time >= threshold:
+        return
+ 
+
     fileName, fileExtension = os.path.splitext(file)
     # 输出文件路径
     output_path = fileName + ".spv" 
 
     nameParts = fileName.split('.')  # 例如 'Triangle.Vertex' -> ['Triangle', 'Vertex']
     # 构造编译命令
-    if nameParts[1] == "Vert":
+    if nameParts[1] == "Vert" or nameParts[1] =="vert":
         command = ["dxc", "-T", "vs_6_0", "-E","main","-spirv", "-Fo", output_path, file]  
-    elif nameParts[1] == "Frag":
+    elif nameParts[1] == "Frag" or nameParts[1] == "frag":
         command = ["dxc", "-T", "ps_6_0","-E","main","-spirv", "-Fo", output_path, file]
     elif nameParts[1] == "Geom":
         command = ["dxc", "-T", "gs_6_0","-E","main","-spirv", "-Fo", output_path, file]

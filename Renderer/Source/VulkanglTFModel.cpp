@@ -24,7 +24,7 @@ import std;
 VkDescriptorSetLayout vkglTF::descriptorSetLayoutImage = VK_NULL_HANDLE;
 VkDescriptorSetLayout vkglTF::descriptorSetLayoutUbo = VK_NULL_HANDLE;
 VkMemoryPropertyFlags vkglTF::memoryPropertyFlags = 0;
-uint32_t vkglTF::descriptorBindingFlags = vkglTF::DescriptorBindingFlags::ImageBaseColor | vkglTF::DescriptorBindingFlags::ImageNormalMap;
+uint32_t vkglTF::descriptorBindingFlags = vkglTF::DescriptorBindingFlags::ImageBaseColor | vkglTF::DescriptorBindingFlags::ImageNormalMap | vkglTF::DescriptorBindingFlags::ImageMetallicRoughness;
 
 /*
 	We use a custom image loading function with tinyglTF, so we can do custom stuff loading ktx textures
@@ -145,14 +145,20 @@ void vkglTF::Texture::fromglTfImage(tinygltf::Image& gltfimage, std::string path
 				rgb += 3;
 			}
 			deleteBuffer = true;
+			format = VK_FORMAT_R8G8B8A8_UNORM;
 		}
-		else
+		else if (gltfimage.component == 4)
 		{
 			buffer = &gltfimage.image[0];
 			bufferSize = gltfimage.image.size();
+			format = VK_FORMAT_R8G8B8A8_UNORM;
 		}
-
-		format = VK_FORMAT_R8G8B8A8_UNORM;
+		else if (gltfimage.component == 1)
+		{
+			buffer = &gltfimage.image[0];
+			bufferSize = gltfimage.image.size();
+			format = VK_FORMAT_R8_UNORM;
+		}
 
 		VkFormatProperties formatProperties;
 
@@ -513,6 +519,18 @@ void vkglTF::Material::createDescriptorSet(VkDescriptorPool descriptorPool, VkDe
 		writeDescriptorSet.dstSet = descriptorSet;
 		writeDescriptorSet.dstBinding = static_cast<uint32_t>(writeDescriptorSets.size());
 		writeDescriptorSet.pImageInfo = &normalTexture->descriptor;
+		writeDescriptorSets.push_back(writeDescriptorSet);
+	}
+	if (metallicRoughnessTexture && descriptorBindingFlags & DescriptorBindingFlags::ImageNormalMap)
+	{
+		imageDescriptors.push_back(normalTexture->descriptor);
+		VkWriteDescriptorSet writeDescriptorSet{};
+		writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		writeDescriptorSet.descriptorCount = 1;
+		writeDescriptorSet.dstSet = descriptorSet;
+		writeDescriptorSet.dstBinding = static_cast<uint32_t>(writeDescriptorSets.size());
+		writeDescriptorSet.pImageInfo = &metallicRoughnessTexture->descriptor;
 		writeDescriptorSets.push_back(writeDescriptorSet);
 	}
 	//std::cout << "size:" << writeDescriptorSets.size() << std::endl;
@@ -1120,11 +1138,13 @@ void vkglTF::Model::loadMaterials(tinygltf::Model& gltfModel)
 		vkglTF::Material material(device);
 		if (mat.values.find("baseColorTexture") != mat.values.end())
 		{
+			std::cout << "find baseColorTexture\n";
 			material.baseColorTexture = getTexture(gltfModel.textures[mat.values["baseColorTexture"].TextureIndex()].source);
 		}
 		// Metallic roughness workflow
 		if (mat.values.find("metallicRoughnessTexture") != mat.values.end())
 		{
+			std::cout << "find metallicRoughnessTexture\n";
 			material.metallicRoughnessTexture = getTexture(gltfModel.textures[mat.values["metallicRoughnessTexture"].TextureIndex()].source);
 		}
 		if (mat.values.find("roughnessFactor") != mat.values.end())
@@ -1532,6 +1552,10 @@ void vkglTF::Model::loadFromFile(std::string filename, VulkanDevice* device, VkQ
 		{
 			poolSizes.push_back({ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageCount });
 		}
+		if (descriptorBindingFlags & DescriptorBindingFlags::ImageMetallicRoughness)
+		{
+			poolSizes.push_back({ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageCount });
+		}
 	}
 	VkDescriptorPoolCreateInfo descriptorPoolCI{};
 	descriptorPoolCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1571,6 +1595,10 @@ void vkglTF::Model::loadFromFile(std::string filename, VulkanDevice* device, VkQ
 				setLayoutBindings.push_back(Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, static_cast<uint32_t>(setLayoutBindings.size())));
 			}
 			if (descriptorBindingFlags & DescriptorBindingFlags::ImageNormalMap)
+			{
+				setLayoutBindings.push_back(Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, static_cast<uint32_t>(setLayoutBindings.size())));
+			}
+			if (descriptorBindingFlags & DescriptorBindingFlags::ImageMetallicRoughness)
 			{
 				setLayoutBindings.push_back(Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, static_cast<uint32_t>(setLayoutBindings.size())));
 			}
