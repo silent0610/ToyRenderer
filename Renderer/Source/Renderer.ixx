@@ -410,6 +410,10 @@ private:
 	void PreparePipelinesDD();
 	void BuildCommandBuffersDD();
 
-
+	// PBR
+	void GenerateBRDFLUT();
+	void GenerateIrradianceCube();
+	void GeneratePrefilteredCube();
 };
+
 

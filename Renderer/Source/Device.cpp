@@ -69,8 +69,8 @@ VulkanDevice::~VulkanDevice()
 /**
 * Get the index of a memory type that has all the requested property bits set
 *
-* @param typeBits Bit mask with bits set for each memory type supported by the resource to request for (from VkMemoryRequirements)
-* @param properties Bit mask of properties for the memory type to request
+* @param typeBits 支持图片内存的类型 Bit mask with bits set for each memory type supported by the resource to request for (from VkMemoryRequirements)
+* @param properties 还需要支持的特性 Bit mask of properties for the memory type to request
 * @param (Optional) memTypeFound Pointer to a bool that is set to true if a matching memory type has been found
 *
 * @return Index of the requested memory type
@@ -520,7 +520,7 @@ void VulkanDevice::FlushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue que
 	// Submit to the queue
 	VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, fence));
 	// Wait for the fence to signal that command buffer has finished executing
-	VK_CHECK_RESULT(vkWaitForFences(logicalDevice, 1, &fence, VK_TRUE, 100000000));
+	VK_CHECK_RESULT(vkWaitForFences(logicalDevice, 1, &fence, VK_TRUE, UINT64_MAX));
 	vkDestroyFence(logicalDevice, fence, nullptr);
 	if (free)
 	{
