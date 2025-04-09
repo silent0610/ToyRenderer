@@ -34,7 +34,7 @@ FSOutput main([[vk::location(0)]] float2 inUV : TEXCOORD0)
     FSOutput output = (FSOutput)0;
     float4 lighting = textureLight.Sample(samplerLight, inUV);
     float4 highLight = textureHighLight.Sample(samplerHighLight, inUV);
-    float3 color = lighting.rgb;
+    float3 color = lighting.rgb + highLight.rgb;
 
     color = Uncharted2Tonemap(color * ubo.exposure);
     color = color * (1.0f / Uncharted2Tonemap((11.2f).xxx));

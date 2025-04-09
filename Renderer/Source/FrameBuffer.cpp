@@ -160,9 +160,12 @@ uint32_t Framebuffer::AddAttachment(AttachmentCreateInfo createinfo)
 	{
 		attachment.description.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	}
-
-	attachments.push_back(attachment);
-
+	if (createinfo.height != 1)
+		attachments.push_back(attachment);
+	else
+	{
+		defaultMaterials.push_back(attachment);
+	}
 	return static_cast<uint32_t>(attachments.size() - 1);
 }
 

@@ -328,11 +328,8 @@ FSOutput main([[vk::location(0)]] float2 inUV : TEXCOORD0)
 
 	float3 color = ambient + Lo;
 
-	float exposure = 4.5;
-	float gamma = 2.2;
-
 	output.lighting = float4(color, 1);
-	if (dot(color, color) > 1.0f)
+	if (dot(color, color) > 0.3f)
 	{
 		output.high = float4(color, 1);
 	}

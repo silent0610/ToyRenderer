@@ -140,23 +140,12 @@ void Renderer::InitVulkan()
 	GenerateBRDFLUT();
 	GenerateIrradianceCube();
 	GeneratePrefilteredCube();
-	//CreateUniformBuffer();
-	//CreateDescriptors();
-	//CreateGraphicsPipeline();
-	////CreateVertexBuffer();
-	//BuildCommandBuffers();
-
-	//PrepareOffscreenFramebuffer();
-	//PrepareUniformBuffers();
-	//SetupDescriptors();
-	//PreparePipelines();
-	//BuildCommandBuffers();
-	//BuildDeferredCommandBuffer();
 
 	SetupDefered();
 	SetupLightingPass();
 	SetupShadow();
 	SetupPostPass();
+	SetupBloomPass();
 	InitUI();
 	InitLights();
 	PrepareUniformBuffers();
@@ -215,6 +204,10 @@ void Renderer::BuildCommandBuffers()
 
 	VkViewport viewport = Init::viewport((float)m_width, (float)m_height, 0.0f, 1.0f);
 	VkRect2D scissor = Init::rect2D(m_width, m_height, 0, 0);
+	//if (!m_postSettings.bloom)
+	//{
+
+	//}
 
 	for (int32_t i = 0; i < m_drawCmdBuffers.size(); ++i)
 	{
@@ -229,7 +222,7 @@ void Renderer::BuildCommandBuffers()
 
 		vkCmdBindPipeline(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.post);
 		vkCmdBindDescriptorSets(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.post, 0, 1, &m_descriptorSets.post, 0, NULL);
-
+		// 后处理开始
 		vkCmdDraw(m_drawCmdBuffers[i], 3, 1, 0, 0);
 
 		DrawUI(m_drawCmdBuffers[i]);
@@ -1379,6 +1372,7 @@ void Renderer::ScrollCallback(GLFWwindow* window, double xoffset, double yoffset
 
 void Renderer::DisplayUI(UIOverlay* overlay)
 {
+
 	if (overlay->Header("Settings"))
 	{
 
@@ -1388,39 +1382,61 @@ void Renderer::DisplayUI(UIOverlay* overlay)
 		{
 			m_uniformDataComposition.useShadows = shadows;
 		}
-		float depthBiasCons = m_shadowSettings.depthBiasConstant;
-		if (overlay->SliderFloat("DepthBiasCons", &depthBiasCons, 0.0f, 10.0f))
+
+		if (overlay->SliderFloat("DepthBiasCons", &m_shadowSettings.depthBiasConstant, 0.0f, 10.0f))
 		{
-			m_shadowSettings.depthBiasConstant = depthBiasCons;
 			BuildDeferredCommandBuffer();
 		}
-		float depthBiasSlope = m_shadowSettings.depthBiasSlope;
-		if (overlay->SliderFloat("DepthBiasSlope", &depthBiasSlope, 0.0f, 10.0f))
+		if (overlay->SliderFloat("DepthBiasSlope", &m_shadowSettings.depthBiasSlope, 0.0f, 10.0f))
 		{
-			m_shadowSettings.depthBiasSlope = depthBiasSlope;
 			BuildDeferredCommandBuffer();
 		}
-		float metallicFactor = m_block.metallicFactor;
-		if (overlay->SliderFloat("metallicFactor", &metallicFactor, 0.0f, 1.0f))
+		if (overlay->SliderFloat("metallicFactor", &m_block.metallicFactor, 0.0f, 1.0f))
 		{
-			m_block.metallicFactor = metallicFactor;
 			BuildDeferredCommandBuffer();
 		}
-		float roughnessFactor = m_block.roughnessFactor;
-		if (overlay->SliderFloat("roughnessFactor", &roughnessFactor, 0.0f, 1.0f))
+		if (overlay->SliderFloat("roughnessFactor", &m_block.roughnessFactor, 0.0f, 1.0f))
 		{
-			m_block.roughnessFactor = roughnessFactor;
 			BuildDeferredCommandBuffer();
 		}
-		float exposure = m_postParams.exposure;
-		if (overlay->SliderFloat("exposure", &exposure, 0.0f, 10.0f))
+		if (overlay->SliderFloat("exposure", &m_postParams.exposure, 0.0f, 10.0f))
 		{
-			m_postParams.exposure = exposure;
+			UpdateUniformBufferPost();
 		}
-		float gamma = m_postParams.gamma;
-		if (overlay->SliderFloat("gamma", &gamma, 0.0f, 10.0f))
+		if (overlay->SliderFloat("gamma", &m_postParams.gamma, 0.0f, 10.0f))
 		{
-			m_postParams.gamma = gamma;
+			UpdateUniformBufferPost();
+		}
+		if (overlay->InputFloat("Scale", &m_ubos.blurParams.blurScale, 0.1f))
+		{
+			UpdateUniformBuffersBlur();
+		}
+		if (overlay->CheckBox("Bloom", &m_postSettings.bloom))
+		{
+			BuildDeferredCommandBuffer();
+			if (!m_postSettings.bloom)
+			{
+				VkDescriptorImageInfo texDescriptorBloomEnd =
+					Init::descriptorImageInfo(
+						m_framebuffers.bloom1->sampler,
+						m_framebuffers.bloom1->defaultMaterials[0].view,
+						VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+				VkWriteDescriptorSet write = Init::writeDescriptorSet(m_descriptorSets.post, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &texDescriptorBloomEnd);
+
+				vkUpdateDescriptorSets(m_device, 1, &write, 0, NULL);
+			}
+			else
+			{
+				VkDescriptorImageInfo texDescriptorBloomEnd =
+					Init::descriptorImageInfo(
+						m_framebuffers.bloom1->sampler,
+						m_framebuffers.bloom1->attachments[0].view,
+						VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+				VkWriteDescriptorSet write = Init::writeDescriptorSet(m_descriptorSets.post, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &texDescriptorBloomEnd);
+
+				vkUpdateDescriptorSets(m_device, 1, &write, 0, NULL);
+			}
+
 		}
 	}
 }
@@ -1654,7 +1670,6 @@ void Renderer::DrawFrame()
 {
 	UpdateUniformBufferComposition();
 	UpdateUniformBufferOffscreen();
-	UpdateUniformBufferPost();
 	PrepareFrame();
 	Draw();
 	SubmitFrame();
@@ -1790,12 +1805,19 @@ void Renderer::PrepareUniformBuffers()
 	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.shadowGeometryShader, sizeof(UniformDataShadows)));
 	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.skyBox, sizeof(UniformDataSkybox)));
 	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.postParam, sizeof(Params)));
+	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.blurParams, sizeof(UBOBlurParams)));
+
 	// Map persistent
 	VK_CHECK_RESULT(m_uniformBuffers.defered.Map());
 	VK_CHECK_RESULT(m_uniformBuffers.composition.Map());
 	VK_CHECK_RESULT(m_uniformBuffers.shadowGeometryShader.Map());
 	VK_CHECK_RESULT(m_uniformBuffers.skyBox.Map());
 	VK_CHECK_RESULT(m_uniformBuffers.postParam.Map());
+	VK_CHECK_RESULT(m_uniformBuffers.blurParams.Map());
+	UpdateUniformBufferPost();
+	UpdateUniformBuffersBlur();
+
+
 }
 //void Renderer::SetupDescriptors()
 //{
@@ -2065,6 +2087,37 @@ void Renderer::BuildDeferredCommandBuffer()
 	vkCmdDraw(m_offScreenCmdBuffer, 3, 1, 0, 0);
 	vkCmdEndRenderPass(m_offScreenCmdBuffer);
 
+	if (m_postSettings.bloom)
+	{
+		//bloom 0
+		renderPassBeginInfo.renderPass = m_framebuffers.bloom->renderPass;
+		renderPassBeginInfo.framebuffer = m_framebuffers.bloom->framebuffer;
+		renderPassBeginInfo.clearValueCount = 1;
+		vkCmdBeginRenderPass(m_offScreenCmdBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+		viewport = Init::viewport((float)m_framebuffers.lighting->width, (float)m_framebuffers.lighting->height, 0.0f, 1.0f);
+		scissor = Init::rect2D(m_framebuffers.lighting->width, m_framebuffers.lighting->height, 0, 0);
+		vkCmdSetViewport(m_offScreenCmdBuffer, 0, 1, &viewport);
+		vkCmdSetScissor(m_offScreenCmdBuffer, 0, 1, &scissor);
+		vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.blurVert);
+		vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.blur, 0, 1, &m_descriptorSets.blurVert, 0, NULL);
+		vkCmdDraw(m_offScreenCmdBuffer, 3, 1, 0, 0);
+		vkCmdEndRenderPass(m_offScreenCmdBuffer);
+
+		// bloom 1
+		renderPassBeginInfo.renderPass = m_framebuffers.bloom1->renderPass;
+		renderPassBeginInfo.framebuffer = m_framebuffers.bloom1->framebuffer;
+		renderPassBeginInfo.clearValueCount = 1;
+		vkCmdBeginRenderPass(m_offScreenCmdBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+		viewport = Init::viewport((float)m_framebuffers.lighting->width, (float)m_framebuffers.lighting->height, 0.0f, 1.0f);
+		scissor = Init::rect2D(m_framebuffers.lighting->width, m_framebuffers.lighting->height, 0, 0);
+		vkCmdSetViewport(m_offScreenCmdBuffer, 0, 1, &viewport);
+		vkCmdSetScissor(m_offScreenCmdBuffer, 0, 1, &scissor);
+		vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.blurHorz);
+		vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.blur, 0, 1, &m_descriptorSets.blurHorz, 0, NULL);
+		vkCmdDraw(m_offScreenCmdBuffer, 3, 1, 0, 0);
+		vkCmdEndRenderPass(m_offScreenCmdBuffer);
+
+	}
 	VK_CHECK_RESULT(vkEndCommandBuffer(m_offScreenCmdBuffer));
 }
 
@@ -2122,9 +2175,68 @@ void Renderer::SetupLightingPass()
 	VK_CHECK_RESULT(m_framebuffers.lighting->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
 	VK_CHECK_RESULT(m_framebuffers.lighting->CreateRenderPass());
 }
+void Renderer::SetupBloomPass()
+{
+	m_framebuffers.bloom = new Framebuffer(m_vulkanDevice);
+	m_framebuffers.bloom->width = m_width;
+	m_framebuffers.bloom->height = m_height;
+
+	AttachmentCreateInfo attachmentCI{};
+	attachmentCI.width = m_framebuffers.bloom->width;
+	attachmentCI.height = m_framebuffers.bloom->height;
+	attachmentCI.layerCount = 1;
+	attachmentCI.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+	// lighting RT
+	attachmentCI.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	m_framebuffers.bloom->AddAttachment(attachmentCI);
+
+	// Create sampler to sample from the color attachments
+	VK_CHECK_RESULT(m_framebuffers.bloom->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	VK_CHECK_RESULT(m_framebuffers.bloom->CreateRenderPass());
+
+	m_framebuffers.bloom1 = new Framebuffer(m_vulkanDevice);
+	m_framebuffers.bloom1->width = m_width;
+	m_framebuffers.bloom1->height = m_height;
+
+
+	attachmentCI.width = m_framebuffers.bloom1->width;
+	attachmentCI.height = m_framebuffers.bloom1->height;
+	attachmentCI.layerCount = 1;
+	attachmentCI.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+	// lighting RT
+	attachmentCI.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	m_framebuffers.bloom1->AddAttachment(attachmentCI);
+
+	attachmentCI.width = 1;
+	attachmentCI.height = 1;
+	attachmentCI.layerCount = 1;
+	attachmentCI.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+	// lighting RT
+	attachmentCI.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	m_framebuffers.bloom1->AddAttachment(attachmentCI);
+
+	VkCommandBuffer layoutCmd = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+	Tool::SetImageLayout(
+		layoutCmd,
+		m_framebuffers.bloom1->defaultMaterials[0].image,
+		VK_IMAGE_ASPECT_COLOR_BIT,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	m_vulkanDevice->FlushCommandBuffer(layoutCmd, m_queues.graphicsQueue, true);
+
+	// Create sampler to sample from the color attachments
+	VK_CHECK_RESULT(m_framebuffers.bloom1->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	VK_CHECK_RESULT(m_framebuffers.bloom1->CreateRenderPass());
+}
+void Renderer::CreateDefaultTextures()
+{
+	;
+}
 void Renderer::SetupPostPass()
 {
-
 	attachment1.format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
 	VkImageCreateInfo imageCI = Init::imageCreateInfo();
@@ -2302,10 +2414,10 @@ void Renderer::SetupDescriptorsDD()
 {
 	// Pool
 	std::vector<VkDescriptorPoolSize> poolSizes = {
-		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 16),
-		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 20)
+		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 15),
+		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 24)
 	};
-	VkDescriptorPoolCreateInfo descriptorPoolInfo = Init::descriptorPoolCreateInfo(poolSizes, 5);
+	VkDescriptorPoolCreateInfo descriptorPoolInfo = Init::descriptorPoolCreateInfo(poolSizes, 10);//
 	VK_CHECK_RESULT(vkCreateDescriptorPool(m_device, &descriptorPoolInfo, nullptr, &m_descriptorPool));
 
 	// Layout
@@ -2406,10 +2518,10 @@ void Renderer::SetupDescriptorsDD()
 			m_framebuffers.lighting->attachments[0].view,
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-	VkDescriptorImageInfo texDescriptorHighLight =
+	VkDescriptorImageInfo texDescriptorBloomEnd =
 		Init::descriptorImageInfo(
-			m_framebuffers.lighting->sampler,
-			m_framebuffers.lighting->attachments[1].view,
+			m_framebuffers.bloom1->sampler,
+			m_framebuffers.bloom1->attachments[0].view,
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 	VkDescriptorImageInfo texDescriptorShadowMap =
@@ -2474,9 +2586,58 @@ void Renderer::SetupDescriptorsDD()
 	{
 		Init::writeDescriptorSet(m_descriptorSets.post,VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,0,&m_uniformBuffers.postParam.descriptor),
 		Init::writeDescriptorSet(m_descriptorSets.post,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1,&texDescriptorLighting),
-		Init::writeDescriptorSet(m_descriptorSets.post,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,2,&texDescriptorHighLight),
+		Init::writeDescriptorSet(m_descriptorSets.post,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,2,&texDescriptorBloomEnd),
 	};
 	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, NULL);
+
+	SetupBlurDescriptorSets();
+}
+
+void Renderer::SetupBlurDescriptorSets()
+{
+	std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings;
+	VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo;
+
+	setLayoutBindings = {
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 0),			// Binding 0: Fragment shader uniform buffer
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)	// Binding 1: Fragment shader image sampler
+	};
+	descriptorSetLayoutCreateInfo = Init::descriptorSetLayoutCreateInfo(setLayoutBindings.data(), static_cast<uint32_t>(setLayoutBindings.size()));
+	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorSetLayoutCreateInfo, nullptr, &m_descriptorSetLayouts.blur));
+
+
+	VkDescriptorImageInfo texDescriptorHighLight =
+		Init::descriptorImageInfo(
+			m_framebuffers.lighting->sampler,
+			m_framebuffers.lighting->attachments[1].view,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+	VkDescriptorImageInfo texDescriptorVert =
+		Init::descriptorImageInfo(
+			m_framebuffers.bloom->sampler,
+			m_framebuffers.bloom->attachments[0].view,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	// Sets
+	VkDescriptorSetAllocateInfo descriptorSetAllocInfo;
+	std::vector<VkWriteDescriptorSet> writeDescriptorSets;
+
+	// bloom vertical
+	descriptorSetAllocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.blur, 1);
+	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &descriptorSetAllocInfo, &m_descriptorSets.blurVert));
+	writeDescriptorSets = {
+		Init::writeDescriptorSet(m_descriptorSets.blurVert, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_uniformBuffers.blurParams.descriptor),				// Binding 0: Fragment shader uniform buffer
+		Init::writeDescriptorSet(m_descriptorSets.blurVert, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &texDescriptorHighLight),	// Binding 1: Fragment shader texture sampler
+	};
+	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+
+	// bloom1 horizental
+	descriptorSetAllocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.blur, 1);
+	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &descriptorSetAllocInfo, &m_descriptorSets.blurHorz));
+	writeDescriptorSets = {
+		Init::writeDescriptorSet(m_descriptorSets.blurHorz, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_uniformBuffers.blurParams.descriptor),				// Binding 0: Fragment shader uniform buffer
+		Init::writeDescriptorSet(m_descriptorSets.blurHorz, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &texDescriptorVert),	// Binding 1: Fragment shader texture sampler
+	};
+	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
 void Renderer::PreparePipelinesDD()
 {
@@ -2509,7 +2670,65 @@ void Renderer::PreparePipelinesDD()
 	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.post, 1);
 	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.post));
 
+	// bloom 
+	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.blur, 1);
+	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.blur));
+
 	// Pipelines
+
+	// bloom
+	{
+		VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCI = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
+		VkPipelineRasterizationStateCreateInfo rasterizationStateCI = Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE, 0);
+		VkPipelineColorBlendAttachmentState blendAttachmentState = Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE);
+		VkPipelineColorBlendStateCreateInfo colorBlendStateCI = Init::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
+		VkPipelineDepthStencilStateCreateInfo depthStencilStateCI = Init::pipelineDepthStencilStateCreateInfo(VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS_OR_EQUAL);
+		VkPipelineViewportStateCreateInfo viewportStateCI = Init::pipelineViewportStateCreateInfo(1, 1, 0);
+		VkPipelineMultisampleStateCreateInfo multisampleStateCI = Init::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_1_BIT, 0);
+		std::vector<VkDynamicState> dynamicStateEnables = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+		VkPipelineDynamicStateCreateInfo dynamicStateCI = Init::pipelineDynamicStateCreateInfo(dynamicStateEnables);
+		std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
+
+		VkGraphicsPipelineCreateInfo pipelineCI = Init::pipelineCreateInfo(m_pipelineLayouts.blur, m_framebuffers.bloom->renderPass, 0);
+		pipelineCI.pInputAssemblyState = &inputAssemblyStateCI;
+		pipelineCI.pRasterizationState = &rasterizationStateCI;
+		pipelineCI.pColorBlendState = &colorBlendStateCI;
+		pipelineCI.pMultisampleState = &multisampleStateCI;
+		pipelineCI.pViewportState = &viewportStateCI;
+		pipelineCI.pDepthStencilState = &depthStencilStateCI;
+		pipelineCI.pDynamicState = &dynamicStateCI;
+		pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
+		pipelineCI.pStages = shaderStages.data();
+
+		// Blur pipelines
+		shaderStages[0] = LoadShader(Tool::GetShadersPath() + "post/GaussBlur.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+		shaderStages[1] = LoadShader(Tool::GetShadersPath() + "post/GaussBlur.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+		// Empty vertex input state
+		VkPipelineVertexInputStateCreateInfo emptyInputState = Init::pipelineVertexInputStateCreateInfo();
+		pipelineCI.pVertexInputState = &emptyInputState;
+		pipelineCI.layout = m_pipelineLayouts.blur;
+		// Additive blending
+		blendAttachmentState.colorWriteMask = 0xF;
+		blendAttachmentState.blendEnable = VK_TRUE;
+		blendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;
+		blendAttachmentState.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+		blendAttachmentState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+		blendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
+		blendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+		blendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_DST_ALPHA;
+
+		// Use specialization constants to select between horizontal and vertical blur
+		uint32_t blurdirection = 0;
+		VkSpecializationMapEntry specializationMapEntry = Init::specializationMapEntry(0, 0, sizeof(uint32_t));
+		VkSpecializationInfo specializationInfo = Init::specializationInfo(1, &specializationMapEntry, sizeof(uint32_t), &blurdirection);
+		shaderStages[1].pSpecializationInfo = &specializationInfo;
+		// Vertical blur pipeline
+		VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.blurVert));
+
+		blurdirection = 1;
+		pipelineCI.renderPass = m_framebuffers.bloom1->renderPass;
+		VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.blurHorz));
+	}
 
 	// light composition
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
@@ -3596,3 +3815,9 @@ void Renderer::GeneratePrefilteredCube()
 	auto tDiff = std::chrono::duration<double, std::milli>(tEnd - tStart).count();
 	std::cout << "Generating pre-filtered enivornment cube with " << numMips << " mip levels took " << tDiff << " ms" << std::endl;
 }
+
+void Renderer::UpdateUniformBuffersBlur()
+{
+	memcpy(m_uniformBuffers.blurParams.mapped, &m_ubos.blurParams, sizeof(m_ubos.blurParams));
+}
+

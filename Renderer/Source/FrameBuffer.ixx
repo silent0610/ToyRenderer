@@ -61,7 +61,7 @@ public:
 	VkRenderPass renderPass;
 	VkSampler sampler;
 	std::vector<FramebufferAttachment> attachments;
-
+	std::vector<FramebufferAttachment> defaultMaterials;
 	/**
 	* Default constructor
 	*

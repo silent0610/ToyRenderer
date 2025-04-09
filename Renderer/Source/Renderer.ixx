@@ -65,6 +65,11 @@ struct MouseState
 	glm::vec2 Position;
 };
 
+struct UBOBlurParams
+{
+	float blurScale = 1.0f;
+	float blurStrength = 1.5f;
+};
 struct Params
 {
 	float exposure{ 4.5f };
@@ -131,6 +136,7 @@ struct UniformBuffers
 	Buffer shadowGeometryShader;
 	Buffer skyBox;
 	Buffer postParam;
+	Buffer blurParams;
 };
 
 struct Pipelines
@@ -140,6 +146,8 @@ struct Pipelines
 	VkPipeline shadow{ VK_NULL_HANDLE };
 	VkPipeline skyBox{ VK_NULL_HANDLE };
 	VkPipeline post{ VK_NULL_HANDLE };
+	VkPipeline blurVert{ VK_NULL_HANDLE };
+	VkPipeline blurHorz{ VK_NULL_HANDLE };
 };
 
 struct DescriptorSets
@@ -149,6 +157,8 @@ struct DescriptorSets
 	VkDescriptorSet shadow{ VK_NULL_HANDLE };
 	VkDescriptorSet skyBox{ VK_NULL_HANDLE };
 	VkDescriptorSet post{ nullptr };
+	VkDescriptorSet blurVert{ nullptr };
+	VkDescriptorSet blurHorz{ nullptr };
 };
 
 struct Textures
@@ -186,6 +196,7 @@ struct PipelineLayouts
 	VkPipelineLayout skyBox;
 	VkPipelineLayout shadow;
 	VkPipelineLayout post;
+	VkPipelineLayout blur;
 };
 struct DescriptorSetLayouts
 {
@@ -194,6 +205,7 @@ struct DescriptorSetLayouts
 	VkDescriptorSetLayout composition{ nullptr };
 	VkDescriptorSetLayout skyBox{ nullptr };
 	VkDescriptorSetLayout post{ nullptr };
+	VkDescriptorSetLayout blur{ nullptr };
 };
 struct Framebuffers
 {
@@ -202,6 +214,8 @@ struct Framebuffers
 	// Framebuffer resources for the shadow pass
 	Framebuffer* shadow{ nullptr };
 	Framebuffer* lighting{ nullptr };
+	Framebuffer* bloom{ nullptr };
+	Framebuffer* bloom1{ nullptr };
 };
 
 struct CmdBuffers
@@ -217,6 +231,11 @@ public:
 	~Renderer() = default;
 
 private:
+	struct
+	{
+		UBOBlurParams blurParams;
+	}m_ubos;
+
 	Params m_postParams{};
 	std::vector<VkFramebuffer> m_postFramebuffers;
 	VkRenderPass m_postPass;
@@ -426,6 +445,7 @@ private:
 	// Post
 	void SetupLightingPass();
 	void SetupPostPass();
+	void SetupBloomPass();
 	FramebufferAttachment attachment1;
 	void BuildPostCmdBuffer();
 
@@ -440,7 +460,22 @@ private:
 	void GenerateIrradianceCube();
 	void GeneratePrefilteredCube();
 	void UpdateUniformBufferPost();
+	void UpdateUniformBuffersBlur();
 
+	struct PostSettings
+	{
+		bool bloom{ true };
+	}m_postSettings;
+
+	void SetupBlurDescriptorSets();
+
+	struct DefaultTexture
+	{
+		VkImage image;
+		VkImageView view;
+		VkSampler sampler;
+	}m_defaultTexture;
+	void CreateDefaultTextures();
 };
 
 
