@@ -65,6 +65,11 @@ struct MouseState
 	glm::vec2 Position;
 };
 
+struct Params
+{
+	float exposure{ 4.5f };
+	float gamma = 2.2f;
+};
 
 struct VkQueues
 {
@@ -125,6 +130,7 @@ struct UniformBuffers
 	Buffer composition;
 	Buffer shadowGeometryShader;
 	Buffer skyBox;
+	Buffer postParam;
 };
 
 struct Pipelines
@@ -133,6 +139,7 @@ struct Pipelines
 	VkPipeline composition{ VK_NULL_HANDLE };
 	VkPipeline shadow{ VK_NULL_HANDLE };
 	VkPipeline skyBox{ VK_NULL_HANDLE };
+	VkPipeline post{ VK_NULL_HANDLE };
 };
 
 struct DescriptorSets
@@ -141,6 +148,7 @@ struct DescriptorSets
 	VkDescriptorSet composition{ VK_NULL_HANDLE };
 	VkDescriptorSet shadow{ VK_NULL_HANDLE };
 	VkDescriptorSet skyBox{ VK_NULL_HANDLE };
+	VkDescriptorSet post{ nullptr };
 };
 
 struct Textures
@@ -177,6 +185,7 @@ struct PipelineLayouts
 	VkPipelineLayout composition;
 	VkPipelineLayout skyBox;
 	VkPipelineLayout shadow;
+	VkPipelineLayout post;
 };
 struct DescriptorSetLayouts
 {
@@ -184,6 +193,7 @@ struct DescriptorSetLayouts
 	VkDescriptorSetLayout deferedTextures{ nullptr };
 	VkDescriptorSetLayout composition{ nullptr };
 	VkDescriptorSetLayout skyBox{ nullptr };
+	VkDescriptorSetLayout post{ nullptr };
 };
 struct Framebuffers
 {
@@ -191,6 +201,7 @@ struct Framebuffers
 	Framebuffer* deferred{ nullptr };
 	// Framebuffer resources for the shadow pass
 	Framebuffer* shadow{ nullptr };
+	Framebuffer* lighting{ nullptr };
 };
 
 struct CmdBuffers
@@ -206,6 +217,9 @@ public:
 	~Renderer() = default;
 
 private:
+	Params m_postParams{};
+	std::vector<VkFramebuffer> m_postFramebuffers;
+	VkRenderPass m_postPass;
 	PushBlock m_block;
 	SmallScene scene;
 	Config* m_config;
@@ -406,10 +420,15 @@ private:
 	void UpdateUniformBufferOffscreen();
 	void UpdateUniformBufferComposition();
 
-	;
 	Framebuffers m_framebuffers{ nullptr,nullptr };
 	void SetupShadow();
 	void SetupDefered();
+	// Post
+	void SetupLightingPass();
+	void SetupPostPass();
+	FramebufferAttachment attachment1;
+	void BuildPostCmdBuffer();
+
 	void InitLights();
 
 	void SetupDescriptorsDD();
@@ -420,6 +439,8 @@ private:
 	void GenerateBRDFLUT();
 	void GenerateIrradianceCube();
 	void GeneratePrefilteredCube();
+	void UpdateUniformBufferPost();
+
 };
 
 

@@ -241,18 +241,28 @@ float3 Uncharted2Tonemap(float3 x)
 	return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
 }
 
-float4 main([[vk::location(0)]] float2 inUV : TEXCOORD0) : SV_TARGET
+struct FSOutput
 {
+	float4 lighting : SV_TARGET0;
+	float4 high : SV_TARGET1;
+};
+
+FSOutput main([[vk::location(0)]] float2 inUV : TEXCOORD0)
+{
+	FSOutput output = (FSOutput)0;
 	// Get G-Buffer values
 	float3 fragPos = textureposition.Sample(samplerposition, inUV).rgb;
 	float3 normal = textureNormal.Sample(samplerNormal, inUV).rgb;
 	float4 albedo = textureAlbedo.Sample(samplerAlbedo, inUV);
-	float4 MRAO = textureMRAO.Sample(samplerAlbedo, inUV);
+	float2 uv = inUV.rg;
+	float4 MRAO = textureMRAO.Sample(samplerMRAO, uv);
 	float metallic = materialFactor.metallicFactor * MRAO.r;
 	float roughness = materialFactor.roughnessFactor * MRAO.g;
 	if (length(fragPos) < 1e-5)
 	{
-		return albedo;
+
+		output.lighting = albedo;
+		return output;
 	}
 	float3 fragcolor = 0;
 
@@ -280,7 +290,8 @@ float4 main([[vk::location(0)]] float2 inUV : TEXCOORD0) : SV_TARGET
 			fragcolor.rgb = MRAO.rgb;
 			break;
 		}
-		return float4(fragcolor, 1.0);
+		output.lighting = float4(fragcolor, 1.0f);
+		return output;
 	}
 
 	// Ambient part
@@ -319,10 +330,11 @@ float4 main([[vk::location(0)]] float2 inUV : TEXCOORD0) : SV_TARGET
 
 	float exposure = 4.5;
 	float gamma = 2.2;
-	// Tone mapping
-	color = Uncharted2Tonemap(color * exposure);
-	color = color * (1.0f / Uncharted2Tonemap((11.2f).xxx));
-	// Gamma correction
-	color = pow(color, (1.0f / gamma).xxx);
-	return float4(color, 1);
+
+	output.lighting = float4(color, 1);
+	if (dot(color, color) > 1.0f)
+	{
+		output.high = float4(color, 1);
+	}
+	return output;
 }

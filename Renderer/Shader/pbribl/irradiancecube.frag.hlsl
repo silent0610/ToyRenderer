@@ -23,10 +23,12 @@ float4 main([[vk::location(0)]] float3 inPos : TEXCOORD0) : SV_TARGET
 
 	float3 color = float3(0.0, 0.0, 0.0);
 	uint sampleCount = 0u;
+	// 对球面按角度均匀采样
 	for (float phi = 0.0; phi < TWO_PI; phi += consts.deltaPhi) {
 		for (float theta = 0.0; theta < HALF_PI; theta += consts.deltaTheta) {
 			float3 tempVec = cos(phi) * right + sin(phi) * up;
 			float3 sampleVector = cos(theta) * N + sin(theta) * tempVec;
+			// 加权, 球面上角度对应的面积不同,需要加权
 			color += textureEnv.Sample(samplerEnv, sampleVector).rgb * cos(theta) * sin(theta);
 			sampleCount++;
 		}

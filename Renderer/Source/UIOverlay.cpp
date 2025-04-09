@@ -52,7 +52,7 @@ void UIOverlay::PrepareResources()
 	int texWidth, texHeight;
 
 	// 加载字体文件
-	const std::string filename = Tool::GetAssetsPath() + "Roboto-Medium.ttf"; 
+	const std::string filename = Tool::GetAssetsPath() + "Roboto-Medium.ttf";
 	io.Fonts->AddFontFromFileTTF(filename.c_str(), 16.0f * scale);
 
 	io.Fonts->GetTexDataAsRGBA32(&fontData, &texWidth, &texHeight);
@@ -209,6 +209,7 @@ void UIOverlay::PreparePipeline(const VkPipelineCache pipelineCache, const VkRen
 		Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
 
 	// Enable blending
+	std::vector<VkPipelineColorBlendAttachmentState> blendAttachmentStates;
 	VkPipelineColorBlendAttachmentState blendAttachmentState{};
 	blendAttachmentState.blendEnable = VK_TRUE;
 	blendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -219,8 +220,11 @@ void UIOverlay::PreparePipeline(const VkPipelineCache pipelineCache, const VkRen
 	blendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
 	blendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
 
+	blendAttachmentStates.push_back(blendAttachmentState);
+	blendAttachmentStates.push_back(Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE));
+
 	VkPipelineColorBlendStateCreateInfo colorBlendState =
-		Init::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
+		Init::pipelineColorBlendStateCreateInfo(2, blendAttachmentStates.data());
 
 	VkPipelineDepthStencilStateCreateInfo depthStencilState =
 		Init::pipelineDepthStencilStateCreateInfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_ALWAYS);

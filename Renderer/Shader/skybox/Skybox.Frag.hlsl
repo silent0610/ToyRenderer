@@ -26,11 +26,7 @@ FSOutput main([[vk::location(0)]] float3 inUVW : POSITION0)
 {
 	FSOutput output = (FSOutput)0;
 	float3 color = textureEnv.Sample(samplerEnv, inUVW).rgb;
-	color = Uncharted2Tonemap(color * EXPOSURE);
-	color = color * (1.0f / Uncharted2Tonemap((11.2f).xxx));
 
-	// Gamma correction
-	color = pow(color, (1.0f / GAMMA).xxx);
 	output.Albedo = float4(color, 1.0f);
 
 	return output;
