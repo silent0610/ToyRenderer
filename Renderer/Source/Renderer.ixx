@@ -73,7 +73,12 @@ struct UBOBlurParams
 struct Params
 {
 	float exposure{ 4.5f };
-	float gamma = 2.2f;
+	float gamma{ 2.2f };
+};
+struct FXAAParams
+{
+	alignas(8)glm::vec2 rcpFrame{ 1.0f,1.0f };
+	alignas(8)glm::vec2 sth{ 0.125f,1.0f };
 };
 
 struct VkQueues
@@ -137,6 +142,7 @@ struct UniformBuffers
 	Buffer skyBox;
 	Buffer postParam;
 	Buffer blurParams;
+	Buffer FXAA;
 };
 
 struct Pipelines
@@ -148,6 +154,7 @@ struct Pipelines
 	VkPipeline post{ VK_NULL_HANDLE };
 	VkPipeline blurVert{ VK_NULL_HANDLE };
 	VkPipeline blurHorz{ VK_NULL_HANDLE };
+	VkPipeline FXAA{ nullptr };
 };
 
 struct DescriptorSets
@@ -159,6 +166,7 @@ struct DescriptorSets
 	VkDescriptorSet post{ nullptr };
 	VkDescriptorSet blurVert{ nullptr };
 	VkDescriptorSet blurHorz{ nullptr };
+	VkDescriptorSet FXAA{ nullptr };
 };
 
 struct Textures
@@ -197,6 +205,7 @@ struct PipelineLayouts
 	VkPipelineLayout shadow;
 	VkPipelineLayout post;
 	VkPipelineLayout blur;
+	VkPipelineLayout FXAA;
 };
 struct DescriptorSetLayouts
 {
@@ -206,6 +215,7 @@ struct DescriptorSetLayouts
 	VkDescriptorSetLayout skyBox{ nullptr };
 	VkDescriptorSetLayout post{ nullptr };
 	VkDescriptorSetLayout blur{ nullptr };
+	VkDescriptorSetLayout FXAA{ nullptr };
 };
 struct Framebuffers
 {
@@ -216,6 +226,7 @@ struct Framebuffers
 	Framebuffer* lighting{ nullptr };
 	Framebuffer* bloom{ nullptr };
 	Framebuffer* bloom1{ nullptr };
+	Framebuffer* ToneMapping{ nullptr };
 };
 
 struct CmdBuffers
@@ -236,6 +247,7 @@ private:
 		UBOBlurParams blurParams;
 	}m_ubos;
 
+	FXAAParams m_FXAAParams{};
 	Params m_postParams{};
 	std::vector<VkFramebuffer> m_postFramebuffers;
 	VkRenderPass m_postPass;
@@ -446,6 +458,7 @@ private:
 	void SetupLightingPass();
 	void SetupPostPass();
 	void SetupBloomPass();
+	void SetupToneMappingPass();
 	FramebufferAttachment attachment1;
 	void BuildPostCmdBuffer();
 
@@ -461,10 +474,11 @@ private:
 	void GeneratePrefilteredCube();
 	void UpdateUniformBufferPost();
 	void UpdateUniformBuffersBlur();
-
+	void UpdateUniformBufferFXAA();
 	struct PostSettings
 	{
 		bool bloom{ true };
+		bool FXAA{ true };
 	}m_postSettings;
 
 	void SetupBlurDescriptorSets();

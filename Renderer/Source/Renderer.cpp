@@ -146,6 +146,7 @@ void Renderer::InitVulkan()
 	SetupShadow();
 	SetupPostPass();
 	SetupBloomPass();
+	SetupToneMappingPass();
 	InitUI();
 	InitLights();
 	PrepareUniformBuffers();
@@ -204,10 +205,6 @@ void Renderer::BuildCommandBuffers()
 
 	VkViewport viewport = Init::viewport((float)m_width, (float)m_height, 0.0f, 1.0f);
 	VkRect2D scissor = Init::rect2D(m_width, m_height, 0, 0);
-	//if (!m_postSettings.bloom)
-	//{
-
-	//}
 
 	for (int32_t i = 0; i < m_drawCmdBuffers.size(); ++i)
 	{
@@ -220,8 +217,8 @@ void Renderer::BuildCommandBuffers()
 		vkCmdSetViewport(m_drawCmdBuffers[i], 0, 1, &viewport);
 		vkCmdSetScissor(m_drawCmdBuffers[i], 0, 1, &scissor);
 
-		vkCmdBindPipeline(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.post);
-		vkCmdBindDescriptorSets(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.post, 0, 1, &m_descriptorSets.post, 0, NULL);
+		vkCmdBindPipeline(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.FXAA);
+		vkCmdBindDescriptorSets(m_drawCmdBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.FXAA, 0, 1, &m_descriptorSets.FXAA, 0, NULL);
 		// 后处理开始
 		vkCmdDraw(m_drawCmdBuffers[i], 3, 1, 0, 0);
 
@@ -499,7 +496,14 @@ VkResult Renderer::CreateBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags 
 // Update matrices used for the offscreen rendering of the scene
 void Renderer::UpdateUniformBufferPost()
 {
+
 	memcpy(m_uniformBuffers.postParam.mapped, &m_postParams, sizeof(m_postParams));
+}
+void Renderer::UpdateUniformBufferFXAA()
+{
+	m_FXAAParams.rcpFrame.x = 1.0f / m_width;
+	m_FXAAParams.rcpFrame.y = 1.0f / m_height;
+	memcpy(m_uniformBuffers.FXAA.mapped, &m_FXAAParams, sizeof(m_FXAAParams));
 }
 void Renderer::UpdateUniformBufferOffscreen()
 {
@@ -1413,7 +1417,7 @@ void Renderer::DisplayUI(UIOverlay* overlay)
 		}
 		if (overlay->CheckBox("Bloom", &m_postSettings.bloom))
 		{
-			BuildDeferredCommandBuffer();
+
 			if (!m_postSettings.bloom)
 			{
 				VkDescriptorImageInfo texDescriptorBloomEnd =
@@ -1436,7 +1440,19 @@ void Renderer::DisplayUI(UIOverlay* overlay)
 
 				vkUpdateDescriptorSets(m_device, 1, &write, 0, NULL);
 			}
+			BuildDeferredCommandBuffer();
+		}
 
+		bool useFXAA = (m_FXAAParams.sth.y > 0.5f);
+		if (overlay->CheckBox("useFXAA", &useFXAA))
+		{
+			if (useFXAA)m_FXAAParams.sth.y = 1.0f;
+			else m_FXAAParams.sth.y = 0.0f;
+			UpdateUniformBufferFXAA();
+		}
+		if (overlay->SliderFloat("FXAA edgeThreshold", &m_FXAAParams.sth.x, 0.0f, 1.0f))
+		{
+			UpdateUniformBufferFXAA();
 		}
 	}
 }
@@ -1806,6 +1822,7 @@ void Renderer::PrepareUniformBuffers()
 	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.skyBox, sizeof(UniformDataSkybox)));
 	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.postParam, sizeof(Params)));
 	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.blurParams, sizeof(UBOBlurParams)));
+	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.FXAA, sizeof(FXAAParams)));
 
 	// Map persistent
 	VK_CHECK_RESULT(m_uniformBuffers.defered.Map());
@@ -1814,9 +1831,10 @@ void Renderer::PrepareUniformBuffers()
 	VK_CHECK_RESULT(m_uniformBuffers.skyBox.Map());
 	VK_CHECK_RESULT(m_uniformBuffers.postParam.Map());
 	VK_CHECK_RESULT(m_uniformBuffers.blurParams.Map());
+	VK_CHECK_RESULT(m_uniformBuffers.FXAA.Map());
 	UpdateUniformBufferPost();
 	UpdateUniformBuffersBlur();
-
+	UpdateUniformBufferFXAA();
 
 }
 //void Renderer::SetupDescriptors()
@@ -2118,6 +2136,21 @@ void Renderer::BuildDeferredCommandBuffer()
 		vkCmdEndRenderPass(m_offScreenCmdBuffer);
 
 	}
+
+	//ToneMapping pass
+	renderPassBeginInfo.renderPass = m_framebuffers.ToneMapping->renderPass;
+	renderPassBeginInfo.framebuffer = m_framebuffers.ToneMapping->framebuffer;
+	renderPassBeginInfo.clearValueCount = 1;
+	vkCmdBeginRenderPass(m_offScreenCmdBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+	viewport = Init::viewport((float)m_framebuffers.ToneMapping->width, (float)m_framebuffers.ToneMapping->height, 0.0f, 1.0f);
+	scissor = Init::rect2D(m_framebuffers.ToneMapping->width, m_framebuffers.ToneMapping->height, 0, 0);
+	vkCmdSetViewport(m_offScreenCmdBuffer, 0, 1, &viewport);
+	vkCmdSetScissor(m_offScreenCmdBuffer, 0, 1, &scissor);
+	vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.post);
+	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.post, 0, 1, &m_descriptorSets.post, 0, NULL);
+	vkCmdDraw(m_offScreenCmdBuffer, 3, 1, 0, 0);
+	vkCmdEndRenderPass(m_offScreenCmdBuffer);
+
 	VK_CHECK_RESULT(vkEndCommandBuffer(m_offScreenCmdBuffer));
 }
 
@@ -2172,8 +2205,28 @@ void Renderer::SetupLightingPass()
 	m_framebuffers.lighting->AddAttachment(attachmentCI);
 
 	// Create sampler to sample from the color attachments
-	VK_CHECK_RESULT(m_framebuffers.lighting->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	VK_CHECK_RESULT(m_framebuffers.lighting->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
 	VK_CHECK_RESULT(m_framebuffers.lighting->CreateRenderPass());
+}
+void Renderer::SetupToneMappingPass()
+{
+	m_framebuffers.ToneMapping = new Framebuffer(m_vulkanDevice);
+	m_framebuffers.ToneMapping->width = m_width;
+	m_framebuffers.ToneMapping->height = m_height;
+
+	AttachmentCreateInfo attachmentCI{};
+	attachmentCI.width = m_framebuffers.ToneMapping->width;
+	attachmentCI.height = m_framebuffers.ToneMapping->height;
+	attachmentCI.layerCount = 1;
+	attachmentCI.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+	// lighting RT
+	attachmentCI.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	m_framebuffers.ToneMapping->AddAttachment(attachmentCI);
+
+	// Create sampler to sample from the color attachments
+	VK_CHECK_RESULT(m_framebuffers.ToneMapping->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	VK_CHECK_RESULT(m_framebuffers.ToneMapping->CreateRenderPass());
 }
 void Renderer::SetupBloomPass()
 {
@@ -2469,6 +2522,16 @@ void Renderer::SetupDescriptorsDD()
 	descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
 	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.skyBox));
 
+	// FXAA
+	setLayoutBindings = {
+		// Binding 0: Vertex shader uniform buffer
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,  VK_SHADER_STAGE_FRAGMENT_BIT, 0),
+		// Binding 1: Position texture
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
+	};
+	descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
+	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.FXAA));
+
 	setLayoutBindings = {
 		// Binding 0: Param
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 0),
@@ -2530,6 +2593,12 @@ void Renderer::SetupDescriptorsDD()
 			m_framebuffers.shadow->attachments[0].view,
 			VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
 
+	VkDescriptorImageInfo texDescriptorToneMapping =
+		Init::descriptorImageInfo(
+			m_framebuffers.ToneMapping->sampler,
+			m_framebuffers.ToneMapping->attachments[0].view,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
 
 	writeDescriptorSets = {
 		// Binding 1: World space position texture
@@ -2549,6 +2618,14 @@ void Renderer::SetupDescriptorsDD()
 	};
 	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 
+	// FXAA 
+	allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.FXAA, 1);
+	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.FXAA));
+	writeDescriptorSets = {
+		Init::writeDescriptorSet(m_descriptorSets.FXAA, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_uniformBuffers.FXAA.descriptor),
+		Init::writeDescriptorSet(m_descriptorSets.FXAA, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &texDescriptorToneMapping)
+	};
+	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 
 	// offscreen
 	allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.deferedModel, 1);
@@ -2674,6 +2751,8 @@ void Renderer::PreparePipelinesDD()
 	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.blur, 1);
 	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.blur));
 
+	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.FXAA, 1);
+	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.FXAA));
 	// Pipelines
 
 	// bloom
@@ -2767,16 +2846,27 @@ void Renderer::PreparePipelinesDD()
 	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.composition));
 
 	// post pipeline
+	colorBlendState = Init::pipelineColorBlendStateCreateInfo(1, lightingBlendAttachmentStates.data());
 	pipelineCI.layout = m_pipelineLayouts.post;
-	pipelineCI.renderPass = m_postPass;
+	pipelineCI.renderPass = m_framebuffers.ToneMapping->renderPass;
 	depthStencilState.depthWriteEnable = VK_FALSE;
 	depthStencilState.depthTestEnable = VK_FALSE;
 	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Post/ToneMapping.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Post/ToneMapping.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.post));
 
+
+	colorBlendState = Init::pipelineColorBlendStateCreateInfo(2, lightingBlendAttachmentStates.data());
+	pipelineCI.layout = m_pipelineLayouts.FXAA;
+	pipelineCI.renderPass = m_postPass;
+	depthStencilState.depthWriteEnable = VK_FALSE;
+	depthStencilState.depthTestEnable = VK_FALSE;
+	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Post/ToneMapping.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Post/FXAA.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.FXAA));
+
 	// Offscreen pipeline
-	// 
+
 	// skybox
 	pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position });
 	rasterizationState.cullMode = VK_CULL_MODE_NONE;
