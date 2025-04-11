@@ -143,8 +143,9 @@ void Renderer::InitVulkan()
 
 	SetupDefered();
 	SetupLightingPass();
+	SetupSkyBoxPass();
 	SetupShadow();
-	SetupPostPass();
+	SetupFinalPass();
 	SetupBloomPass();
 	SetupToneMappingPass();
 	InitUI();
@@ -164,7 +165,7 @@ void Renderer::InitUI()
 		LoadShader(Tool::GetShadersPath() + "Base/uioverlay.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT),
 	};
 	m_UI.PrepareResources();
-	m_UI.PreparePipeline(nullptr, m_postPass, m_swapChain.colorFormat, m_depthFormat);
+	m_UI.PreparePipeline(nullptr, m_finalPass, m_swapChain.colorFormat, m_depthFormat);
 }
 
 
@@ -195,7 +196,7 @@ void Renderer::BuildCommandBuffers()
 	//clearValues[1].depthStencil = { 1.0f, 0 };
 
 	VkRenderPassBeginInfo renderPassBeginInfo = Init::renderPassBeginInfo();
-	renderPassBeginInfo.renderPass = m_postPass;
+	renderPassBeginInfo.renderPass = m_finalPass;
 	renderPassBeginInfo.renderArea.offset.x = 0;
 	renderPassBeginInfo.renderArea.offset.y = 0;
 	renderPassBeginInfo.renderArea.extent.width = m_width;
@@ -209,7 +210,7 @@ void Renderer::BuildCommandBuffers()
 	for (int32_t i = 0; i < m_drawCmdBuffers.size(); ++i)
 	{
 		// Set target frame buffer
-		renderPassBeginInfo.framebuffer = m_postFramebuffers[i];
+		renderPassBeginInfo.framebuffer = m_finalFramebuffers[i];
 
 		VK_CHECK_RESULT(vkBeginCommandBuffer(m_drawCmdBuffers[i], &cmdBufInfo));
 
@@ -536,7 +537,8 @@ void Renderer::UpdateUniformBufferComposition()
 
 	//m_uniformDataComposition.lights[2].position.x = 0.0f;
 	//m_uniformDataComposition.lights[2].position.z = 4.0f;
-
+	scene.uniformDataSkybox.resolution.x = m_width;
+	scene.uniformDataSkybox.resolution.y = m_height;
 	scene.uniformDataSkybox.model = glm::mat4(glm::mat3(m_camera.matrices.view));
 	//scene.uniformDataSkybox.model[1][1] = -scene.uniformDataSkybox.model[1][1];
 	scene.uniformDataSkybox.projection = m_camera.matrices.perspective;
@@ -1425,7 +1427,7 @@ void Renderer::DisplayUI(UIOverlay* overlay)
 						m_framebuffers.bloom1->sampler,
 						m_framebuffers.bloom1->defaultMaterials[0].view,
 						VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-				VkWriteDescriptorSet write = Init::writeDescriptorSet(m_descriptorSets.post, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &texDescriptorBloomEnd);
+				VkWriteDescriptorSet write = Init::writeDescriptorSet(m_descriptorSets.toneMapping, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &texDescriptorBloomEnd);
 
 				vkUpdateDescriptorSets(m_device, 1, &write, 0, NULL);
 			}
@@ -1436,7 +1438,7 @@ void Renderer::DisplayUI(UIOverlay* overlay)
 						m_framebuffers.bloom1->sampler,
 						m_framebuffers.bloom1->attachments[0].view,
 						VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-				VkWriteDescriptorSet write = Init::writeDescriptorSet(m_descriptorSets.post, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &texDescriptorBloomEnd);
+				VkWriteDescriptorSet write = Init::writeDescriptorSet(m_descriptorSets.toneMapping, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &texDescriptorBloomEnd);
 
 				vkUpdateDescriptorSets(m_device, 1, &write, 0, NULL);
 			}
@@ -1570,11 +1572,11 @@ void Renderer::ResizeWindow()
 	vkFreeMemory(m_device, m_depthStencil.memory, nullptr);
 	CreateDepthResources();
 
-	for (auto& frameBuffer : m_postFramebuffers)
+	for (auto& frameBuffer : m_finalFramebuffers)
 	{
 		vkDestroyFramebuffer(m_device, frameBuffer, nullptr);
 	}
-	SetupPostPass();
+	SetupFinalPass();
 	//CreateFramebuffers();
 	if ((m_width > 0.0f) && (m_height > 0.0f))
 	{
@@ -1832,6 +1834,7 @@ void Renderer::PrepareUniformBuffers()
 	VK_CHECK_RESULT(m_uniformBuffers.postParam.Map());
 	VK_CHECK_RESULT(m_uniformBuffers.blurParams.Map());
 	VK_CHECK_RESULT(m_uniformBuffers.FXAA.Map());
+	UpdateUniformBufferComposition();
 	UpdateUniformBufferPost();
 	UpdateUniformBuffersBlur();
 	UpdateUniformBufferFXAA();
@@ -2033,6 +2036,7 @@ void Renderer::BuildDeferredCommandBuffer()
 
 	VK_CHECK_RESULT(vkBeginCommandBuffer(m_offScreenCmdBuffer, &cmdBufInfo));
 
+	// depth only pass
 	vkCmdBeginRenderPass(m_offScreenCmdBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
 	VkViewport viewport = Init::viewport((float)m_framebuffers.shadow->width, (float)m_framebuffers.shadow->height, 0.0f, 1.0f);
@@ -2080,11 +2084,9 @@ void Renderer::BuildDeferredCommandBuffer()
 	vkCmdSetScissor(m_offScreenCmdBuffer, 0, 1, &scissor);
 
 
-	vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.skyBox);
-	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.skyBox, 0, 1, &m_descriptorSets.skyBox, 0, NULL);
-	scene.skybox.Draw(m_offScreenCmdBuffer);
 
-	// third pass model
+
+	// pass model
 	vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.defered);
 	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.defered, 0, 1, &m_descriptorSets.deferedModel, 0, nullptr);
 	m_glTFModel.Draw(m_offScreenCmdBuffer, vkglTF::RenderFlags::BindImages, m_pipelineLayouts.defered, 1);
@@ -2103,6 +2105,16 @@ void Renderer::BuildDeferredCommandBuffer()
 	vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.composition);
 	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.composition, 0, 1, &m_descriptorSets.composition, 0, NULL);
 	vkCmdDraw(m_offScreenCmdBuffer, 3, 1, 0, 0);
+	vkCmdEndRenderPass(m_offScreenCmdBuffer);
+
+	// skybox
+	renderPassBeginInfo.renderPass = m_framebuffers.SkyBox->renderPass;
+	renderPassBeginInfo.framebuffer = m_framebuffers.SkyBox->framebuffer;
+	renderPassBeginInfo.clearValueCount = 2;
+	vkCmdBeginRenderPass(m_offScreenCmdBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.skyBox);
+	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.skyBox, 0, 1, &m_descriptorSets.skyBox, 0, NULL);
+	scene.skybox.Draw(m_offScreenCmdBuffer);
 	vkCmdEndRenderPass(m_offScreenCmdBuffer);
 
 	if (m_postSettings.bloom)
@@ -2146,8 +2158,8 @@ void Renderer::BuildDeferredCommandBuffer()
 	scissor = Init::rect2D(m_framebuffers.ToneMapping->width, m_framebuffers.ToneMapping->height, 0, 0);
 	vkCmdSetViewport(m_offScreenCmdBuffer, 0, 1, &viewport);
 	vkCmdSetScissor(m_offScreenCmdBuffer, 0, 1, &scissor);
-	vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.post);
-	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.post, 0, 1, &m_descriptorSets.post, 0, NULL);
+	vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.toneMapping);
+	vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.toneMapping, 0, 1, &m_descriptorSets.toneMapping, 0, NULL);
 	vkCmdDraw(m_offScreenCmdBuffer, 3, 1, 0, 0);
 	vkCmdEndRenderPass(m_offScreenCmdBuffer);
 
@@ -2201,12 +2213,34 @@ void Renderer::SetupLightingPass()
 	attachmentCI.format = VK_FORMAT_R16G16B16A16_SFLOAT;
 	m_framebuffers.lighting->AddAttachment(attachmentCI);
 
-	// extract highlight
-	m_framebuffers.lighting->AddAttachment(attachmentCI);
 
 	// Create sampler to sample from the color attachments
 	VK_CHECK_RESULT(m_framebuffers.lighting->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
 	VK_CHECK_RESULT(m_framebuffers.lighting->CreateRenderPass());
+}
+
+void Renderer::SetupSkyBoxPass(){
+
+	m_framebuffers.SkyBox = new Framebuffer(m_vulkanDevice);
+	m_framebuffers.SkyBox->width = m_width;
+	m_framebuffers.SkyBox->height = m_height;
+
+	AttachmentCreateInfo attachmentCI{};
+	attachmentCI.width = m_framebuffers.SkyBox->width;
+	attachmentCI.height = m_framebuffers.SkyBox->height;
+	attachmentCI.layerCount = 1;
+	attachmentCI.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+	// lighting RT
+	attachmentCI.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	m_framebuffers.SkyBox->AddAttachment(attachmentCI);
+
+	// extract highlight
+	m_framebuffers.SkyBox->AddAttachment(attachmentCI);
+
+	// Create sampler to sample from the color attachments
+	VK_CHECK_RESULT(m_framebuffers.SkyBox->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	VK_CHECK_RESULT(m_framebuffers.SkyBox->CreateRenderPass());
 }
 void Renderer::SetupToneMappingPass()
 {
@@ -2288,56 +2322,56 @@ void Renderer::CreateDefaultTextures()
 {
 	;
 }
-void Renderer::SetupPostPass()
+void Renderer::SetupFinalPass()
 {
-	attachment1.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	//attachment1.format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
-	VkImageCreateInfo imageCI = Init::imageCreateInfo();
-	imageCI.imageType = VK_IMAGE_TYPE_2D;
-	imageCI.format = VK_FORMAT_R16G16B16A16_SFLOAT;
-	imageCI.extent.width = m_width;
-	imageCI.extent.height = m_height;
-	imageCI.extent.depth = 1;
-	imageCI.mipLevels = 1;
-	imageCI.arrayLayers = 1;
-	imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
-	imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
-	imageCI.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+	//VkImageCreateInfo imageCI = Init::imageCreateInfo();
+	//imageCI.imageType = VK_IMAGE_TYPE_2D;
+	//imageCI.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	//imageCI.extent.width = m_width;
+	//imageCI.extent.height = m_height;
+	//imageCI.extent.depth = 1;
+	//imageCI.mipLevels = 1;
+	//imageCI.arrayLayers = 1;
+	//imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
+	//imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
+	//imageCI.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
 
-	VkMemoryAllocateInfo memAlloc = Init::memoryAllocateInfo();
-	VkMemoryRequirements memReqs;
+	//VkMemoryAllocateInfo memAlloc = Init::memoryAllocateInfo();
+	//VkMemoryRequirements memReqs;
 
-	// Create image for this attachment
-	VK_CHECK_RESULT(vkCreateImage(m_vulkanDevice->logicalDevice, &imageCI, nullptr, &attachment1.image));
-	vkGetImageMemoryRequirements(m_vulkanDevice->logicalDevice, attachment1.image, &memReqs);
-	memAlloc.allocationSize = memReqs.size;
-	memAlloc.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(m_vulkanDevice->logicalDevice, &memAlloc, nullptr, &attachment1.memory));
-	VK_CHECK_RESULT(vkBindImageMemory(m_vulkanDevice->logicalDevice, attachment1.image, attachment1.memory, 0));
+	//// Create image for this attachment
+	//VK_CHECK_RESULT(vkCreateImage(m_vulkanDevice->logicalDevice, &imageCI, nullptr, &attachment1.image));
+	//vkGetImageMemoryRequirements(m_vulkanDevice->logicalDevice, attachment1.image, &memReqs);
+	//memAlloc.allocationSize = memReqs.size;
+	//memAlloc.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	//VK_CHECK_RESULT(vkAllocateMemory(m_vulkanDevice->logicalDevice, &memAlloc, nullptr, &attachment1.memory));
+	//VK_CHECK_RESULT(vkBindImageMemory(m_vulkanDevice->logicalDevice, attachment1.image, attachment1.memory, 0));
 
-	attachment1.subresourceRange = {};
-	attachment1.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	attachment1.subresourceRange.levelCount = 1;
-	attachment1.subresourceRange.layerCount = 1;
+	//attachment1.subresourceRange = {};
+	//attachment1.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	//attachment1.subresourceRange.levelCount = 1;
+	//attachment1.subresourceRange.layerCount = 1;
 
-	VkImageViewCreateInfo imageViewCI = Init::imageViewCreateInfo();
-	imageViewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	imageViewCI.format = VK_FORMAT_R16G16B16A16_SFLOAT;
-	imageViewCI.subresourceRange = attachment1.subresourceRange;
-	imageViewCI.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	imageViewCI.image = attachment1.image;
-	VK_CHECK_RESULT(vkCreateImageView(m_vulkanDevice->logicalDevice, &imageViewCI, nullptr, &attachment1.view));
+	//VkImageViewCreateInfo imageViewCI = Init::imageViewCreateInfo();
+	//imageViewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	//imageViewCI.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	//imageViewCI.subresourceRange = attachment1.subresourceRange;
+	//imageViewCI.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	//imageViewCI.image = attachment1.image;
+	//VK_CHECK_RESULT(vkCreateImageView(m_vulkanDevice->logicalDevice, &imageViewCI, nullptr, &attachment1.view));
 
-	// Fill attachment description
-	attachment1.description = {};
-	attachment1.description.samples = VK_SAMPLE_COUNT_1_BIT;
-	attachment1.description.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	attachment1.description.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	attachment1.description.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	attachment1.description.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	attachment1.description.format = VK_FORMAT_R16G16B16A16_SFLOAT;
-	attachment1.description.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	attachment1.description.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	//// Fill attachment description
+	//attachment1.description = {};
+	//attachment1.description.samples = VK_SAMPLE_COUNT_1_BIT;
+	//attachment1.description.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	//attachment1.description.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	//attachment1.description.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	//attachment1.description.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	//attachment1.description.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	//attachment1.description.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	//attachment1.description.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 
 	VkAttachmentDescription swapChainImage{};
@@ -2352,12 +2386,12 @@ void Renderer::SetupPostPass()
 
 	std::vector<VkAttachmentDescription> attachmentDescriptions;
 	attachmentDescriptions.push_back(swapChainImage);
-	attachmentDescriptions.push_back(attachment1.description);
+	/*attachmentDescriptions.push_back(attachment1.description);*/
 
 	// color Reference
 	std::vector<VkAttachmentReference> colorReferences;
 	colorReferences.push_back({ 0,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL });
-	colorReferences.push_back({ 1,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL });
+	//colorReferences.push_back({ 1,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL });
 
 	VkSubpassDescription subpass = {};
 	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -2392,22 +2426,22 @@ void Renderer::SetupPostPass()
 	renderPassInfo.dependencyCount = 2;
 	renderPassInfo.pDependencies = dependencies.data();
 
-	VK_CHECK_RESULT(vkCreateRenderPass(m_vulkanDevice->logicalDevice, &renderPassInfo, nullptr, &m_postPass));
+	VK_CHECK_RESULT(vkCreateRenderPass(m_vulkanDevice->logicalDevice, &renderPassInfo, nullptr, &m_finalPass));
 
 	// framebuffer
-	m_postFramebuffers.resize(m_swapChain.images.size());
-	for (uint32_t i = 0; i < m_postFramebuffers.size(); ++i)
+	m_finalFramebuffers.resize(m_swapChain.images.size());
+	for (uint32_t i = 0; i < m_finalFramebuffers.size(); ++i)
 	{
-		std::vector<VkImageView> attachmentViews = { m_swapChain.imageViews[i] ,attachment1.view };
+		std::vector<VkImageView> attachmentViews = { m_swapChain.imageViews[i]  };
 		VkFramebufferCreateInfo frameBufferCI{};
 		frameBufferCI.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		frameBufferCI.renderPass = m_postPass;
+		frameBufferCI.renderPass = m_finalPass;
 		frameBufferCI.pAttachments = attachmentViews.data();
 		frameBufferCI.layers = 1;
 		frameBufferCI.height = m_height;
 		frameBufferCI.width = m_width;
-		frameBufferCI.attachmentCount = 2;
-		VK_CHECK_RESULT(vkCreateFramebuffer(m_vulkanDevice->logicalDevice, &frameBufferCI, nullptr, &m_postFramebuffers[i]));
+		frameBufferCI.attachmentCount = 1;
+		VK_CHECK_RESULT(vkCreateFramebuffer(m_vulkanDevice->logicalDevice, &frameBufferCI, nullptr, &m_finalFramebuffers[i]));
 	}
 }
 void Renderer::SetupDefered()
@@ -2477,7 +2511,7 @@ void Renderer::SetupDescriptorsDD()
 	// composition light
 	std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
 		// Binding 0: Vertex shader uniform buffer
-		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT, 0),
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT , 0),
 		// Binding 1: Position texture
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1),
 		// Binding 2: Normals texture
@@ -2500,7 +2534,7 @@ void Renderer::SetupDescriptorsDD()
 	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.composition));
 	// deferred model
 	setLayoutBindings = {
-		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT, 0),
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT , 0),
 	};
 	descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
 	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.deferedModel));
@@ -2515,9 +2549,11 @@ void Renderer::SetupDescriptorsDD()
 	// skybox
 	setLayoutBindings = {
 		// Binding 0: Vertex shader uniform buffer
-		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_GEOMETRY_BIT, 0),
-		// Binding 1: Position texture
-		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT| VK_SHADER_STAGE_FRAGMENT_BIT , 0),
+		// Binding 1: lighting texture
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1),
+		// Binding 2: skybox texture
+		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2),
 	};
 	descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
 	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.skyBox));
@@ -2542,7 +2578,7 @@ void Renderer::SetupDescriptorsDD()
 	};
 	descriptorLayoutCI.pBindings = setLayoutBindings.data();
 	descriptorLayoutCI.bindingCount = 3;
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.post));
+	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.toneMapping));
 
 	// Sets
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets;
@@ -2599,6 +2635,11 @@ void Renderer::SetupDescriptorsDD()
 			m_framebuffers.ToneMapping->attachments[0].view,
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
+	VkDescriptorImageInfo texDescriptorSkyBox =
+		Init::descriptorImageInfo(
+			m_framebuffers.SkyBox->sampler,
+			m_framebuffers.SkyBox->attachments[0].view,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 	writeDescriptorSets = {
 		// Binding 1: World space position texture
@@ -2652,18 +2693,19 @@ void Renderer::SetupDescriptorsDD()
 	writeDescriptorSets =
 	{
 		Init::writeDescriptorSet(m_descriptorSets.skyBox,VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,0,&m_uniformBuffers.skyBox.descriptor),
-		Init::writeDescriptorSet(m_descriptorSets.skyBox,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1,&scene.textures.environmentCube.descriptor),
+		Init::writeDescriptorSet(m_descriptorSets.skyBox,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1,&texDescriptorLighting),
+		Init::writeDescriptorSet(m_descriptorSets.skyBox,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,2,&scene.textures.environmentCube.descriptor),
 	};
 	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, NULL);
 
 	//post
-	allocInfo.pSetLayouts = &m_descriptorSetLayouts.post;
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.post));
+	allocInfo.pSetLayouts = &m_descriptorSetLayouts.toneMapping;
+	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.toneMapping));
 	writeDescriptorSets =
 	{
-		Init::writeDescriptorSet(m_descriptorSets.post,VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,0,&m_uniformBuffers.postParam.descriptor),
-		Init::writeDescriptorSet(m_descriptorSets.post,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1,&texDescriptorLighting),
-		Init::writeDescriptorSet(m_descriptorSets.post,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,2,&texDescriptorBloomEnd),
+		Init::writeDescriptorSet(m_descriptorSets.toneMapping,VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,0,&m_uniformBuffers.postParam.descriptor),
+		Init::writeDescriptorSet(m_descriptorSets.toneMapping,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1,&texDescriptorSkyBox),
+		Init::writeDescriptorSet(m_descriptorSets.toneMapping,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,2,&texDescriptorBloomEnd),
 	};
 	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, NULL);
 
@@ -2685,8 +2727,8 @@ void Renderer::SetupBlurDescriptorSets()
 
 	VkDescriptorImageInfo texDescriptorHighLight =
 		Init::descriptorImageInfo(
-			m_framebuffers.lighting->sampler,
-			m_framebuffers.lighting->attachments[1].view,
+			m_framebuffers.SkyBox->sampler,
+			m_framebuffers.SkyBox->attachments[1].view,
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 	VkDescriptorImageInfo texDescriptorVert =
@@ -2744,8 +2786,8 @@ void Renderer::PreparePipelinesDD()
 	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.shadow));
 
 	// post
-	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.post, 1);
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.post));
+	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.toneMapping, 1);
+	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.toneMapping));
 
 	// bloom 
 	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.blur, 1);
@@ -2813,11 +2855,10 @@ void Renderer::PreparePipelinesDD()
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
 	VkPipelineRasterizationStateCreateInfo rasterizationState = Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE, 0);
 	std::array<VkPipelineColorBlendAttachmentState, 2> lightingBlendAttachmentStates = {
-		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
 		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE)
 	};
 
-	VkPipelineColorBlendStateCreateInfo colorBlendState = Init::pipelineColorBlendStateCreateInfo(2, lightingBlendAttachmentStates.data());
+	VkPipelineColorBlendStateCreateInfo colorBlendState = Init::pipelineColorBlendStateCreateInfo(1, lightingBlendAttachmentStates.data());
 	VkPipelineDepthStencilStateCreateInfo depthStencilState = Init::pipelineDepthStencilStateCreateInfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL);
 	VkPipelineViewportStateCreateInfo viewportState = Init::pipelineViewportStateCreateInfo(1, 1, 0);
 	VkPipelineMultisampleStateCreateInfo multisampleState = Init::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_1_BIT, 0);
@@ -2845,20 +2886,20 @@ void Renderer::PreparePipelinesDD()
 	pipelineCI.pVertexInputState = &emptyInputState;
 	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.composition));
 
-	// post pipeline
+	// Tonemapping pipeline
 	colorBlendState = Init::pipelineColorBlendStateCreateInfo(1, lightingBlendAttachmentStates.data());
-	pipelineCI.layout = m_pipelineLayouts.post;
+	pipelineCI.layout = m_pipelineLayouts.toneMapping;
 	pipelineCI.renderPass = m_framebuffers.ToneMapping->renderPass;
 	depthStencilState.depthWriteEnable = VK_FALSE;
 	depthStencilState.depthTestEnable = VK_FALSE;
 	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Post/ToneMapping.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Post/ToneMapping.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.post));
+	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.toneMapping));
 
 
-	colorBlendState = Init::pipelineColorBlendStateCreateInfo(2, lightingBlendAttachmentStates.data());
+	colorBlendState = Init::pipelineColorBlendStateCreateInfo(1, lightingBlendAttachmentStates.data());
 	pipelineCI.layout = m_pipelineLayouts.FXAA;
-	pipelineCI.renderPass = m_postPass;
+	pipelineCI.renderPass = m_finalPass;
 	depthStencilState.depthWriteEnable = VK_FALSE;
 	depthStencilState.depthTestEnable = VK_FALSE;
 	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Post/ToneMapping.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
@@ -2871,7 +2912,7 @@ void Renderer::PreparePipelinesDD()
 	pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position });
 	rasterizationState.cullMode = VK_CULL_MODE_NONE;
 	pipelineCI.layout = m_pipelineLayouts.skyBox;
-	pipelineCI.renderPass = m_framebuffers.deferred->renderPass;
+	pipelineCI.renderPass = m_framebuffers.SkyBox->renderPass;
 	std::array<VkPipelineColorBlendAttachmentState, 4> blendAttachmentStates =
 	{
 		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
@@ -2879,7 +2920,7 @@ void Renderer::PreparePipelinesDD()
 		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
 		Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE)
 	};
-	colorBlendState.attachmentCount = static_cast<uint32_t>(blendAttachmentStates.size());
+	colorBlendState.attachmentCount = 2;
 	colorBlendState.pAttachments = blendAttachmentStates.data();
 	depthStencilState.depthWriteEnable = VK_FALSE;
 	depthStencilState.depthTestEnable = VK_FALSE;
@@ -2888,6 +2929,7 @@ void Renderer::PreparePipelinesDD()
 	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.skyBox));
 
 	// defered model
+	colorBlendState.attachmentCount = 4;
 	rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;
 	depthStencilState.depthWriteEnable = VK_TRUE;
 	depthStencilState.depthTestEnable = VK_TRUE;

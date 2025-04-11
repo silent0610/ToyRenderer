@@ -1,33 +1,50 @@
-TextureCube textureEnv : register(t1);
-SamplerState samplerEnv : register(s1);
+Texture2D textureLighting : register(t1);
+SamplerState samplerLighting : register(s1);
+TextureCube textureEnv : register(t2);
+SamplerState samplerEnv : register(s2);
+
+struct UBO
+{
+	float2 resolution;
+	float4x4 model;
+	float4x4 projection;
+};
+cbuffer ubo : register(b0) { UBO ubo; }
 
 struct FSOutput
 {
-	float4 Position : SV_TARGET0;
-	float4 Normal : SV_TARGET1;
-	float4 Albedo : SV_TARGET2;
-	float4 MRAO : SV_TARGET3;
+	float4 lighting : SV_TARGET0;
+	float4 highLight : SV_TARGET1;
 };
-float3 Uncharted2Tonemap(float3 color)
+struct VSOutput
 {
-	float A = 0.15;
-	float B = 0.50;
-	float C = 0.10;
-	float D = 0.20;
-	float E = 0.02;
-	float F = 0.30;
-	float W = 11.2;
-	return ((color * (A * color + C * B) + D * E) / (color * (A * color + B) + D * F)) - E / F;
-}
-
-#define EXPOSURE 4.5
-#define GAMMA 2.2
-FSOutput main([[vk::location(0)]] float3 inUVW : POSITION0)
+	float4 pos : SV_POSITION;
+	[[vk::location(0)]] float3 inUVW : POSITION0;
+};
+FSOutput main(VSOutput input)
 {
 	FSOutput output = (FSOutput)0;
-	float3 color = textureEnv.Sample(samplerEnv, inUVW).rgb;
 
-	output.Albedo = float4(color, 1.0f);
+	float2 uv = input.pos.rg;
+	uv.r = uv.r / ubo.resolution.x;
+	uv.g = uv.g / ubo.resolution.y;
+
+	float4 lighting = textureLighting.Sample(samplerLighting, uv);
+	float3 cube = textureEnv.Sample(samplerEnv, input.inUVW).rgb;
+
+	if (length(lighting.rgb) < 1e-5)
+	{
+		output.lighting = float4(cube, 1);
+	}
+	else
+	{
+		output.lighting = lighting;
+	}
+	float luminance = dot(output.lighting.rgb, float3(0.2126, 0.7152, 0.0722));
+	if (luminance > 0.3f)
+	{
+		output.highLight = output.lighting;
+	}
 
 	return output;
 }

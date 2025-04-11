@@ -123,8 +123,9 @@ struct UniformDataShadows
 
 struct UniformDataSkybox
 {
-	glm::mat4 model;
-	glm::mat4 projection;
+	alignas(8)glm::vec2 resolution;
+	alignas(16)glm::mat4 model;
+	alignas(16)glm::mat4 projection;
 };
 
 struct UniformDataComposition
@@ -151,7 +152,7 @@ struct Pipelines
 	VkPipeline composition{ VK_NULL_HANDLE };
 	VkPipeline shadow{ VK_NULL_HANDLE };
 	VkPipeline skyBox{ VK_NULL_HANDLE };
-	VkPipeline post{ VK_NULL_HANDLE };
+	VkPipeline toneMapping{ VK_NULL_HANDLE };
 	VkPipeline blurVert{ VK_NULL_HANDLE };
 	VkPipeline blurHorz{ VK_NULL_HANDLE };
 	VkPipeline FXAA{ nullptr };
@@ -163,7 +164,7 @@ struct DescriptorSets
 	VkDescriptorSet composition{ VK_NULL_HANDLE };
 	VkDescriptorSet shadow{ VK_NULL_HANDLE };
 	VkDescriptorSet skyBox{ VK_NULL_HANDLE };
-	VkDescriptorSet post{ nullptr };
+	VkDescriptorSet toneMapping{ nullptr };
 	VkDescriptorSet blurVert{ nullptr };
 	VkDescriptorSet blurHorz{ nullptr };
 	VkDescriptorSet FXAA{ nullptr };
@@ -203,7 +204,7 @@ struct PipelineLayouts
 	VkPipelineLayout composition;
 	VkPipelineLayout skyBox;
 	VkPipelineLayout shadow;
-	VkPipelineLayout post;
+	VkPipelineLayout toneMapping;
 	VkPipelineLayout blur;
 	VkPipelineLayout FXAA;
 };
@@ -213,7 +214,7 @@ struct DescriptorSetLayouts
 	VkDescriptorSetLayout deferedTextures{ nullptr };
 	VkDescriptorSetLayout composition{ nullptr };
 	VkDescriptorSetLayout skyBox{ nullptr };
-	VkDescriptorSetLayout post{ nullptr };
+	VkDescriptorSetLayout toneMapping{ nullptr };
 	VkDescriptorSetLayout blur{ nullptr };
 	VkDescriptorSetLayout FXAA{ nullptr };
 };
@@ -227,6 +228,7 @@ struct Framebuffers
 	Framebuffer* bloom{ nullptr };
 	Framebuffer* bloom1{ nullptr };
 	Framebuffer* ToneMapping{ nullptr };
+	Framebuffer* SkyBox{ nullptr };
 };
 
 struct CmdBuffers
@@ -249,8 +251,8 @@ private:
 
 	FXAAParams m_FXAAParams{};
 	Params m_postParams{};
-	std::vector<VkFramebuffer> m_postFramebuffers;
-	VkRenderPass m_postPass;
+	std::vector<VkFramebuffer> m_finalFramebuffers;
+	VkRenderPass m_finalPass;
 	PushBlock m_block;
 	SmallScene scene;
 	Config* m_config;
@@ -455,8 +457,9 @@ private:
 	void SetupShadow();
 	void SetupDefered();
 	// Post
+	void SetupSkyBoxPass();
 	void SetupLightingPass();
-	void SetupPostPass();
+	void SetupFinalPass();
 	void SetupBloomPass();
 	void SetupToneMappingPass();
 	FramebufferAttachment attachment1;

@@ -221,10 +221,10 @@ void UIOverlay::PreparePipeline(const VkPipelineCache pipelineCache, const VkRen
 	blendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
 
 	blendAttachmentStates.push_back(blendAttachmentState);
-	blendAttachmentStates.push_back(Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE));
+	//blendAttachmentStates.push_back(Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE));
 
 	VkPipelineColorBlendStateCreateInfo colorBlendState =
-		Init::pipelineColorBlendStateCreateInfo(2, blendAttachmentStates.data());
+		Init::pipelineColorBlendStateCreateInfo(blendAttachmentStates.size(), blendAttachmentStates.data());
 
 	VkPipelineDepthStencilStateCreateInfo depthStencilState =
 		Init::pipelineDepthStencilStateCreateInfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_ALWAYS);

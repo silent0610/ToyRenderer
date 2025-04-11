@@ -244,7 +244,6 @@ float3 Uncharted2Tonemap(float3 x)
 struct FSOutput
 {
 	float4 lighting : SV_TARGET0;
-	float4 high : SV_TARGET1;
 };
 
 FSOutput main([[vk::location(0)]] float2 inUV : TEXCOORD0)
@@ -252,18 +251,17 @@ FSOutput main([[vk::location(0)]] float2 inUV : TEXCOORD0)
 	FSOutput output = (FSOutput)0;
 	// Get G-Buffer values
 	float3 fragPos = textureposition.Sample(samplerposition, inUV).rgb;
-	float3 normal = textureNormal.Sample(samplerNormal, inUV).rgb;
+	if (length(fragPos) < 1e-5)
+	{
+		return output;
+	}
 	float4 albedo = textureAlbedo.Sample(samplerAlbedo, inUV);
+	float3 normal = textureNormal.Sample(samplerNormal, inUV).rgb;
 	float2 uv = inUV.rg;
 	float4 MRAO = textureMRAO.Sample(samplerMRAO, uv);
 	float metallic = materialFactor.metallicFactor * MRAO.r;
 	float roughness = materialFactor.roughnessFactor * MRAO.g;
-	if (length(fragPos) < 1e-5)
-	{
 
-		output.lighting = albedo;
-		return output;
-	}
 	float3 fragcolor = 0;
 
 	// Debug display
@@ -329,9 +327,6 @@ FSOutput main([[vk::location(0)]] float2 inUV : TEXCOORD0)
 	float3 color = ambient + Lo;
 
 	output.lighting = float4(color, 1);
-	if (dot(color, color) > 0.3f)
-	{
-		output.high = float4(color, 1);
-	}
+
 	return output;
 }
