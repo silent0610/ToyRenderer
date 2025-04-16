@@ -486,13 +486,9 @@ private:
 
 	void SetupBlurDescriptorSets();
 
-	struct DefaultTexture
-	{
-		VkImage image;
-		VkImageView view;
-		VkSampler sampler;
-	}m_defaultTexture;
-	void CreateDefaultTextures();
+
+	void InitTileBasedLighting();
+	
 };
 
 

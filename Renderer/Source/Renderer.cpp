@@ -2318,10 +2318,7 @@ void Renderer::SetupBloomPass()
 	VK_CHECK_RESULT(m_framebuffers.bloom1->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
 	VK_CHECK_RESULT(m_framebuffers.bloom1->CreateRenderPass());
 }
-void Renderer::CreateDefaultTextures()
-{
-	;
-}
+
 void Renderer::SetupFinalPass()
 {
 	//attachment1.format = VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -3953,3 +3950,14 @@ void Renderer::UpdateUniformBuffersBlur()
 	memcpy(m_uniformBuffers.blurParams.mapped, &m_ubos.blurParams, sizeof(m_ubos.blurParams));
 }
 
+void Renderer::InitTileBasedLighting()
+{
+	using uint = uint32_t;
+	uint tileSize{ 16 };
+	uint numTilesX= (m_width + tileSize - 1) / tileSize ;
+	uint numTilesY = (m_height + tileSize - 1) / tileSize;
+
+	std::vector<TileLightList> tileLights(numTilesX * numTilesY);
+
+
+}
