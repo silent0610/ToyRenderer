@@ -501,7 +501,7 @@ VkCommandBuffer VulkanDevice::CreateCommandBuffer(VkCommandBufferLevel level, bo
 * @note The queue that the command buffer is submitted to must be from the same family index as the pool it was allocated from
 * @note Uses a fence to ensure command buffer has finished executing
 */
-void VulkanDevice::FlushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue queue, VkCommandPool pool, bool free)
+void VulkanDevice::FlushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue queue, VkCommandPool pool, bool free, bool debug)
 {
 	if (commandBuffer == VK_NULL_HANDLE)
 	{
@@ -510,6 +510,12 @@ void VulkanDevice::FlushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue que
 
 	VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer));
 
+	if (debug)
+	{
+		auto vkCmdEndDebugUtilsLabelEXT =
+			(PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(logicalDevice, "vkCmdEndDebugUtilsLabelEXT");
+		vkCmdEndDebugUtilsLabelEXT(commandBuffer);
+	}
 	VkSubmitInfo submitInfo = Init::submitInfo();
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &commandBuffer;
@@ -522,15 +528,16 @@ void VulkanDevice::FlushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue que
 	// Wait for the fence to signal that command buffer has finished executing
 	VK_CHECK_RESULT(vkWaitForFences(logicalDevice, 1, &fence, VK_TRUE, UINT64_MAX));
 	vkDestroyFence(logicalDevice, fence, nullptr);
+
 	if (free)
 	{
 		vkFreeCommandBuffers(logicalDevice, pool, 1, &commandBuffer);
 	}
 }
 
-void VulkanDevice::FlushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue queue, bool free)
+void VulkanDevice::FlushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue queue, bool free, bool debug)
 {
-	return FlushCommandBuffer(commandBuffer, queue, commandPool, free);
+	return FlushCommandBuffer(commandBuffer, queue, commandPool, free, debug);
 }
 
 /**

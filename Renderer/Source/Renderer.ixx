@@ -244,6 +244,7 @@ public:
 	~Renderer() = default;
 
 private:
+	uint32_t m_tileSize{ 16 };
 	struct
 	{
 		UBOBlurParams blurParams;
@@ -488,7 +489,55 @@ private:
 
 
 	void InitTileBasedLighting();
-	
+
+	void CreateCubeMap();
+
+	struct ShadowCubeMap
+	{
+		Texture texture;
+		std::array<VkImageView, 6>faceImageViews{};
+		Buffer buffer;
+		VkRenderPass renderPass{ nullptr };
+		VkPipelineLayout pipelineLayout{ nullptr };
+		VkPipeline pipeline{ nullptr };
+		VkDescriptorSetLayout descriptorSetLayout{ VK_NULL_HANDLE };
+		VkDescriptorSet set{ VK_NULL_HANDLE };
+
+		struct UniformData
+		{
+			glm::mat4 projection;
+			glm::mat4 view;
+			glm::mat4 model;
+			glm::vec4 lightPos;
+		};
+		UniformData uniformData;
+	}shadowCubeMap;
+
+	struct FrameBufferAttachment
+	{
+		VkImage image;
+		VkDeviceMemory mem;
+		VkImageView view;
+	};
+	struct OffscreenPass
+	{
+		int32_t width, height;
+		std::array<VkFramebuffer, 6> frameBuffers;
+		FrameBufferAttachment depth;
+		VkRenderPass renderPass;
+		VkSampler sampler;
+		VkDescriptorImageInfo descriptor;
+	} offscreenPass;
+	void UpdateCubeFace(uint32_t faceIndex, VkCommandBuffer commandBuffer, VkDescriptorSet set);
+	void PrepareLightCulling();
+	void CreateDescriptorPool();
+
+private:
+	struct Compute
+	{
+
+	};
+	Compute m_compute;
 };
 
 

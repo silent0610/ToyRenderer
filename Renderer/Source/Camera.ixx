@@ -10,10 +10,9 @@ export module CameraMod;
 export class Camera
 {
 private:
-	float fov;
-	float znear, zfar;
 
-	
+
+
 	void updateViewMatrix()
 	{
 		glm::mat4 currentMatrix = matrices.view;
@@ -50,6 +49,8 @@ private:
 		}
 	};
 public:
+	float fov;
+	float znear, zfar;
 	enum CameraType { lookat, firstperson };
 	CameraType type = CameraType::lookat;
 
@@ -77,7 +78,7 @@ public:
 		bool down = false;
 	} keys;
 
-	glm::vec3 GetCameraPos() 
+	glm::vec3 GetCameraPos()
 	{
 		glm::vec3 pos = position;
 		pos.x = -pos.x;

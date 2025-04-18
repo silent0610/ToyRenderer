@@ -47,8 +47,8 @@ export struct VulkanDevice
 	VkCommandPool   CreateCommandPool(uint32_t queueFamilyIndex, VkCommandPoolCreateFlags createFlags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 	VkCommandBuffer CreateCommandBuffer(VkCommandBufferLevel level, VkCommandPool pool, bool begin = false);
 	VkCommandBuffer CreateCommandBuffer(VkCommandBufferLevel level, bool begin = false);
-	void            FlushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue queue, VkCommandPool pool, bool free = true);
-	void            FlushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue queue, bool free = true);
+	void            FlushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue queue, VkCommandPool pool, bool free = true, bool debug = false);
+	void            FlushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue queue, bool free = true, bool debug = false);
 	bool            ExtensionSupported(std::string extension);
 	VkFormat        GetSupportedDepthFormat(bool checkSamplingSupport);
 

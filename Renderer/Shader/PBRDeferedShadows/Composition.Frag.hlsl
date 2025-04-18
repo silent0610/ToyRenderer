@@ -20,6 +20,8 @@ SamplerState prefilteredMapSampler : register(s8);
 Texture2D textureMRAO : register(t9);
 SamplerState samplerMRAO : register(s9);
 
+// TextureCube textureCube : register(t10);
+// SamplerState samplerCube : register(s10);
 struct PushConsts
 {
 	[[vk::offset(0)]] float metallicFactor;
@@ -249,8 +251,13 @@ struct FSOutput
 FSOutput main([[vk::location(0)]] float2 inUV : TEXCOORD0)
 {
 	FSOutput output = (FSOutput)0;
-	// Get G-Buffer values
+
+	// float3 sttt = textureCube.Sample(samplerCube, float3(0, 0, 0)).rgb;
+	// output.lighting = float4(sttt, 1);
+	// return output;
+
 	float3 fragPos = textureposition.Sample(samplerposition, inUV).rgb;
+
 	if (length(fragPos) < 1e-5)
 	{
 		return output;
