@@ -1,0 +1,130 @@
+module;
+
+#include "vulkan/vulkan.h"
+
+export module GPUMipmapOctreeMod;
+
+import std;
+import DeviceMod;
+import BufferMod;
+import TextureMod;
+import GlmMod;
+
+// Node state enumeration
+export enum class NodeState : uint32_t {
+    EMPTY = 0, // All 8 child nodes are outside
+    MIXED = 1, // Some child nodes inside, some outside
+    SOLID = 2  // All 8 child nodes are inside
+};
+
+// Level info structure for uniform buffer (matches shader cbuffer)
+export struct LevelInfo
+{
+    uint32_t current_level; // Current mip level being built
+    uint32_t input_size;    // Input texture size
+    uint32_t output_size;   // Output texture size
+    uint32_t base_size;     // Base texture size (64)
+    glm::vec4 pad1;
+    glm::vec4 pad2;
+    glm::vec4 pad3;
+};
+
+// Octree node information for CPU queries
+export struct OctreeNode
+{
+    glm::uvec3 position; // Position in mip level
+    uint32_t level;      // Mip level (0=64³, 1=32³, ...)
+    NodeState state;     // EMPTY/MIXED/SOLID
+    float size;          // Node size in world units
+    glm::vec3 center;    // World coordinate center
+};
+
+// Configuration for node selection
+export struct NodeSelectionConfig
+{
+    uint32_t minLevel = 2;           // Minimum mip level to extract
+    uint32_t maxLevel = 5;           // Maximum mip level to extract
+    uint32_t maxNodesPerLevel = 100; // Max nodes per level
+    bool includeEmptyNodes = false;  // Include MIXED nodes
+    float minNodeSize = 0.1f;        // Minimum node size filter
+};
+
+// GPU Mipmap-based Octree
+export class GPUMipmapOctree
+{
+public:
+    GPUMipmapOctree(OldVulkanDevice *device, uint32_t baseSize = 64);
+    ~GPUMipmapOctree();
+
+    // Build mipmap octree from 3D binary texture
+    void BuildFromVoxelTexture(VkCommandBuffer commandBuffer, Texture *voxelTexture);
+
+    // Build mipmap octree with semaphore optimization (parallel levels)
+    void BuildFromVoxelTextureOptimized(VkCommandBuffer commandBuffer, Texture *voxelTexture, VkQueue computeQueue, VkCommandPool computeCommandPool);
+
+    // Query interface for CPU
+    std::vector<OctreeNode> FindSolidNodes(uint32_t minLevel = 2);
+    OctreeNode GetNode(glm::uvec3 position, uint32_t level);
+    std::vector<OctreeNode> ExtractNodes(const NodeSelectionConfig &config);
+
+    // Debug and validation functions
+    void ValidateResults();
+    void PrintOctreeStatistics();
+    std::vector<uint32_t> ReadMipLevel(uint32_t level);
+
+    // Getters
+    uint32_t GetBaseSize() const { return m_baseSize; }
+    uint32_t GetMaxLevel() const { return m_maxLevel; }
+    VkImageView GetMipLevelView(uint32_t level) const;
+    VkSampler GetSampler() const { return m_sampler; }
+
+private:
+    // Device reference
+    OldVulkanDevice *m_device;
+
+    // Configuration
+    uint32_t m_baseSize;                 // Base resolution (64)
+    uint32_t m_maxLevel;                 // Number of mip levels (6)
+    VkDeviceSize m_alignedLevelInfoSize; // Aligned size of LevelInfo for uniform buffer
+
+    // GPU resources
+    std::vector<Texture> m_mipLevels; // Mipmap pyramid textures
+    VkSampler m_sampler;              // Sampler for texture reads
+
+    // Uniform buffer for level info
+    VkBuffer m_uniformBuffer;
+    VkDeviceMemory m_uniformBufferMemory;
+    void *m_uniformBufferMapped;
+
+    // Compute pipeline
+    VkPipeline m_buildPipeline;
+    VkPipelineLayout m_pipelineLayout;
+    VkDescriptorSetLayout m_descriptorSetLayout;
+    VkDescriptorPool m_descriptorPool;
+    std::vector<VkDescriptorSet> m_descriptorSets; // One per level
+
+    // Internal methods
+    void CreateMipLevels();
+    void CreateUniformBuffer();
+    void CreateComputePipeline();
+    void CreateDescriptorSets();
+    void UpdateDescriptorSets(Texture *inputTexture);
+
+    // GPU building steps
+    void BuildMipLevel(VkCommandBuffer commandBuffer, uint32_t level);
+    void BuildMipLevelsBatch(VkCommandBuffer commandBuffer);               // OPTIMIZED: Batch dispatch version
+    void BuildMipLevelFast(VkCommandBuffer commandBuffer, uint32_t level); // Fast version without barriers
+    void InsertMemoryBarrier(VkCommandBuffer commandBuffer, uint32_t level);
+    void InsertBatchBarrier(VkCommandBuffer commandBuffer, uint32_t startLevel, uint32_t endLevel);
+
+    // Helper methods
+    uint32_t CalculateMipSize(uint32_t level) const;
+    glm::vec3 CalculateNodeCenter(glm::uvec3 position, uint32_t level) const;
+    float CalculateNodeSize(uint32_t level) const;
+
+    // Data readback helpers
+    void CreateStagingBuffer(VkDeviceSize size, VkBuffer &buffer, VkDeviceMemory &memory);
+    void CopyImageToBuffer(uint32_t level, VkBuffer stagingBuffer, uint32_t size);
+    void WaitForTransferComplete();
+    void ClearAllMipLevels();
+};

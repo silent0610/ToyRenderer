@@ -1,0 +1,33 @@
+{
+    "modelPath": [
+        "Models/cat/scene.gltf"
+    ],
+    "shaderPath": [
+        "BlinnPhong/Basic.Vert.spv",
+        "BlinnPhong/Basic.Frag.spv"
+    ],
+    "pipelineType": "basic",
+    "enableValidation": true,
+    "camera": {
+        "pos": [
+            0.0,
+            0.0,
+            -5.0
+        ],
+        "type": "lookat",
+        "flipY": true,
+        "fov": 90.0,
+        "znear": 0.1,
+        "zfar": 50.0,
+        "movementSpeed": 10.0
+    },
+    "light": {
+        "pos": [],
+        "color": []
+    },
+    "HBAOBase": {
+        "radius": 0.3,
+        "stepNum": 4,
+        "dirNum": 6
+    }
+}

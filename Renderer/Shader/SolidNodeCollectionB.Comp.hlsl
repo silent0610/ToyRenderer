@@ -1,0 +1,138 @@
+// SolidNodeCollectionB.Comp.hlsl
+// Pass 1-3: 收集候选节点（按level降序：3→2→1）
+// 只收集SOLID节点，不做包含检查
+
+// === Constants ===
+static const uint GRID_SIZE =32;  // Base grid size for Level 0 (32x32x32作为level0输入)
+#define EMPTY 0
+#define MIXED 1
+#define SOLID 2
+#define MAX_CANDIDATE_NODES 1000  // 候选节点缓冲区容量
+
+// === Data Structures ===
+struct SolidNode {
+    float3 center;      // World space center
+    float size;         // Cube edge length
+    uint level;         // Mipmap level
+    uint padding[3];    // 16-byte alignment
+};
+
+// === Resource Bindings ===
+RWStructuredBuffer<uint> candidateCountBuffer : register(u0);        // Candidate node count
+RWStructuredBuffer<SolidNode> candidateNodesBuffer : register(u1);   // Candidate nodes buffer
+
+// Mipmap octree textures (read-only)
+Texture3D<uint2> mipmapTexture0 : register(t2); // Level 0: 64x64x64
+Texture3D<uint2> mipmapTexture1 : register(t3); // Level 1: 32x32x32
+Texture3D<uint2> mipmapTexture2 : register(t4); // Level 2: 16x16x16
+Texture3D<uint2> mipmapTexture3 : register(t5); // Level 3: 8x8x8
+
+// Push constants structure
+struct PushConstants {
+    uint currentLevel;  // Current level being processed (3,2,1 only)
+};
+
+// Push constant declaration
+[[vk::push_constant]]
+PushConstants pushConstants;
+
+// === Utility Functions ===
+
+// Calculate world space center from grid coordinates and level
+float3 CalculateWorldCenter(uint3 coord, uint level) {
+    float levelSize = float(GRID_SIZE >> level); // Size of grid at this level
+
+    // Convert grid coordinates to normalized [-1, 1] space
+    float3 normalizedCoord = (float3(coord) + 0.5f) / levelSize * 2.0f - 1.0f;
+    return normalizedCoord;
+}
+
+// Calculate cube edge length in world space
+float CalculateCubeSize(uint level) {
+    float levelSize = float(GRID_SIZE >> level); // Size of grid at this level
+    return 2.0f / levelSize;              // Size of each cube in world space
+}
+
+// Create a solid node from grid coordinates
+SolidNode CreateNode(uint3 coord, uint level) {
+    SolidNode node;
+    node.center = CalculateWorldCenter(coord, level);
+    node.size = CalculateCubeSize(level);
+    node.level = level;
+    node.padding[0] = 0;
+    node.padding[1] = 0;
+    node.padding[2] = 0;
+    return node;
+}
+
+// Read mipmap texture based on current level
+uint2 ReadCurrentLevelTexture(uint3 coord) {
+    switch(pushConstants.currentLevel) {
+        case 1: return mipmapTexture1.Load(int4(coord, 0));
+        case 2: return mipmapTexture2.Load(int4(coord, 0));
+        case 3: return mipmapTexture3.Load(int4(coord, 0));
+        default: return EMPTY;
+    }
+}
+uint ReadPrevLevelTexture(uint3 coord) {
+    switch(pushConstants.currentLevel) {
+        case 1: return mipmapTexture2.Load(int4(coord, 0)).y;
+        case 2: return mipmapTexture3.Load(int4(coord, 0)).y;
+        case 3: return 0;
+        default: return EMPTY;
+    }
+}
+uint RandomInt(uint3 coord) {
+    uint hash = coord.x + coord.y * 5 + coord.z * 9;  // 基于线程ID创建种子
+    hash = (hash ^ 61) ^ (hash >> 16);  // 位操作混合
+    hash = hash + (hash << 3);  // 扩展哈希值
+    hash = hash ^ (hash >> 4);  // 进一步混合
+    hash = hash * 0x27d4eb2f;  // 常数乘法扰动
+    hash = hash ^ (hash >> 15);  // 最后的扰动
+
+    // 映射到 [0, 255] 范围
+    return hash % 256;  // 取模256，得到0到255之间的整数
+}
+// === Main Compute Shader ===
+[numthreads(4, 4, 4)]
+void main(uint3 id : SV_DispatchThreadID) {
+    uint3 coord = id;
+
+    // Step 1: Boundary check
+    uint levelSize = GRID_SIZE >> pushConstants.currentLevel;
+    if(any(coord >= levelSize)) return;
+
+    // Step 2: Read current position node value
+    uint nodeValue = ReadCurrentLevelTexture(coord).x;
+    if(nodeValue != SOLID) return;  // Only collect SOLID nodes
+
+    uint coordPrev = coord/2;
+    uint complexity = ReadPrevLevelTexture(coordPrev);
+
+    // 计算距离中心的权重 (远离中心权重更高)
+    float3 normalizedCoord = (float3(coord) + 0.5f) / float(levelSize); // 归一化到[0,1]
+    float3 centerOffset = abs(normalizedCoord - 0.5f); // 距离中心的偏移量 [0, 0.5]
+    float distanceWeight = (centerOffset.x + centerOffset.y + centerOffset.z) / 1.5f; // 归一化到[0,1]
+
+    // 结合复杂度和距离权重
+    uint finalComplexity = uint(float(complexity) * (0.3f + 0.7f * distanceWeight)); // 30%基础 + 70%距离权重
+
+    // 复杂度选择
+    if(RandomInt(coord) > finalComplexity) {
+        return;
+    }
+    // Step 3: Create candidate node
+    SolidNode candidate = CreateNode(coord, pushConstants.currentLevel);
+    candidate.center.y *= -1.0; // Invert Y to match world coordinate system
+    candidate.center.z *= -1.0; // Invert Z to match world coordinate system
+    // Step 4: Add to candidate buffer (simple append with atomic counter)
+    uint candidateIndex;
+    InterlockedAdd(candidateCountBuffer[0], 1, candidateIndex);
+
+    // Only write if within buffer capacity
+    if(candidateIndex < MAX_CANDIDATE_NODES) {
+        GroupMemoryBarrierWithGroupSync();
+        candidateNodesBuffer[candidateIndex] = candidate;
+        AllMemoryBarrierWithGroupSync();
+    }
+}
