@@ -5,7 +5,7 @@
 
 // 获取体素值
 float GetVoxel(int voxelIndex) {
-    return sdfBufferRead[voxelIndex];
+    return SdfBuffer[voxelIndex];
 }
 
 // 跳跃洪水初始化 - 每个体素一个线程
@@ -18,5 +18,5 @@ void main(uint GIndex : SV_GroupIndex, uint3 GId : SV_GroupID, uint3 DTid : SV_D
     // TODO: 实现跳跃洪水初始化逻辑
     // 将距离表面较近的体素标记为种子
     float distance = GetVoxel(voxelIndex);
-    jumpBufferRW[voxelIndex] = distance > pc.cellSize * SQRT_3 ? 0 : voxelIndex;
+    JumpBufferRW[voxelIndex] = distance > pc.cellSize * SQRT_3 ? 0 : voxelIndex;
 }

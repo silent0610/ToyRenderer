@@ -319,7 +319,7 @@ If you need signed distance or just need a limited shell around your surface, us
             }
             cmd.EndSample(Labels.LinearFloodStep);
         }
-        else
+        else // jumpflood
         {
             cmd.BeginSample(Labels.JumpFloodInitialize);
             kernel = m_JumpFloodInitialize;

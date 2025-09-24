@@ -1,5 +1,6 @@
 // Finalize.Comp.hlsl - MeshToSDF完成处理
-// 完成SDF距离计算的后处理
+// 将用于比较的float值(uint格式)重新转换回float格式.
+// 对于同样的32位数据, uint和float的解释方式不同
 
 #include "MeshToSDFCommon.hlsl"
 
@@ -10,8 +11,7 @@ void main(uint GIndex : SV_GroupIndex, uint3 GId : SV_GroupID, uint3 DTid : SV_D
     if (sdfCellIndex >= pc.voxelResolution.w)
         return;
 
-    // TODO: 实现完成处理逻辑
     // 将uint格式的距离转换回float格式
-    uint distance = sdfBuffer[sdfCellIndex];
-    sdfBuffer[sdfCellIndex] = IFloatFlip3(distance);
+    uint distance = SignedDistanceField[sdfCellIndex];
+    SignedDistanceField[sdfCellIndex] = IFloatFlip3(distance);
 }

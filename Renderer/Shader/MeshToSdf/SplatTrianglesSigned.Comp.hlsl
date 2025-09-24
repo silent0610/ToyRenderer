@@ -56,7 +56,7 @@ void main(uint GIndex : SV_GroupIndex, uint3 GId : SV_GroupID, uint3 DTid : SV_D
 
                 float distance = SignedDistancePointToTriangle(cellPosition,tri0,tri1,tri2);
                 uint distanceAsUint = FloatFlip3(distance);
-                InterlockedMin(sdfBuffer[gridCellIndex], distanceAsUint);
+                InterlockedMin(SignedDistanceField[gridCellIndex], distanceAsUint);
             }
         }
     }

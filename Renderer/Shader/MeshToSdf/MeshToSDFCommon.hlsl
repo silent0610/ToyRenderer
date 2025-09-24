@@ -30,17 +30,17 @@ struct MeshToSDFConstants {
 [[vk::push_constant]] MeshToSDFConstants pc;
 
 // 通用缓冲区绑定
-RWStructuredBuffer<uint> sdfBuffer : register(u0);           // 主SDF缓冲区（原子操作用）
-RWStructuredBuffer<float> sdfBufferRW : register(u1);        // 读写SDF缓冲区（洪水填充用）
-StructuredBuffer<float> sdfBufferRead : register(t2);        // 只读SDF缓冲区
-ByteAddressBuffer vertexBuffer : register(t3);               // 顶点缓冲区
-ByteAddressBuffer indexBuffer : register(t4);                // 索引缓冲区
-RWTexture3D<float> outputTexture : register(u5);             // 输出3D纹理
+RWStructuredBuffer<uint> SignedDistanceField : register(u0);           // 主SDF缓冲区（原子操作用）
+StructuredBuffer<float> SdfBuffer : register(t1);        // 只读SDF缓冲区
+RWStructuredBuffer<float> SdfBufferRW : register(u2);        // 读写SDF缓冲区（洪水填充用）
+ByteAddressBuffer VertexBuffer : register(t3);               // 顶点缓冲区
+ByteAddressBuffer IndexBuffer : register(t4);                // 索引缓冲区
+RWTexture3D<float> OutputTexture : register(u5);             // 输出3D纹理
 
 // 跳跃洪水算法缓冲区
-RWStructuredBuffer<int> jumpBuffer : register(u6);
-RWStructuredBuffer<int> jumpBufferRW : register(u7);
-StructuredBuffer<int> jumpBufferRead : register(t8);
+StructuredBuffer<int> JumpBuffer : register(t6);
+RWStructuredBuffer<int> JumpBufferRW : register(u7);
+
 
 // 常量定义
 #define MARGIN pc.cellSize
@@ -55,16 +55,16 @@ uint GetIndex(uint i) {
     if (pc.indexFormat16bit) {
         uint entryIndex = i >> 1u;
         uint entryOffset = i & 1u;
-        uint read = indexBuffer.Load(entryIndex << 2);
+        uint read = IndexBuffer.Load(entryIndex << 2);
         return entryOffset == 1u ? ((read >> 16) & 0xffff) : read & 0xffff;
     } else {
-        return indexBuffer.Load(i << 2);
+        return IndexBuffer.Load(i << 2);
     }
 }
 
 // 获取顶点位置
 float3 GetPos(uint i) {
-    return asfloat(vertexBuffer.Load3(i * pc.vertexBufferStride + pc.vertexBufferPosOffset));
+    return asfloat(VertexBuffer.Load3(i * pc.vertexBufferStride + pc.vertexBufferPosOffset));
 }
 
 // 获取体素索引

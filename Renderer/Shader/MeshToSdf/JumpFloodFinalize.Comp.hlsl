@@ -5,12 +5,12 @@
 
 // 获取跳跃缓冲区值
 int GetVoxelJump(int voxelIndex) {
-    return jumpBufferRead[voxelIndex];
+    return JumpBuffer[voxelIndex];
 }
 
 // 获取体素值
 float GetVoxel(int voxelIndex) {
-    return sdfBufferRead[voxelIndex];
+    return SdfBuffer[voxelIndex];
 }
 
 // 获取体素坐标
@@ -25,11 +25,11 @@ void main(uint GIndex : SV_GroupIndex, uint3 GId : SV_GroupID, uint3 DTid : SV_D
     if (voxelIndex >= pc.voxelResolution.w)
         return;
 
-    // TODO: 实现跳跃洪水完成逻辑
-    // 1. 获取最近种子体素索引
-    // 2. 计算到种子体素的距离
-    // 3. 加上种子体素到表面的距离
-    // 4. 更新SDF缓冲区
-
-    sdfBufferRW[voxelIndex] = 0.0f;
+    int closestSeedVoxelIndex = GetVoxelJump(voxelIndex);
+    float distanceToClosestSeedVoxel = length(GetVoxelCoords(voxelIndex) - GetVoxelCoords(closestSeedVoxelIndex)) * pc.cellSize;
+    float distanceOfClosestSeedVoxelToSurface = GetVoxel(closestSeedVoxelIndex);
+    
+    // Jump Flood通常用于无符号距离场，所以直接相加
+    // 对于有符号距离场，这里的逻辑可能需要调整符号
+    SdfBufferRW[voxelIndex] = distanceToClosestSeedVoxel + distanceOfClosestSeedVoxelToSurface;
 }
