@@ -24,13 +24,18 @@ public:
 		Signed = 0,
 		Unsigned = 1
 	};
-
+    enum class FloodFillQuality
+    {
+        Normal = 0,
+        Ultra = 1
+    };
 	struct SdfParam
 	{
 		int voxelResolution{64};
 		float size{5.0f};
 		FloodMode floodMode{FloodMode::Jump};
 		DistanceMode distanceMode{DistanceMode::Signed};
+        FloodFillQuality FloodFillQuality{FloodFillQuality::Normal};
 		int floodIterations{8};
 		float offset{0.0f};
 	};
@@ -46,6 +51,8 @@ public:
 
 private:
 	void CreateSdfResource();
+
+	void UpdateDescriptorSet();
 
 	void CreateComputePipeline();
 
@@ -94,8 +101,14 @@ private:
 
 	struct DescriptorSets
 	{
-		VkDescriptorSetLayout layout{};
-		VkDescriptorSet set{};
+		VkDescriptorSetLayout NormalLayout{};
+        VkDescriptorSetLayout PingPongLayout{};
+        VkDescriptorSetLayout JumpPingPongLayout{};
+		VkDescriptorSet NormalSet{};
+        VkDescriptorSet PingSet{};
+        VkDescriptorSet PongSet{};
+        VkDescriptorSet JumpPingSet{};
+        VkDescriptorSet JumpPongSet{};
 	} descriptor_{};
 
 	SdfParam sdfParam_{};

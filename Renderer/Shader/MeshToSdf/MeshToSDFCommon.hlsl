@@ -30,16 +30,19 @@ struct MeshToSDFConstants {
 [[vk::push_constant]] MeshToSDFConstants pc;
 
 // 通用缓冲区绑定
-RWStructuredBuffer<uint> SignedDistanceField : register(u0);           // 主SDF缓冲区（原子操作用）
-StructuredBuffer<float> SdfBuffer : register(t1);        // 只读SDF缓冲区
-RWStructuredBuffer<float> SdfBufferRW : register(u2);        // 读写SDF缓冲区（洪水填充用）
-ByteAddressBuffer VertexBuffer : register(t3);               // 顶点缓冲区
-ByteAddressBuffer IndexBuffer : register(t4);                // 索引缓冲区
-RWTexture3D<float> OutputTexture : register(u5);             // 输出3D纹理
+// Normal space0
+RWStructuredBuffer<uint> SignedDistanceField : register(u0,space0);           // 主SDF缓冲区（原子操作用）
+ByteAddressBuffer VertexBuffer : register(t1,space0);               // 顶点缓冲区
+ByteAddressBuffer IndexBuffer : register(t2,space0);                // 索引缓冲区
+RWTexture3D<float> OutputTexture : register(t3, space0);             // 输出3D纹理
 
-// 跳跃洪水算法缓冲区
-StructuredBuffer<int> JumpBuffer : register(t6);
-RWStructuredBuffer<int> JumpBufferRW : register(u7);
+// PingPong space1
+StructuredBuffer<float> SdfBuffer : register(t0,space1);        // 只读SDF缓冲区
+RWStructuredBuffer<float> SdfBufferRW : register(u1, space1);        // 读写SDF缓冲区（洪水填充用）
+
+// 跳跃洪水算法缓冲区 PingPong space2
+StructuredBuffer<int> JumpBuffer : register(t0,space2);
+RWStructuredBuffer<int> JumpBufferRW : register(u1, space2);
 
 
 // 常量定义
