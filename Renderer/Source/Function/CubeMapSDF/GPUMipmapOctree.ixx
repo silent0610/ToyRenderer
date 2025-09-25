@@ -80,7 +80,7 @@ public:
 
 private:
     // Device reference
-    OldVulkanDevice *m_device;
+    OldVulkanDevice *m_device{};
 
     // Configuration
     uint32_t m_baseSize;                 // Base resolution (64)

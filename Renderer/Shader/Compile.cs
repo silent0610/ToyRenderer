@@ -6,7 +6,7 @@ using System.IO;
 using System.Linq;
 
 
-public static void CompileFile(string filePath, bool isForce)
+static void CompileFile(string filePath, bool isForce)
 {
     // 检查文件是否存在
     if (!File.Exists(filePath))
@@ -117,7 +117,7 @@ public static void CompileFile(string filePath, bool isForce)
 
 // 1. 编译当前目录下的 .hlsl 文件
 string currentDir = Directory.GetCurrentDirectory();
-Console.WriteLine("Starting shader compilation... in"+currentDir);
+Console.WriteLine("Starting shader compilation... in" + currentDir);
 var filesInCurrentDir = Directory.GetFiles(currentDir, "*.hlsl");
 foreach (var file in filesInCurrentDir)
 {

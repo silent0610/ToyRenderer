@@ -250,15 +250,15 @@ void Renderer::InitVulkan()
 	RecordUnifiedGPUPipelineCommands();
 	OffscreenWork();
 
-	//MeshToSdf
+	// MeshToSdf
 	InitializeMeshToSdfOperator();
 }
 void Renderer::InitializeMeshToSdfOperator()
 {
-	
+
 	meshToSdfOperator_ = new MeshToSdf{};
 	meshToSdfOperator_->Initialize(m_vulkanDevice, m_queues.graphicsQueue, m_descriptorPool);
-	
+	meshToSdfCommandBuffer_ = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, false);
 }
 void Renderer::OffscreenWork()
 {
@@ -1546,7 +1546,7 @@ void Renderer::DisplayUI(UIOverlay *overlay)
 		// Done
 		if (overlay->Header("AO"))
 		{
-			if (overlay->ComboBox("Switch", &Settings.AOSetting.UseAO, {"None", "SSAO", "HBAO", "GTAO","SDFAO"}))
+			if (overlay->ComboBox("Switch", &Settings.AOSetting.UseAO, {"None", "SSAO", "HBAO", "GTAO", "SDFAO"}))
 			{
 				PreparePipelineLighting();
 				UpdateDescritporSetLighting();
@@ -1747,6 +1747,16 @@ void Renderer::MainLoop()
 	// Test voxelization once at startup
 	TestVoxelization();
 
+	{
+        BeginDebugLabel(meshToSdfCommandBuffer_, "MeshToSDF");
+        vkResetCommandBuffer(meshToSdfCommandBuffer_, 0);
+		VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
+		Tool::CheckResult(vkBeginCommandBuffer(meshToSdfCommandBuffer_, &cmdBufInfo));
+		meshToSdfOperator_->GenerateSdf(meshToSdfCommandBuffer_, &m_glTFModel, glm::mat4(1.0f));
+        m_vulkanDevice->FlushCommandBuffer(meshToSdfCommandBuffer_, m_queues.graphicsQueue, false, false);
+        EndDebugLabel(meshToSdfCommandBuffer_);
+	}
+
 	while (!glfwWindowShouldClose(m_window))
 	{
 		auto tStart = std::chrono::high_resolution_clock::now();
@@ -1864,9 +1874,9 @@ void Renderer::PrepareFrame()
 void Renderer::Draw()
 {
 
-	// 
-	// 
-	
+	//
+	//
+
 	// others
 	// RenderToCube(m_glTFModel, glm::vec3(0), "");
 
@@ -2392,22 +2402,22 @@ void Renderer::UpdateVoxelizationConstants()
 	glm::vec3 modelMin = m_glTFModel.actualDimensionsMin;
 	glm::vec3 modelMax = m_glTFModel.actualDimensionsMax;
 
-	if (m_frameCounter == 1)
-	{
-		// 调试输出：检查包围盒数据
-		printf("DEBUG Voxelization: Original bounds Min=(%.3f, %.3f, %.3f), Max=(%.3f, %.3f, %.3f)\n",
-			   modelMin.x, modelMin.y, modelMin.z, modelMax.x, modelMax.y, modelMax.z);
-	}
+	// if (m_frameCounter == 1)
+	//{
+	//	// 调试输出：检查包围盒数据
+	//	printf("DEBUG Voxelization: Original bounds Min=(%.3f, %.3f, %.3f), Max=(%.3f, %.3f, %.3f)\n",
+	//		   modelMin.x, modelMin.y, modelMin.z, modelMax.x, modelMax.y, modelMax.z);
+	// }
 
 	// 修复：确保Min确实是最小值，Max确实是最大值
 	glm::vec3 correctedMin = glm::min(modelMin, modelMax);
 	glm::vec3 correctedMax = glm::max(modelMin, modelMax);
-	if (m_frameCounter == 1)
-	{
-		printf("DEBUG Voxelization: Corrected bounds Min=(%.3f, %.3f, %.3f), Max=(%.3f, %.3f, %.3f)\n",
-			   correctedMin.x, correctedMin.y, correctedMin.z, correctedMax.x, correctedMax.y, correctedMax.z);
-	}
-	// 使用修正后的值
+	// if (m_frameCounter == 1)
+	//{
+	//	printf("DEBUG Voxelization: Corrected bounds Min=(%.3f, %.3f, %.3f), Max=(%.3f, %.3f, %.3f)\n",
+	//		   correctedMin.x, correctedMin.y, correctedMin.z, correctedMax.x, correctedMax.y, correctedMax.z);
+	// }
+	//  使用修正后的值
 	modelMin = correctedMin;
 	modelMax = correctedMax;
 
@@ -2440,15 +2450,15 @@ void Renderer::UpdateVoxelizationConstants()
 		// 3. 计算包含边距的半尺寸
 		float margin = maxSize * 0.1f; // 10% 边距
 		float halfSizeWithMargin = (maxSize + margin) * 0.5f;
-		if (m_frameCounter == 1)
-		{ // 调试输出：检查计算的参数
-			printf("DEBUG Voxelization: modelCenter=(%.3f, %.3f, %.3f)\n",
-				   modelCenter.x, modelCenter.y, modelCenter.z);
-			printf("DEBUG Voxelization: modelSize=(%.3f, %.3f, %.3f), maxSize=%.3f\n",
-				   modelSize.x, modelSize.y, modelSize.z, maxSize);
-			printf("DEBUG Voxelization: margin=%.3f, halfSizeWithMargin=%.3f\n",
-				   margin, halfSizeWithMargin);
-		}
+		// if (m_frameCounter == 1)
+		//{ // 调试输出：检查计算的参数
+		//	printf("DEBUG Voxelization: modelCenter=(%.3f, %.3f, %.3f)\n",
+		//		   modelCenter.x, modelCenter.y, modelCenter.z);
+		//	printf("DEBUG Voxelization: modelSize=(%.3f, %.3f, %.3f), maxSize=%.3f\n",
+		//		   modelSize.x, modelSize.y, modelSize.z, maxSize);
+		//	printf("DEBUG Voxelization: margin=%.3f, halfSizeWithMargin=%.3f\n",
+		//		   margin, halfSizeWithMargin);
+		// }
 
 		// 4. 以模型中心来创建正交投影盒子
 		float left = modelCenter.x - halfSizeWithMargin;
@@ -2457,11 +2467,11 @@ void Renderer::UpdateVoxelizationConstants()
 		float bottom = modelCenter.y + halfSizeWithMargin; // 原来的top
 		float nearP = modelCenter.z - halfSizeWithMargin;
 		float farP = modelCenter.z + halfSizeWithMargin;
-		if (m_frameCounter == 1)
-		{
-			printf("DEBUG Voxelization: Projection bounds: X=[%.3f, %.3f], Y=[%.3f, %.3f], Z=[%.3f, %.3f]\n",
-				   left, right, bottom, top, nearP, farP);
-		}
+		// if (m_frameCounter == 1)
+		//{
+		//	printf("DEBUG Voxelization: Projection bounds: X=[%.3f, %.3f], Y=[%.3f, %.3f], Z=[%.3f, %.3f]\n",
+		//		   left, right, bottom, top, nearP, farP);
+		// }
 		m_voxelizationPass.constants.projection = glm::ortho(left, right, bottom, top, nearP, farP);
 	}
 
@@ -3461,7 +3471,7 @@ void Renderer::BuildDeferredCommandBuffer()
 	}
 	if (Settings.AOSetting.UseAO == 4)
 	{
-		//SdfAO
+		// SdfAO
 		renderPassBeginInfo.renderPass = sdfAOPass_.frameBuffer->renderPass;
 		renderPassBeginInfo.framebuffer = sdfAOPass_.frameBuffer->framebuffer;
 		renderPassBeginInfo.clearValueCount = 1;
@@ -8210,7 +8220,6 @@ void Renderer::UpdateDescriptorSetCBF()
 					sdfAOPass_.frameBuffer->sampler,
 					sdfAOPass_.frameBuffer->attachments[0].view,
 					VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
 		}
 		VkWriteDescriptorSet write = Init::writeDescriptorSet(m_CBFPass.SetX, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &texDescriptorAOZ);
 		vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
@@ -10175,7 +10184,6 @@ void Renderer::RecordUnifiedGPUPipelineCommands()
 		EndDebugLabel(cmd);
 	}
 
-
 	EndDebugLabel(cmd); // 结束统一GPU管线标签
 
 	// 结束命令录制
@@ -11500,7 +11508,7 @@ void Renderer::CreateFinalSDFSampler()
 	samplerInfo.anisotropyEnable = VK_FALSE; // No anisotropy needed for SDF
 	samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
 	samplerInfo.unnormalizedCoordinates = VK_FALSE; // Use [0,1] coordinates
-	samplerInfo.compareEnable = VK_FALSE; // No depth comparison
+	samplerInfo.compareEnable = VK_FALSE;			// No depth comparison
 	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 	samplerInfo.mipLodBias = 0.0f;
 	samplerInfo.minLod = 0.0f;
@@ -11608,8 +11616,8 @@ void Renderer::CreateSDFFusionPipeline()
 void Renderer::InitializeSDFFusionPass()
 {
 	// Step 1: Create required resources
-	//CreateFinalSDFTexture();
-	//CreateFinalSDFSampler(); // Create sampler for SDF AO Pass sampling
+	// CreateFinalSDFTexture();
+	// CreateFinalSDFSampler(); // Create sampler for SDF AO Pass sampling
 	CreateDepthCubemapSampler();
 	CreateSDFFusionPipeline();
 
@@ -11995,7 +12003,7 @@ void Renderer::UpdateCBufferSdfAO()
 	sdfAOPass_.buffers.cBufferData.falloffPower = 1.0f;
 	sdfAOPass_.buffers.cBufferData.voxelSize = 1.0f;
 	sdfAOPass_.buffers.cBufferData.sdfTextureSize = m_multiViewDepthSDF4C.sdfFusionPass.SDF_RESOLUTION;
-	sdfAOPass_.buffers.cBufferData.minBounds = glm::vec4(-2.5f,2.5f, 2.5f,1.0f);
+	sdfAOPass_.buffers.cBufferData.minBounds = glm::vec4(-2.5f, 2.5f, 2.5f, 1.0f);
 	sdfAOPass_.buffers.cBufferData.maxBounds = glm::vec4(2.5f, -2.5f, -2.5f, 1.0f);
 	sdfAOPass_.buffers.cBufferData.noiseScale = glm::vec2(1.0f, 1.0f);
 	memcpy(sdfAOPass_.buffers.cBuffer.mapped, &sdfAOPass_.buffers.cBufferData, sizeof(SdfAOPass::CBufferDesc));
@@ -12014,7 +12022,7 @@ void Renderer::AllocateDescriptorSetSdfAO()
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2),
 		// depth
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 3),
-		// SDF 
+		// SDF
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 4),
 		// noise texture
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 5),
@@ -12023,7 +12031,7 @@ void Renderer::AllocateDescriptorSetSdfAO()
 	};
 	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
 	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &sdfAOPass_.setLayout));
-	
+
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &sdfAOPass_.setLayout, 1);
 	// Deferred composition
 	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &sdfAOPass_.set));
@@ -12054,7 +12062,7 @@ void Renderer::AllocateDescriptorSetSdfAO()
 		Init::writeDescriptorSet(sdfAOPass_.set, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, &texDescriptorDepth),
 		Init::writeDescriptorSet(sdfAOPass_.set, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4, &m_multiViewDepthSDF4C.sdfFusionPass.finalSDFDescriptor),
 		Init::writeDescriptorSet(sdfAOPass_.set, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, &m_blueNoise.descriptor),
-		Init::writeDescriptorSet(sdfAOPass_.set, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6, &m_sharedBuffers.ConstBufferCamera.descriptor) };
+		Init::writeDescriptorSet(sdfAOPass_.set, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6, &m_sharedBuffers.ConstBufferCamera.descriptor)};
 	vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
 
@@ -12071,7 +12079,7 @@ void Renderer::PreparePipelineSdfAO()
 	VkPipelineDepthStencilStateCreateInfo depthStencilStateCI = Init::pipelineDepthStencilStateCreateInfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL);
 	VkPipelineViewportStateCreateInfo viewportStateCI = Init::pipelineViewportStateCreateInfo(1, 1, 0);
 	VkPipelineMultisampleStateCreateInfo multisampleStateCI = Init::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_1_BIT, 0);
-	std::vector<VkDynamicState> dynamicStateEnables = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+	std::vector<VkDynamicState> dynamicStateEnables = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 	VkPipelineDynamicStateCreateInfo dynamicStateCI = Init::pipelineDynamicStateCreateInfo(dynamicStateEnables);
 
 	std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;

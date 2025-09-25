@@ -2032,4 +2032,5 @@ private:
 private:
 	void InitializeMeshToSdfOperator();
 	MeshToSdf* meshToSdfOperator_{};
+    VkCommandBuffer meshToSdfCommandBuffer_{};
 };

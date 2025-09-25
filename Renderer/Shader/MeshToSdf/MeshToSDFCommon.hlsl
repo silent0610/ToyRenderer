@@ -34,7 +34,7 @@ struct MeshToSDFConstants {
 RWStructuredBuffer<uint> SignedDistanceField : register(u0,space0);           // 主SDF缓冲区（原子操作用）
 ByteAddressBuffer VertexBuffer : register(t1,space0);               // 顶点缓冲区
 ByteAddressBuffer IndexBuffer : register(t2,space0);                // 索引缓冲区
-RWTexture3D<float> OutputTexture : register(t3, space0);             // 输出3D纹理
+RWTexture3D<float> OutputTexture : register(u3, space0);             // 输出3D纹理
 
 // PingPong space1
 StructuredBuffer<float> SdfBuffer : register(t0,space1);        // 只读SDF缓冲区

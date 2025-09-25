@@ -38,19 +38,19 @@ public:
         other.pool_ = nullptr;
     }
     
-    PooledCommandBuffer& operator=(PooledCommandBuffer&& other) noexcept {
-        if (this != &other) {
-            // Return current buffer before taking new one
-            if (commandBuffer_ && pool_) {
-                pool_->ReturnBuffer(std::move(commandBuffer_));
-            }
-            
-            commandBuffer_ = std::move(other.commandBuffer_);
-            pool_ = other.pool_;
-            other.pool_ = nullptr;
-        }
-        return *this;
-    }
+    //PooledCommandBuffer& operator=(PooledCommandBuffer&& other) noexcept {
+    //    if (this != &other) {
+    //        // Return current buffer before taking new one
+    //        if (commandBuffer_ && pool_) {
+    //            pool_->ReturnBuffer(std::move(commandBuffer_));
+    //        }
+    //        
+    //        commandBuffer_ = std::move(other.commandBuffer_);
+    //        pool_ = other.pool_;
+    //        other.pool_ = nullptr;
+    //    }
+    //    return *this;
+    //}
     
     // Access the underlying CommandBuffer
     RhiCommandBuffer* operator->() const { return commandBuffer_.get(); }
