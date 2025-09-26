@@ -8,22 +8,22 @@
 
 // 推送常量结构 - 所有MeshToSDF着色器共用
 struct MeshToSDFConstants {
-    float4x4 worldToLocal;
+    float4x4 worldToLocal; // 将模型顶点从模型空间转换到世界空间再到局部SDF坐标系.
     int4 voxelResolution;      // w = total voxel count
     float maxDistance;
     float initialDistance;
-    float offset;
+    float offset;  // 控制整体sdf值的offset, 即 sdf = sdf + offset.
     float padding1;
-    float4 origin;
+    float4 origin;  // sdf局部坐标系的最小角点位置, (-2.5,-2.5,-2.5)
     float cellSize;
     int numCellsX;
     int numCellsY;
     int numCellsZ;
-    int indexFormat16bit;
+    int indexFormat16bit; // 为1代表index为16位
     int vertexBufferStride;
     int vertexBufferPosOffset;
-    int jumpOffset;
-    int4 jumpOffsetInterleaved;
+    int jumpOffset; // ultra使用的offset
+    int4 jumpOffsetInterleaved; // 普通质量使用的offset
     int dispatchSizeX;
 };
 
@@ -55,6 +55,7 @@ RWStructuredBuffer<int> JumpBufferRW : register(u1, space2);
 
 // 获取索引（支持16位和32位索引）
 uint GetIndex(uint i) {
+    // 如果16位
     if (pc.indexFormat16bit) {
         uint entryIndex = i >> 1u;
         uint entryOffset = i & 1u;

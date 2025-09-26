@@ -5,3 +5,4 @@ TabWidth: 4
 UseTab: Never
 ColumnLimit: 150   # 一行最多字符数（可调，建议 100~120）
 AccessModifierOffset: -4
+PointerAlignment: Left

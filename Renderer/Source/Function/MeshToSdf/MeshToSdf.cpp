@@ -8,12 +8,12 @@ MeshToSdf::MeshToSdf() : device_(nullptr), queue_(VK_NULL_HANDLE), currentMesh_(
 {
     sdfParam_ = {};
 }
-void MeshToSdf::Initialize(OldVulkanDevice *device, VkQueue queue, VkDescriptorPool descriptorPool)
+void MeshToSdf::Initialize(OldVulkanDevice* device, VkQueue queue, VkDescriptorPool descriptorPool, vkglTF::Model* mesh)
 {
     Log::Info("Initializing MeshToSdf");
     device_ = device;
     queue_ = queue;
-
+    currentMesh_ = mesh;
     // 纹理资源
     CreateSdfResource();
 
@@ -32,11 +32,9 @@ void MeshToSdf::Initialize(OldVulkanDevice *device, VkQueue queue, VkDescriptorP
 }
 
 // 2. GenerateSdf 方法 - 执行SDF生成管线
-void MeshToSdf::GenerateSdf(VkCommandBuffer cmd, vkglTF::Model *mesh, const glm::mat4 &worldToLocal)
+void MeshToSdf::GenerateSdf(VkCommandBuffer cmd, const glm::mat4& worldToLocal)
 {
-    currentMesh_ = mesh;
     std::array<VkDescriptorSet, 3> sets{descriptor_.NormalSet, descriptor_.PingSet, descriptor_.JumpPingSet};
-
 
     // 准备push constant数据
     MeshToSDFConstant constants{};
@@ -71,6 +69,7 @@ void MeshToSdf::GenerateSdf(VkCommandBuffer cmd, vkglTF::Model *mesh, const glm:
     memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
+    device_->BeginDebugLabel(cmd, "1.Initializa");
     // 1.Initialize
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines_.initialize);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelinelayouts_.general, 0, sets.size(), sets.data(), 0, nullptr);
@@ -78,31 +77,37 @@ void MeshToSdf::GenerateSdf(VkCommandBuffer cmd, vkglTF::Model *mesh, const glm:
     vkCmdDispatch(cmd, constants.dispatchSizeX, 1, 1);
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &memoryBarrier, 0, nullptr, 0,
                          nullptr);
+    device_->EndDebugLabel(cmd);
 
     // 2.SplatTriangle 即得到种子点
     uint32_t triangleCount = static_cast<uint32_t>(currentMesh_->indices.count) / 3;
     uint32_t threadGroupCountTriangles = (triangleCount + 63) / 64;
     VkPipeline splatPipeline{sdfParam_.distanceMode == DistanceMode::Signed && sdfParam_.floodMode == FloodMode::Linear ? pipelines_.splateSigned
                                                                                                                         : pipelines_.splatUnsigned};
+    device_->BeginDebugLabel(cmd, "2.SplatTriangle");
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, splatPipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelinelayouts_.general, 0, sets.size(), sets.data(), 0, nullptr);
     vkCmdDispatch(cmd, threadGroupCountTriangles, 1, 1);
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &memoryBarrier, 0, nullptr, 0,
                          nullptr);
+    device_->EndDebugLabel(cmd);
 
     // 3. Finaliz  将uint转换为float的字节流
+    device_->BeginDebugLabel(cmd, "3.Finalize");
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines_.finalize);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelinelayouts_.general, 0, sets.size(), sets.data(), 0, nullptr);
     vkCmdDispatch(cmd, constants.dispatchSizeX, 1, 1);
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &memoryBarrier, 0, nullptr, 0,
                          nullptr);
+    device_->EndDebugLabel(cmd);
 
     // 4.JumpFlood or LinearFlood
     if (sdfParam_.floodMode == FloodMode::Linear) // linear
     {
+        device_->BeginDebugLabel(cmd, "4.LinearFlood");
         VkPipeline floodPipeline{sdfParam_.FloodFillQuality == FloodFillQuality::Normal ? pipelines_.linearFlood : pipelines_.linearFloodUltra};
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, floodPipeline);
-     
+
         for (int i = 0; i < sdfParam_.floodIterations; ++i)
         {
             // 交换缓冲区 Vkcommand
@@ -115,9 +120,11 @@ void MeshToSdf::GenerateSdf(VkCommandBuffer cmd, vkglTF::Model *mesh, const glm:
             vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &memoryBarrier, 0, nullptr, 0,
                                  nullptr);
         }
+        device_->EndDebugLabel(cmd);
     }
     else // jumpflood
     {
+        device_->BeginDebugLabel(cmd, "4.JumpFlood");
         // 设置buffer
         // jumpfloodInit
         sets[1] = descriptor_.PingSet;
@@ -175,15 +182,18 @@ void MeshToSdf::GenerateSdf(VkCommandBuffer cmd, vkglTF::Model *mesh, const glm:
         vkCmdDispatch(cmd, constants.dispatchSizeX, 1, 1);
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &memoryBarrier, 0, nullptr, 0,
                              nullptr);
+        device_->EndDebugLabel(cmd);
     }
 
     // 5. bufferToTexture
+    device_->BeginDebugLabel(cmd, "5.bufferToTexture");
     sets[1] = descriptor_.PingSet;
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines_.bufferToTexture);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelinelayouts_.general, 0, sets.size(), sets.data(), 0, nullptr);
     constants.offset = (sdfParam_.distanceMode == DistanceMode::Signed && sdfParam_.floodMode != FloodMode::Jump) ? sdfParam_.offset : 0.0f;
     vkCmdPushConstants(cmd, pipelinelayouts_.general, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(MeshToSDFConstant), &constants);
     vkCmdDispatch(cmd, constants.dispatchSizeX, 1, 1);
+    device_->EndDebugLabel(cmd);
 }
 // 3. GetSdfTextureView 方法
 VkImageView MeshToSdf::GetSdfTextureView() const
@@ -202,13 +212,16 @@ void MeshToSdf::Cleanup()
     }
     // 销毁管线、布局、缓冲区、纹理等
 }
-
+Texture3D* MeshToSdf::GetSdfTexture() const
+{
+    return sdfTexture_;
+}
 void MeshToSdf::CreateSdfResource()
 {
     // 创建3D纹理资源
     sdfTexture_ = new Texture3D{};
     sdfTexture_->Create(sdfParam_.voxelResolution, sdfParam_.voxelResolution, sdfParam_.voxelResolution, device_, queue_, VK_FORMAT_R32_SFLOAT,
-                        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_LAYOUT_GENERAL);
+                        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_LAYOUT_GENERAL);
 
     uint32_t voxelCount = sdfParam_.voxelResolution * sdfParam_.voxelResolution * sdfParam_.voxelResolution;
     VkDeviceSize sdfBufferSize = voxelCount * sizeof(float); // float类型SDF缓冲区
@@ -384,7 +397,7 @@ void MeshToSdf::UpdateDescriptorSet()
 
     vkUpdateDescriptorSets(device_->logicalDevice, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 }
-void MeshToSdf::CreateSingleComputePipeline(const std::string &shaderName, VkPipeline &pipeline)
+void MeshToSdf::CreateSingleComputePipeline(const std::string& shaderName, VkPipeline& pipeline)
 {
     VkPipelineShaderStageCreateInfo shaderStage = {};
     shaderStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;

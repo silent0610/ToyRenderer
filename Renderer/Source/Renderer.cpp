@@ -8,7 +8,6 @@ module;
 #include "stb_image_write.h"
 #include "tiny_gltf.h"
 #include "imgui.h"
-
 module RendererMod;
 
 const float PI = 3.1415929;
@@ -257,7 +256,17 @@ void Renderer::InitializeMeshToSdfOperator()
 {
 
 	meshToSdfOperator_ = new MeshToSdf{};
-	meshToSdfOperator_->Initialize(m_vulkanDevice, m_queues.graphicsQueue, m_descriptorPool);
+	meshToSdfOperator_->Initialize(m_vulkanDevice, m_queues.graphicsQueue, m_descriptorPool,&m_glTFModel);
+    MeshToSdf::SdfParam sdfParams{};
+	sdfParams.distanceMode = MeshToSdf::DistanceMode::Signed;
+    sdfParams.FloodFillQuality = MeshToSdf::FloodFillQuality::Ultra;
+    sdfParams.floodMode = MeshToSdf::FloodMode::Jump;
+    sdfParams.floodIterations = 8;
+	sdfParams.offset = -0.2f;
+	sdfParams.size = 5.0f;
+    sdfParams.voxelResolution = 64;
+    meshToSdfOperator_->SetSdfParams(sdfParams);
+
 	meshToSdfCommandBuffer_ = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, false);
 }
 void Renderer::OffscreenWork()
@@ -1336,7 +1345,7 @@ void Renderer::KeyCallback(GLFWwindow *window, int key, int scancode, int action
 			break;
 		case GLFW_KEY_E: // 按E键导出SDF数据用于Python可视化
 			printf("Exporting SDF data for visualization...\n");
-			app->ExportSDFDataForVisualization();
+            app->ExportSDFDataForVisualization(app->GetMeshToSdfOperator()->GetSdfTexture(), "MeshToSdf.raw");
 			break;
 		}
 
@@ -1747,15 +1756,7 @@ void Renderer::MainLoop()
 	// Test voxelization once at startup
 	TestVoxelization();
 
-	{
-        BeginDebugLabel(meshToSdfCommandBuffer_, "MeshToSDF");
-        vkResetCommandBuffer(meshToSdfCommandBuffer_, 0);
-		VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
-		Tool::CheckResult(vkBeginCommandBuffer(meshToSdfCommandBuffer_, &cmdBufInfo));
-		meshToSdfOperator_->GenerateSdf(meshToSdfCommandBuffer_, &m_glTFModel, glm::mat4(1.0f));
-        m_vulkanDevice->FlushCommandBuffer(meshToSdfCommandBuffer_, m_queues.graphicsQueue, false, false);
-        EndDebugLabel(meshToSdfCommandBuffer_);
-	}
+
 
 	while (!glfwWindowShouldClose(m_window))
 	{
@@ -1874,12 +1875,17 @@ void Renderer::PrepareFrame()
 void Renderer::Draw()
 {
 
-	//
-	//
-
-	// others
-	// RenderToCube(m_glTFModel, glm::vec3(0), "");
-
+	{
+		
+		vkResetCommandBuffer(meshToSdfCommandBuffer_, 0);
+		VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
+		Tool::CheckResult(vkBeginCommandBuffer(meshToSdfCommandBuffer_, &cmdBufInfo));
+        BeginDebugLabel(meshToSdfCommandBuffer_, "MeshToSDF",1.0f,0.0f,0.0f,1.0f);
+		meshToSdfOperator_->GenerateSdf(meshToSdfCommandBuffer_,  glm::mat4(1.0f));
+        EndDebugLabel(meshToSdfCommandBuffer_);
+		m_vulkanDevice->FlushCommandBuffer(meshToSdfCommandBuffer_, m_queues.graphicsQueue, false, false);
+		
+    }
 	// Wait for rendering finished
 	VkPipelineStageFlags waitStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
 
@@ -11796,6 +11802,7 @@ void Renderer::ExportSDFDataForVisualization()
 {
 	// 确保所有GPU工作完成
 	vkDeviceWaitIdle(m_device);
+
 	printf("GPU工作已完成，开始SDF导出...\n");
 	// 自适应检测当前使用的SDF生成版本
 	VkImage sdfTextureToExport = VK_NULL_HANDLE;
@@ -11966,7 +11973,141 @@ void Renderer::ExportSDFDataForVisualization()
 
 	printf("SDF visualization export completed\n");
 }
+void Renderer::ExportSDFDataForVisualization(Texture *texture, const std::string fileName)
+{
+    // 确保所有GPU工作完成
+    vkDeviceWaitIdle(m_device);
 
+    printf("GPU工作已完成，开始SDF导出...\n");
+    // 自适应检测当前使用的SDF生成版本
+    VkImage sdfTextureToExport = texture->image;
+    uint32_t sdfResolution = texture->dimZ;
+
+
+    const size_t totalVoxels = sdfResolution * sdfResolution * sdfResolution;
+    const size_t dataSize = totalVoxels * sizeof(float);
+
+    // 1. 创建staging buffer来从GPU读取SDF数据
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = dataSize;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VK_CHECK_RESULT(vkCreateBuffer(m_device, &bufferInfo, nullptr, &stagingBuffer));
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(m_device, stagingBuffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex =
+        m_vulkanDevice->GetMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    VK_CHECK_RESULT(vkAllocateMemory(m_device, &allocInfo, nullptr, &stagingBufferMemory));
+    VK_CHECK_RESULT(vkBindBufferMemory(m_device, stagingBuffer, stagingBufferMemory, 0));
+
+    // 2. 复制SDF纹理到staging buffer
+    VkCommandBuffer commandBuffer = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+
+    // 转换图像布局为传输源
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL; // SDF纹理当前布局
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = sdfTextureToExport; // 使用自适应选择的SDF纹理
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    // 复制图像到buffer
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0; // 紧密打包
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {sdfResolution, sdfResolution, sdfResolution};
+
+    vkCmdCopyImageToBuffer(commandBuffer, sdfTextureToExport, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1, &region);
+
+    // 恢复原始布局（重要：避免后续渲染出错）
+    VkImageMemoryBarrier restoreBarrier{};
+    restoreBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    restoreBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    restoreBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL; // 恢复到原始布局
+    restoreBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    restoreBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    restoreBarrier.image = sdfTextureToExport;
+    restoreBarrier.subresourceRange = barrier.subresourceRange;
+    restoreBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    restoreBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                         &restoreBarrier);
+
+    m_vulkanDevice->FlushCommandBuffer(commandBuffer, m_queues.graphicsQueue, true);
+
+    // 3. 映射内存并保存到文件
+    void *data;
+    VK_CHECK_RESULT(vkMapMemory(m_device, stagingBufferMemory, 0, dataSize, 0, &data));
+
+    float *sdfData = static_cast<float *>(data);
+
+    // 统计数值分布
+    int negCount = 0, posCount = 0, zeroCount = 0;
+    float minVal = FLT_MAX, maxVal = -FLT_MAX;
+    for (size_t i = 0; i < totalVoxels; i++)
+    {
+        float val = sdfData[i];
+        if (val < -1e-6f)
+            negCount++;
+        else if (val > 1e-6f)
+            posCount++;
+        else
+            zeroCount++;
+        minVal = std::min(minVal, val);
+        maxVal = std::max(maxVal, val);
+    }
+    printf("数值分布: 负值=%d, 正值=%d, 零值=%d, 范围=[%.3f, %.3f]\n", negCount, posCount, zeroCount, minVal, maxVal);
+
+	std::string outputPath = Tool::GetProjectPath() + "/" + fileName;
+    FILE *file = fopen(outputPath.c_str(), "wb");
+    if (file)
+    {
+        fwrite(data, sizeof(float), totalVoxels, file);
+        fclose(file);
+        printf("SDF data exported to: %s (%u³ = %zu voxels, %.2f MB)\n", outputPath.c_str(), sdfResolution, totalVoxels,
+               dataSize / (1024.0f * 1024.0f));
+    }
+    else
+    {
+        printf("Failed to write SDF data to file: %s\n", outputPath.c_str());
+    }
+
+    vkUnmapMemory(m_device, stagingBufferMemory);
+
+    // 4. 清理资源
+    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+    vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+
+    printf("SDF visualization export completed\n");
+}
 void Renderer::SetupSdfAOPass()
 {
 	sdfAOPass_.frameBuffer = new FramebufferManager(m_vulkanDevice);
@@ -12102,3 +12243,7 @@ void Renderer::PreparePipelineSdfAO()
 
 	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &sdfAOPass_.pipeline));
 }
+MeshToSdf* Renderer::GetMeshToSdfOperator()
+{
+    return meshToSdfOperator_;
+};

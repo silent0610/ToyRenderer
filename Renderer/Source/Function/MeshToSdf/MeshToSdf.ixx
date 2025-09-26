@@ -40,13 +40,12 @@ public:
 		float offset{0.0f};
 	};
 	MeshToSdf();
-	void Initialize(OldVulkanDevice *device, VkQueue queue, VkDescriptorPool descriptorPool);
-	void GenerateSdf(VkCommandBuffer cmd, vkglTF::Model* mesh, const glm::mat4& worldToLocal = glm::mat4(1.0f));
-
+    void Initialize(OldVulkanDevice *device, VkQueue queue, VkDescriptorPool descriptorPool, vkglTF::Model *mesh);
+	void GenerateSdf(VkCommandBuffer cmd,  const glm::mat4& worldToLocal = glm::mat4(1.0f));
 	void SetSdfParams(const SdfParam& params) { sdfParam_ = params; }
 	const SdfParam& GetSdfParams() const { return sdfParam_; }
-
 	VkImageView GetSdfTextureView() const;
+    Texture3D *GetSdfTexture() const;
 	void Cleanup();
 
 private:

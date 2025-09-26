@@ -37,6 +37,7 @@ void main(uint GIndex : SV_GroupIndex, uint3 GId : SV_GroupID, uint3 DTid : SV_D
     gridMax.y = max(0, min(gridMax.y, pc.numCellsY - 1));
     gridMax.z = max(0, min(gridMax.z, pc.numCellsZ - 1));
 
+    // 处理包围盒内的体素
     for (int z = gridMin.z;z<=gridMax.z;++z)
     {
         for(int y = gridMin.y;y<=gridMax.y;++y)

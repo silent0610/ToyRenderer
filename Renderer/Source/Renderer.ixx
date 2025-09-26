@@ -610,6 +610,7 @@ private:
 	void RenderToCube(const vkglTF::Model& model, const glm::vec3& pos, const std::string& savePath);
 	void SaveToImage(const Texture& tex, const std::string& savePath);
 	void ExportSDFDataForVisualization(); // 导出SDF数据用于Python可视化验证
+    void ExportSDFDataForVisualization(Texture *texture, const std::string outputPath);
 	struct DepthCubeMapPass
 	{
 		static const int WIDTH{ 512 };
@@ -2033,4 +2034,7 @@ private:
 	void InitializeMeshToSdfOperator();
 	MeshToSdf* meshToSdfOperator_{};
     VkCommandBuffer meshToSdfCommandBuffer_{};
+
+public:
+    MeshToSdf* GetMeshToSdfOperator();
 };

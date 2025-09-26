@@ -154,7 +154,7 @@ def visualize_3d_isosurface(sdf_volume):
 def main():
     """主函数"""
     # SDF文件路径（与Renderer.cpp中的输出路径对应）
-    sdf_file = "B.raw"
+    sdf_file = "MeshToSdf.raw"
     
     try:
         # 加载SDF数据
