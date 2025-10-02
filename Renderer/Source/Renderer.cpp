@@ -8,20 +8,14 @@ module;
 #include "stb_image_write.h"
 #include "tiny_gltf.h"
 #include "imgui.h"
+
 module RendererMod;
+import BruteForceSdf;
+
 
 const float PI = 3.1415929;
 
-#define VK_CHECK_RESULT(f)                                                                                                              \
-	{                                                                                                                                   \
-		VkResult res = (f);                                                                                                             \
-		if (res != VK_SUCCESS)                                                                                                          \
-		{                                                                                                                               \
-			std::cout << "Error Code: " << res << "\n";                                                                                 \
-			std::cout << "Fatal : VkResult is \"" << Tool::ErrorString(res) << "\" in " << __FILE__ << " at line " << __LINE__ << "\n"; \
-			assert(res == VK_SUCCESS);                                                                                                  \
-		}                                                                                                                               \
-	}
+
 Renderer::Renderer(Config *config) : m_config(config)
 {
 	m_neededFeatures.validation = config->enableValidation;
@@ -247,10 +241,30 @@ void Renderer::InitVulkan()
 	// 初始化统一GPU管线资源和预录制命令
 	InitializeUnifiedGPUPipelineResources();
 	RecordUnifiedGPUPipelineCommands();
-	OffscreenWork();
+	//OffscreenWork();
 
 	// MeshToSdf
 	InitializeMeshToSdfOperator();
+    //TestBruteSdf();
+
+}
+void Renderer::TestBruteSdfAndSave()
+{
+	BruteForceSdf sdfGenerator;
+    BruteForceSdf::SdfParameters sdfParams{};
+
+
+    // 更新参数
+    sdfParams.origin = glm::vec3(-1.0f,-1.0f,-1.0f);
+    sdfParams.cellSize = (2.0f) / sdfParams.voxelResolution.x;
+    sdfGenerator.Initialize(sdfParams);
+    sdfGenerator.SetModel(&m_glTFModel);
+    const int totalVoxels = sdfParams.voxelResolution.x * sdfParams.voxelResolution.y * sdfParams.voxelResolution.z;
+    std::vector<float> sdfData(totalVoxels, std::numeric_limits<float>::max());
+    sdfGenerator.GenerateGroundTruth(sdfData);
+
+	// 保存 SDF 结果为图像文件
+    sdfGenerator.SaveToFile(sdfData, "BruteSdf.raw");
 }
 void Renderer::InitializeMeshToSdfOperator()
 {
@@ -261,8 +275,8 @@ void Renderer::InitializeMeshToSdfOperator()
 	sdfParams.distanceMode = MeshToSdf::DistanceMode::Signed;
     sdfParams.FloodFillQuality = MeshToSdf::FloodFillQuality::Ultra;
     sdfParams.floodMode = MeshToSdf::FloodMode::Jump;
-    sdfParams.floodIterations = 8;
-	sdfParams.offset = -0.2f;
+    sdfParams.floodIterations = 10;
+	sdfParams.offset = 0.0f;
 	sdfParams.size = 5.0f;
     sdfParams.voxelResolution = 64;
     meshToSdfOperator_->SetSdfParams(sdfParams);
@@ -317,7 +331,7 @@ void ::Renderer::CreateCommandBuffers()
 	// Create one command buffer for each swap chain image
 	m_drawCmdBuffers.resize(m_swapChain.images.size());
 	VkCommandBufferAllocateInfo cmdBufAllocateInfo = Init::commandBufferAllocateInfo(m_commandPool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, static_cast<uint32_t>(m_drawCmdBuffers.size()));
-	VK_CHECK_RESULT(vkAllocateCommandBuffers(m_device, &cmdBufAllocateInfo, m_drawCmdBuffers.data()));
+	Tool::CheckResult(vkAllocateCommandBuffers(m_device, &cmdBufAllocateInfo, m_drawCmdBuffers.data()));
 }
 void ::Renderer::BuildPostCmdBuffer()
 {
@@ -354,7 +368,7 @@ void Renderer::BuildCommandBuffers()
 		// Set target frame buffer
 		renderPassBeginInfo.framebuffer = m_finalFramebuffers[i];
 
-		VK_CHECK_RESULT(vkBeginCommandBuffer(m_drawCmdBuffers[i], &cmdBufInfo));
+		Tool::CheckResult(vkBeginCommandBuffer(m_drawCmdBuffers[i], &cmdBufInfo));
 
 		BeginDebugLabel(m_drawCmdBuffers[i], "Final Pass FXAA", 1.0f);
 		vkCmdBeginRenderPass(m_drawCmdBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -371,7 +385,7 @@ void Renderer::BuildCommandBuffers()
 		EndDebugLabel(m_drawCmdBuffers[i]);
 		vkCmdEndRenderPass(m_drawCmdBuffers[i]);
 
-		VK_CHECK_RESULT(vkEndCommandBuffer(m_drawCmdBuffers[i]));
+		Tool::CheckResult(vkEndCommandBuffer(m_drawCmdBuffers[i]));
 	}
 }
 
@@ -419,7 +433,7 @@ void Renderer::CreateDepthResources()
 	memAllloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	memAllloc.allocationSize = memReqs.size;
 	FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAllloc, nullptr, &m_depthStencil.memory))
+    Tool::CheckResult(vkAllocateMemory(m_device, &memAllloc, nullptr, &m_depthStencil.memory));
 
 	if (vkBindImageMemory(m_device, m_depthStencil.image, m_depthStencil.memory, 0) != VK_SUCCESS)
 	{
@@ -550,12 +564,12 @@ VkResult Renderer::CreateBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags 
 //{
 //	CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uboBuffer, sizeof(m_uboMatrices));
 //	m_uboBuffer.Map();
-//	//VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_defered.uniformBuffers.offscreen, sizeof(UniformDataOffscreen)));
-//	//VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_defered.uniformBuffers.composition, sizeof(UniformDataComposition)));
+//	//Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_defered.uniformBuffers.offscreen, sizeof(UniformDataOffscreen)));
+//	//Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_defered.uniformBuffers.composition, sizeof(UniformDataComposition)));
 //
 //	//// Map persistent
-//	//VK_CHECK_RESULT(m_defered.uniformBuffers.offscreen.Map());
-//	//VK_CHECK_RESULT(m_defered.uniformBuffers.composition.Map());
+//	//Tool::CheckResult(m_defered.uniformBuffers.offscreen.Map());
+//	//Tool::CheckResult(m_defered.uniformBuffers.composition.Map());
 //
 //	//// Update
 //	//UpdateUniformBufferOffscreen();
@@ -597,11 +611,11 @@ void Renderer::AllocateDescriptorSetSkyBox()
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2),
 	};
 	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.skyBox));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.skyBox));
 
 	// skyBox
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.skyBox, 1);
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.skyBox));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.skyBox));
 
 	VkDescriptorImageInfo texDescriptorLighting =
 		Init::descriptorImageInfo(
@@ -620,7 +634,7 @@ void Renderer::AllocateDescriptorSetSkyBox()
 void Renderer::CreateBuffersLighting()
 {
 	m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_lightingPass.Buffers.ConstBuffer, sizeof(m_lightingPass.Buffers.ConstBuffer));
-	VK_CHECK_RESULT(m_lightingPass.Buffers.ConstBuffer.Map());
+	Tool::CheckResult(m_lightingPass.Buffers.ConstBuffer.Map());
 	// for (uint32_t i = 0; i < LIGHT_COUNT; i++)
 	//{
 	//	m_lightingPass.CBufferData.lights[i].viewMatrix = m_uniformDataShadows.mvp[i];
@@ -1229,10 +1243,10 @@ void Renderer::CreateSyncObjects()
 	VkSemaphoreCreateInfo semaphoreCreateInfo = Init::semaphoreCreateInfo();
 	// Create a semaphore used to synchronize image presentation
 	// Ensures that the image is displayed before we start submitting new commands to the queue
-	VK_CHECK_RESULT(vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_semaphores.presentComplete));
+	Tool::CheckResult(vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_semaphores.presentComplete));
 	// Create a semaphore used to synchronize command submission
 	// Ensures that the image is not presented until all commands have been submitted and executed
-	VK_CHECK_RESULT(vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_semaphores.renderComplete));
+	Tool::CheckResult(vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_semaphores.renderComplete));
 }
 /// @brief 判断某个device是否合适 // 支持队列族、交换链扩展、交换链合适、且支持各向异性采样
 /// @param device
@@ -1339,14 +1353,18 @@ void Renderer::KeyCallback(GLFWwindow *window, int key, int scancode, int action
 		case GLFW_KEY_ESCAPE:
 			glfwSetWindowShouldClose(window, true);
 			break;
-		case GLFW_KEY_V: // 按V键启用/禁用体素化调试
-			app->m_voxelizationDebugEnabled = !app->m_voxelizationDebugEnabled;
-			printf("Voxelization debug %s\n", app->m_voxelizationDebugEnabled ? "ENABLED" : "DISABLED");
+		case GLFW_KEY_V: 
+
+            app->TestBruteSdfAndSave();
 			break;
 		case GLFW_KEY_E: // 按E键导出SDF数据用于Python可视化
 			printf("Exporting SDF data for visualization...\n");
             app->ExportSDFDataForVisualization(app->GetMeshToSdfOperator()->GetSdfTexture(), "MeshToSdf.raw");
 			break;
+        case GLFW_KEY_M: // 按E键导出SDF数据用于Python可视化
+            printf("Exporting SDF data for visualization...\n");
+            app->ExportSDFDataForVisualization(app->GetMeshToSdfOperator()->GetSdfTexture(), "MeshToSdf.raw");
+            break;
 		}
 
 		if (app->m_camera.type == Camera::firstperson)
@@ -1858,7 +1876,7 @@ void Renderer::PrepareFrame()
 	}
 	else
 	{
-		VK_CHECK_RESULT(result);
+		Tool::CheckResult(result);
 	}
 }
 // void Renderer::UpdateUniformBuffers()
@@ -1899,7 +1917,7 @@ void Renderer::Draw()
 	computeSubmitInfo.signalSemaphoreCount = 1;
 	computeSubmitInfo.pSignalSemaphores = &m_compute.semaphore;
 
-	VK_CHECK_RESULT(vkQueueSubmit(m_compute.queue, 1, &computeSubmitInfo, VK_NULL_HANDLE));
+	Tool::CheckResult(vkQueueSubmit(m_compute.queue, 1, &computeSubmitInfo, VK_NULL_HANDLE));
 
 	// === 提交统一GPU管线 (Mark + Fill + Mipmap + SDF) ===
 	// if (m_enableVoxelization) {
@@ -1940,14 +1958,14 @@ void Renderer::Draw()
 	m_submitInfo.pSignalSemaphores = &m_semaphores.deferedSemaphore;
 	m_submitInfo.commandBufferCount = 1;
 	m_submitInfo.pCommandBuffers = &m_offScreenCmdBuffer;
-	VK_CHECK_RESULT(vkQueueSubmit(m_queues.graphicsQueue, 1, &m_submitInfo, VK_NULL_HANDLE));
+	Tool::CheckResult(vkQueueSubmit(m_queues.graphicsQueue, 1, &m_submitInfo, VK_NULL_HANDLE));
 
 	VkPipelineStageFlags graphicsWaitStageMasks1[] = {VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 	m_submitInfo.pWaitDstStageMask = graphicsWaitStageMasks1;
 	m_submitInfo.pWaitSemaphores = &m_semaphores.deferedSemaphore;
 	m_submitInfo.pSignalSemaphores = &m_semaphores.renderComplete;
 	m_submitInfo.pCommandBuffers = &m_drawCmdBuffers[currentBuffer];
-	VK_CHECK_RESULT(vkQueueSubmit(m_queues.graphicsQueue, 1, &m_submitInfo, VK_NULL_HANDLE));
+	Tool::CheckResult(vkQueueSubmit(m_queues.graphicsQueue, 1, &m_submitInfo, VK_NULL_HANDLE));
 }
 void Renderer::SubmitFrame()
 {
@@ -1976,10 +1994,10 @@ void Renderer::SubmitFrame()
 	}
 	else
 	{
-		VK_CHECK_RESULT(result);
+		Tool::CheckResult(result);
 	}
-	VK_CHECK_RESULT(vkQueueWaitIdle(m_queues.graphicsQueue));
-	VK_CHECK_RESULT(vkQueueWaitIdle(m_compute.queue));
+	Tool::CheckResult(vkQueueWaitIdle(m_queues.graphicsQueue));
+	Tool::CheckResult(vkQueueWaitIdle(m_compute.queue));
 }
 
 // 信号量一组
@@ -2381,7 +2399,7 @@ void Renderer::InitVoxelizationPipelines()
 	markPipelineInfo.renderPass = VK_NULL_HANDLE; // 关键：对于动态渲染，renderPass必须为 VK_NULL_HANDLE
 	markPipelineInfo.subpass = 0;
 	markPipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
-
+	
 	if (vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &markPipelineInfo, nullptr, &m_voxelizationPass.markPassPipeline) != VK_SUCCESS)
 	{
 		throw std::runtime_error("Failed to create mark pass pipeline!");
@@ -2669,7 +2687,7 @@ void Renderer::SaveVoxelTextureWithValidation(const std::string &filename)
 	bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-	VK_CHECK_RESULT(vkCreateBuffer(m_device, &bufferInfo, nullptr, &stagingBuffer));
+	Tool::CheckResult(vkCreateBuffer(m_device, &bufferInfo, nullptr, &stagingBuffer));
 
 	// 分配内存
 	VkMemoryRequirements memRequirements;
@@ -2680,8 +2698,8 @@ void Renderer::SaveVoxelTextureWithValidation(const std::string &filename)
 	allocInfo.allocationSize = memRequirements.size;
 	allocInfo.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-	VK_CHECK_RESULT(vkAllocateMemory(m_device, &allocInfo, nullptr, &stagingBufferMemory));
-	VK_CHECK_RESULT(vkBindBufferMemory(m_device, stagingBuffer, stagingBufferMemory, 0));
+	Tool::CheckResult(vkAllocateMemory(m_device, &allocInfo, nullptr, &stagingBufferMemory));
+	Tool::CheckResult(vkBindBufferMemory(m_device, stagingBuffer, stagingBufferMemory, 0));
 
 	// 3. 创建命令缓冲区
 	VkCommandBuffer copyCmd = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
@@ -2737,7 +2755,7 @@ void Renderer::SaveVoxelTextureWithValidation(const std::string &filename)
 
 	// 7. 映射内存并验证数据
 	void *mappedData;
-	VK_CHECK_RESULT(vkMapMemory(m_device, stagingBufferMemory, 0, imageSize, 0, &mappedData));
+	Tool::CheckResult(vkMapMemory(m_device, stagingBufferMemory, 0, imageSize, 0, &mappedData));
 
 	// 8. 快速数据验证
 	uint8_t *byteData = static_cast<uint8_t *>(mappedData);
@@ -2802,22 +2820,22 @@ void Renderer::ExecuteVoxelizationWithSync()
 
 	// Execute marking phase (graphics pipeline)
 	VoxelizationMarkPass(graphicsCmdBuffer);
-	VK_CHECK_RESULT(vkEndCommandBuffer(graphicsCmdBuffer));
+	Tool::CheckResult(vkEndCommandBuffer(graphicsCmdBuffer));
 
 	// Step 2: Create compute command buffer
 	VkCommandBufferAllocateInfo cmdBufAllocateInfo = Init::commandBufferAllocateInfo(m_compute.commandPool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1);
 	VkCommandBuffer computeCmdBuffer;
-	VK_CHECK_RESULT(vkAllocateCommandBuffers(m_device, &cmdBufAllocateInfo, &computeCmdBuffer));
+	Tool::CheckResult(vkAllocateCommandBuffers(m_device, &cmdBufAllocateInfo, &computeCmdBuffer));
 
 	VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
-	VK_CHECK_RESULT(vkBeginCommandBuffer(computeCmdBuffer, &cmdBufInfo));
+	Tool::CheckResult(vkBeginCommandBuffer(computeCmdBuffer, &cmdBufInfo));
 	VoxelizationFillPass(computeCmdBuffer);
-	VK_CHECK_RESULT(vkEndCommandBuffer(computeCmdBuffer));
+	Tool::CheckResult(vkEndCommandBuffer(computeCmdBuffer));
 
 	// Step 3: 使用信号量进行队列间同步
 	VkSemaphoreCreateInfo semaphoreInfo = Init::semaphoreCreateInfo();
 	VkSemaphore transferSemaphore;
-	VK_CHECK_RESULT(vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &transferSemaphore));
+	Tool::CheckResult(vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &transferSemaphore));
 	auto cmdBufferTime = std::chrono::high_resolution_clock::now();
 	// 提交图形命令缓冲区，发出信号量
 	VkSubmitInfo graphicsSubmitInfo = Init::submitInfo();
@@ -2826,7 +2844,7 @@ void Renderer::ExecuteVoxelizationWithSync()
 	graphicsSubmitInfo.signalSemaphoreCount = 1;
 	graphicsSubmitInfo.pSignalSemaphores = &transferSemaphore;
 
-	VK_CHECK_RESULT(vkQueueSubmit(m_queues.graphicsQueue, 1, &graphicsSubmitInfo, VK_NULL_HANDLE));
+	Tool::CheckResult(vkQueueSubmit(m_queues.graphicsQueue, 1, &graphicsSubmitInfo, VK_NULL_HANDLE));
 
 	// 提交计算命令缓冲区，等待信号量
 	VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT};
@@ -2840,12 +2858,12 @@ void Renderer::ExecuteVoxelizationWithSync()
 	// 创建围栏等待计算完成
 	VkFenceCreateInfo fenceInfo = Init::fenceCreateInfo(VkFenceCreateFlags(0));
 	VkFence computeFence;
-	VK_CHECK_RESULT(vkCreateFence(m_device, &fenceInfo, nullptr, &computeFence));
+	Tool::CheckResult(vkCreateFence(m_device, &fenceInfo, nullptr, &computeFence));
 
-	VK_CHECK_RESULT(vkQueueSubmit(m_compute.queue, 1, &computeSubmitInfo, computeFence));
+	Tool::CheckResult(vkQueueSubmit(m_compute.queue, 1, &computeSubmitInfo, computeFence));
 
 	// 等待计算完成
-	VK_CHECK_RESULT(vkWaitForFences(m_device, 1, &computeFence, VK_TRUE, UINT64_MAX));
+	Tool::CheckResult(vkWaitForFences(m_device, 1, &computeFence, VK_TRUE, UINT64_MAX));
 	auto endTime = std::chrono::high_resolution_clock::now();
 	// 注意：由于使用信号量同步，无法准确测量各个阶段的独立执行时间
 	// 这里只能测量整个voxelization过程的总时间
@@ -3162,8 +3180,8 @@ void Renderer::LoadAssets()
 }
 void Renderer::CreateBuffersSpotLightShadow()
 {
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_spotLightPass.CBuffer, m_shadowSpotLightCount * sizeof(SpotLightShadowPass::CBufferDesc)));
-	VK_CHECK_RESULT(m_spotLightPass.CBuffer.Map());
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_spotLightPass.CBuffer, m_shadowSpotLightCount * sizeof(SpotLightShadowPass::CBufferDesc)));
+	Tool::CheckResult(m_spotLightPass.CBuffer.Map());
 }
 void Renderer::CreateBuffersSpotLight()
 {
@@ -3194,26 +3212,26 @@ void Renderer::CreateBuffersSpotLight()
 
 		stagingBuffer.Destroy();
 	}
-	// VK_CHECK_RESULT(m_uniformBuffers.shadowGeometryShader.Map());
+	// Tool::CheckResult(m_uniformBuffers.shadowGeometryShader.Map());
 	// UpdateCBufferSpotLight();
 }
 void Renderer::PrepareUniformBuffers()
 {
 	// CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uboBuffer, sizeof(m_uboMatrices));
 	// m_uboBuffer.Map();
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.defered, sizeof(UniformDataOffscreen)));
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.defered, sizeof(UniformDataOffscreen)));
 
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.skyBox, sizeof(UniformDataSkybox)));
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.postParam, sizeof(Params)));
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.blurParams, sizeof(UBOBlurParams)));
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.FXAA, sizeof(FXAAParams)));
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.skyBox, sizeof(UniformDataSkybox)));
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.postParam, sizeof(Params)));
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.blurParams, sizeof(UBOBlurParams)));
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_uniformBuffers.FXAA, sizeof(FXAAParams)));
 
 	// Map persistent
-	VK_CHECK_RESULT(m_uniformBuffers.defered.Map());
-	VK_CHECK_RESULT(m_uniformBuffers.skyBox.Map());
-	VK_CHECK_RESULT(m_uniformBuffers.postParam.Map());
-	VK_CHECK_RESULT(m_uniformBuffers.blurParams.Map());
-	VK_CHECK_RESULT(m_uniformBuffers.FXAA.Map());
+	Tool::CheckResult(m_uniformBuffers.defered.Map());
+	Tool::CheckResult(m_uniformBuffers.skyBox.Map());
+	Tool::CheckResult(m_uniformBuffers.postParam.Map());
+	Tool::CheckResult(m_uniformBuffers.blurParams.Map());
+	Tool::CheckResult(m_uniformBuffers.FXAA.Map());
 
 	UpdateUniformBufferPost();
 	UpdateUniformBuffersBlur();
@@ -3224,7 +3242,7 @@ void Renderer::CreatePipelineCache()
 {
 	VkPipelineCacheCreateInfo pipelineCacheCreateInfo = {};
 	pipelineCacheCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-	VK_CHECK_RESULT(vkCreatePipelineCache(m_device, &pipelineCacheCreateInfo, nullptr, &m_pipelineCache));
+	Tool::CheckResult(vkCreatePipelineCache(m_device, &pipelineCacheCreateInfo, nullptr, &m_pipelineCache));
 }
 // model
 void Renderer::BuildDeferredCommandBuffer()
@@ -3242,11 +3260,11 @@ void Renderer::BuildDeferredCommandBuffer()
 	if (!m_semaphores.deferedSemaphore)
 	{
 		VkSemaphoreCreateInfo semaphoreCreateInfo = Init::semaphoreCreateInfo();
-		VK_CHECK_RESULT(vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_semaphores.deferedSemaphore));
+		Tool::CheckResult(vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_semaphores.deferedSemaphore));
 	}
 
 	VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
-	VK_CHECK_RESULT(vkBeginCommandBuffer(m_offScreenCmdBuffer, &cmdBufInfo));
+	Tool::CheckResult(vkBeginCommandBuffer(m_offScreenCmdBuffer, &cmdBufInfo));
 
 	// acquire
 	if (m_index.graphics != m_index.compute)
@@ -3628,7 +3646,7 @@ void Renderer::BuildDeferredCommandBuffer()
 			bufferBarriers.size(), bufferBarriers.data(),
 			0, nullptr);
 	}
-	VK_CHECK_RESULT(vkEndCommandBuffer(m_offScreenCmdBuffer));
+	Tool::CheckResult(vkEndCommandBuffer(m_offScreenCmdBuffer));
 }
 
 void Renderer::SetupShadow()
@@ -3657,10 +3675,10 @@ void Renderer::SetupShadow()
 
 	// Create sampler to sample from to depth attachment
 	// Used to sample in the fragment shader for shadowed rendering
-	VK_CHECK_RESULT(m_framebuffers.shadow->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	Tool::CheckResult(m_framebuffers.shadow->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
 
 	// Create default renderpass for the framebuffer
-	VK_CHECK_RESULT(m_framebuffers.shadow->CreateRenderPass());
+	Tool::CheckResult(m_framebuffers.shadow->CreateRenderPass());
 };
 void Renderer::SetupLightingPass()
 {
@@ -3679,8 +3697,8 @@ void Renderer::SetupLightingPass()
 	m_framebuffers.lighting->AddAttachment(attachmentCI);
 
 	// Create sampler to sample from the color attachments
-	VK_CHECK_RESULT(m_framebuffers.lighting->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
-	VK_CHECK_RESULT(m_framebuffers.lighting->CreateRenderPass());
+	Tool::CheckResult(m_framebuffers.lighting->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	Tool::CheckResult(m_framebuffers.lighting->CreateRenderPass());
 }
 
 void Renderer::SetupSkyBoxPass()
@@ -3704,8 +3722,8 @@ void Renderer::SetupSkyBoxPass()
 	m_framebuffers.SkyBox->AddAttachment(attachmentCI);
 
 	// Create sampler to sample from the color attachments
-	VK_CHECK_RESULT(m_framebuffers.SkyBox->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
-	VK_CHECK_RESULT(m_framebuffers.SkyBox->CreateRenderPass());
+	Tool::CheckResult(m_framebuffers.SkyBox->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	Tool::CheckResult(m_framebuffers.SkyBox->CreateRenderPass());
 }
 void Renderer::SetupToneMappingPass()
 {
@@ -3724,8 +3742,8 @@ void Renderer::SetupToneMappingPass()
 	m_framebuffers.ToneMapping->AddAttachment(attachmentCI);
 
 	// Create sampler to sample from the color attachments
-	VK_CHECK_RESULT(m_framebuffers.ToneMapping->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
-	VK_CHECK_RESULT(m_framebuffers.ToneMapping->CreateRenderPass());
+	Tool::CheckResult(m_framebuffers.ToneMapping->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	Tool::CheckResult(m_framebuffers.ToneMapping->CreateRenderPass());
 }
 void Renderer::SetupBloomPass()
 {
@@ -3744,8 +3762,8 @@ void Renderer::SetupBloomPass()
 	m_framebuffers.bloom->AddAttachment(attachmentCI);
 
 	// Create sampler to sample from the color attachments
-	VK_CHECK_RESULT(m_framebuffers.bloom->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
-	VK_CHECK_RESULT(m_framebuffers.bloom->CreateRenderPass());
+	Tool::CheckResult(m_framebuffers.bloom->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	Tool::CheckResult(m_framebuffers.bloom->CreateRenderPass());
 
 	m_framebuffers.bloom1 = new FramebufferManager(m_vulkanDevice);
 	m_framebuffers.bloom1->width = m_width;
@@ -3779,8 +3797,8 @@ void Renderer::SetupBloomPass()
 	m_vulkanDevice->FlushCommandBuffer(layoutCmd, m_queues.graphicsQueue, true);
 
 	// Create sampler to sample from the color attachments
-	VK_CHECK_RESULT(m_framebuffers.bloom1->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
-	VK_CHECK_RESULT(m_framebuffers.bloom1->CreateRenderPass());
+	Tool::CheckResult(m_framebuffers.bloom1->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	Tool::CheckResult(m_framebuffers.bloom1->CreateRenderPass());
 }
 
 void Renderer::SetupFinalPass()
@@ -3803,12 +3821,12 @@ void Renderer::SetupFinalPass()
 	// VkMemoryRequirements memReqs;
 
 	//// Create image for this attachment
-	// VK_CHECK_RESULT(vkCreateImage(m_vulkanDevice->logicalDevice, &imageCI, nullptr, &attachment1.image));
+	// Tool::CheckResult(vkCreateImage(m_vulkanDevice->logicalDevice, &imageCI, nullptr, &attachment1.image));
 	// vkGetImageMemoryRequirements(m_vulkanDevice->logicalDevice, attachment1.image, &memReqs);
 	// memAlloc.allocationSize = memReqs.size;
 	// memAlloc.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	// VK_CHECK_RESULT(vkAllocateMemory(m_vulkanDevice->logicalDevice, &memAlloc, nullptr, &attachment1.memory));
-	// VK_CHECK_RESULT(vkBindImageMemory(m_vulkanDevice->logicalDevice, attachment1.image, attachment1.memory, 0));
+	// Tool::CheckResult(vkAllocateMemory(m_vulkanDevice->logicalDevice, &memAlloc, nullptr, &attachment1.memory));
+	// Tool::CheckResult(vkBindImageMemory(m_vulkanDevice->logicalDevice, attachment1.image, attachment1.memory, 0));
 
 	// attachment1.subresourceRange = {};
 	// attachment1.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -3821,7 +3839,7 @@ void Renderer::SetupFinalPass()
 	// imageViewCI.subresourceRange = attachment1.subresourceRange;
 	// imageViewCI.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	// imageViewCI.image = attachment1.image;
-	// VK_CHECK_RESULT(vkCreateImageView(m_vulkanDevice->logicalDevice, &imageViewCI, nullptr, &attachment1.view));
+	// Tool::CheckResult(vkCreateImageView(m_vulkanDevice->logicalDevice, &imageViewCI, nullptr, &attachment1.view));
 
 	//// Fill attachment description
 	// attachment1.description = {};
@@ -3886,7 +3904,7 @@ void Renderer::SetupFinalPass()
 	renderPassInfo.dependencyCount = 2;
 	renderPassInfo.pDependencies = dependencies.data();
 
-	VK_CHECK_RESULT(vkCreateRenderPass(m_vulkanDevice->logicalDevice, &renderPassInfo, nullptr, &m_finalPass));
+	Tool::CheckResult(vkCreateRenderPass(m_vulkanDevice->logicalDevice, &renderPassInfo, nullptr, &m_finalPass));
 
 	// framebuffer
 	m_finalFramebuffers.resize(m_swapChain.images.size());
@@ -3901,7 +3919,7 @@ void Renderer::SetupFinalPass()
 		frameBufferCI.height = m_height;
 		frameBufferCI.width = m_width;
 		frameBufferCI.attachmentCount = 1;
-		VK_CHECK_RESULT(vkCreateFramebuffer(m_vulkanDevice->logicalDevice, &frameBufferCI, nullptr, &m_finalFramebuffers[i]));
+		Tool::CheckResult(vkCreateFramebuffer(m_vulkanDevice->logicalDevice, &frameBufferCI, nullptr, &m_finalFramebuffers[i]));
 	}
 }
 void Renderer::SetupDeferedPass()
@@ -3944,10 +3962,10 @@ void Renderer::SetupDeferedPass()
 	m_framebuffers.deferred->AddAttachment(attachmentInfo);
 
 	// Create sampler to sample from the color attachments
-	VK_CHECK_RESULT(m_framebuffers.deferred->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	Tool::CheckResult(m_framebuffers.deferred->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
 
 	// Create default renderpass for the framebuffer
-	VK_CHECK_RESULT(m_framebuffers.deferred->CreateRenderPass());
+	Tool::CheckResult(m_framebuffers.deferred->CreateRenderPass());
 };
 
 void Renderer::CreateBuffersDirLights()
@@ -3991,12 +4009,12 @@ void Renderer::CreateBuffersDirLights()
 		m_CSMPass.Cascades.resize(m_shadowDirLightCount);
 		m_CSMPass.CascadeData.resize(m_shadowDirLightCount);
 		VkDeviceSize bufferSize{m_shadowDirLightCount * sizeof(CSMPass::CascadeDataDesc)};
-		VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+		Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			&m_CSMPass.buffers.cascadeViewProjMatricesBuffer,
 			bufferSize));
-		VK_CHECK_RESULT(m_CSMPass.buffers.cascadeViewProjMatricesBuffer.Map());
+		Tool::CheckResult(m_CSMPass.buffers.cascadeViewProjMatricesBuffer.Map());
 		/*Buffer stagingBuffer;
 
 		m_vulkanDevice->CreateBuffer(
@@ -4043,7 +4061,7 @@ void Renderer::CreateDescriptorPool()
 		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 30),								// 增加到30个
 		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_SAMPLER, 30)};									// 添加独立采样器支持
 	VkDescriptorPoolCreateInfo descriptorPoolInfo = Init::descriptorPoolCreateInfo(poolSizes, 100); // 增加最大描述符集数到100
-	VK_CHECK_RESULT(vkCreateDescriptorPool(m_device, &descriptorPoolInfo, nullptr, &m_descriptorPool));
+	Tool::CheckResult(vkCreateDescriptorPool(m_device, &descriptorPoolInfo, nullptr, &m_descriptorPool));
 }
 void Renderer::AllocateDescriptorSetLighting()
 {
@@ -4097,12 +4115,12 @@ void Renderer::AllocateDescriptorSetLighting()
 		setLayoutBindings.push_back(Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 20, m_shadowPointLightCount));
 	}
 	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.composition));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.composition));
 
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets;
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.composition, 1);
 	// Deferred composition
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.composition));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.composition));
 
 	// Image descriptors for the offscreen color attachments
 	VkDescriptorImageInfo texDescriptorPosition =
@@ -4350,10 +4368,10 @@ void Renderer::AllocateDescriptorSetSpotLightShadow()
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0),
 	};
 	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_spotLightPass.SetLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_spotLightPass.SetLayout));
 
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_spotLightPass.SetLayout, 1);
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_spotLightPass.Set));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_spotLightPass.Set));
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 		// Binding 0: Vertex shader uniform buffer
 		Init::writeDescriptorSet(m_spotLightPass.Set, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_spotLightPass.CBuffer.descriptor),
@@ -4371,14 +4389,14 @@ void Renderer::SetupDescriptors()
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0),
 	};
 	descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.deferedModel));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.deferedModel));
 	// deferedTextures
 	setLayoutBindings = {
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0),
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1),
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2)};
 	descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.deferedTextures));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.deferedTextures));
 
 	// FXAA
 	setLayoutBindings = {
@@ -4387,7 +4405,7 @@ void Renderer::SetupDescriptors()
 		// Binding 1: Position texture
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)};
 	descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.FXAA));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.FXAA));
 
 	setLayoutBindings = {
 		// Binding 0: Param
@@ -4398,7 +4416,7 @@ void Renderer::SetupDescriptors()
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2)};
 	descriptorLayoutCI.pBindings = setLayoutBindings.data();
 	descriptorLayoutCI.bindingCount = 3;
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.toneMapping));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.toneMapping));
 
 	// Sets
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets;
@@ -4480,7 +4498,7 @@ void Renderer::SetupDescriptors()
 
 	// FXAA
 	allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.FXAA, 1);
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.FXAA));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.FXAA));
 	writeDescriptorSets = {
 		Init::writeDescriptorSet(m_descriptorSets.FXAA, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_uniformBuffers.FXAA.descriptor),
 		Init::writeDescriptorSet(m_descriptorSets.FXAA, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &texDescriptorToneMapping)};
@@ -4488,7 +4506,7 @@ void Renderer::SetupDescriptors()
 
 	// offscreen
 	allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.deferedModel, 1);
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.deferedModel));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.deferedModel));
 
 	writeDescriptorSets = {
 		// Binding 0: Vertex shader uniform buffer
@@ -4497,7 +4515,7 @@ void Renderer::SetupDescriptors()
 
 	// post
 	allocInfo.pSetLayouts = &m_descriptorSetLayouts.toneMapping;
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.toneMapping));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.toneMapping));
 	writeDescriptorSets =
 		{
 			Init::writeDescriptorSet(m_descriptorSets.toneMapping, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_uniformBuffers.postParam.descriptor),
@@ -4527,7 +4545,7 @@ void Renderer::SetupBlurDescriptorSets()
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // Binding 1: Fragment shader image sampler
 	};
 	descriptorSetLayoutCreateInfo = Init::descriptorSetLayoutCreateInfo(setLayoutBindings.data(), static_cast<uint32_t>(setLayoutBindings.size()));
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorSetLayoutCreateInfo, nullptr, &m_descriptorSetLayouts.blur));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorSetLayoutCreateInfo, nullptr, &m_descriptorSetLayouts.blur));
 
 	VkDescriptorImageInfo texDescriptorHighLight =
 		Init::descriptorImageInfo(
@@ -4546,7 +4564,7 @@ void Renderer::SetupBlurDescriptorSets()
 
 	// bloom vertical
 	descriptorSetAllocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.blur, 1);
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &descriptorSetAllocInfo, &m_descriptorSets.blurVert));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &descriptorSetAllocInfo, &m_descriptorSets.blurVert));
 	writeDescriptorSets = {
 		Init::writeDescriptorSet(m_descriptorSets.blurVert, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_uniformBuffers.blurParams.descriptor), // Binding 0: Fragment shader uniform buffer
 		Init::writeDescriptorSet(m_descriptorSets.blurVert, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &texDescriptorHighLight),			// Binding 1: Fragment shader texture sampler
@@ -4555,7 +4573,7 @@ void Renderer::SetupBlurDescriptorSets()
 
 	// bloom1 horizental
 	descriptorSetAllocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.blur, 1);
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &descriptorSetAllocInfo, &m_descriptorSets.blurHorz));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &descriptorSetAllocInfo, &m_descriptorSets.blurHorz));
 	writeDescriptorSets = {
 		Init::writeDescriptorSet(m_descriptorSets.blurHorz, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_uniformBuffers.blurParams.descriptor), // Binding 0: Fragment shader uniform buffer
 		Init::writeDescriptorSet(m_descriptorSets.blurHorz, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &texDescriptorVert),				// Binding 1: Fragment shader texture sampler
@@ -4566,7 +4584,7 @@ void Renderer::PreparePipelineSkyBox()
 {
 	// Layout skybox
 	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.skyBox, 1);
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.skyBox));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.skyBox));
 
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
 	VkPipelineRasterizationStateCreateInfo rasterizationState = Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE, 0);
@@ -4600,12 +4618,12 @@ void Renderer::PreparePipelineSkyBox()
 	VkSpecializationInfo specializationInfo = Init::specializationInfo(1, &specializationMapEntry, sizeof(uint32_t), &useSkyBox);
 	shaderStages[1].pSpecializationInfo = &specializationInfo;
 
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.skyBox));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.skyBox));
 }
 void Renderer::PreparePilineSpotLightShadow()
 {
 	// VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.deferedModel, 1);
-	// VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.shadow));
+	// Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.shadow));
 
 	// VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
 	// VkPipelineRasterizationStateCreateInfo rasterizationState = Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE, 0);
@@ -4665,7 +4683,7 @@ void Renderer::PreparePilineSpotLightShadow()
 	//// Reset blend attachment state
 	// pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position });
 	// pipelineCI.renderPass = m_framebuffers.shadow->renderPass;
-	// VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.shadow));
+	// Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.shadow));
 }
 void Renderer::PreparePipelines()
 {
@@ -4676,18 +4694,18 @@ void Renderer::PreparePipelines()
 	// model
 	std::array<VkDescriptorSetLayout, 2> setLayouts = {m_descriptorSetLayouts.deferedModel, m_descriptorSetLayouts.deferedTextures};
 	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(setLayouts.data(), 2);
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.defered));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.defered));
 
 	// post
 	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.toneMapping, 1);
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.toneMapping));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.toneMapping));
 
 	// bloom
 	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.blur, 1);
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.blur));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.blur));
 
 	pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.FXAA, 1);
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.FXAA));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.FXAA));
 	// Pipelines
 
 	// bloom
@@ -4736,11 +4754,11 @@ void Renderer::PreparePipelines()
 		VkSpecializationInfo specializationInfo = Init::specializationInfo(1, &specializationMapEntry, sizeof(uint32_t), &blurdirection);
 		shaderStages[1].pSpecializationInfo = &specializationInfo;
 		// Vertical blur pipeline
-		VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.blurVert));
+		Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.blurVert));
 
 		blurdirection = 1;
 		pipelineCI.renderPass = m_framebuffers.bloom1->renderPass;
-		VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.blurHorz));
+		Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.blurHorz));
 	}
 
 	// light composition
@@ -4783,7 +4801,7 @@ void Renderer::PreparePipelines()
 	depthStencilState.depthTestEnable = VK_FALSE;
 	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Post/ToneMapping.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Post/ToneMapping.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.toneMapping));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.toneMapping));
 
 	colorBlendState = Init::pipelineColorBlendStateCreateInfo(1, lightingBlendAttachmentStates.data());
 	pipelineCI.layout = m_pipelineLayouts.FXAA;
@@ -4792,7 +4810,7 @@ void Renderer::PreparePipelines()
 	depthStencilState.depthTestEnable = VK_FALSE;
 	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Post/ToneMapping.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Post/FXAA.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.FXAA));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.FXAA));
 
 	// Offscreen pipeline
 	std::array<VkPipelineColorBlendAttachmentState, 4> blendAttachmentStates =
@@ -4817,7 +4835,7 @@ void Renderer::PreparePipelines()
 
 	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Deferedshadows/Model.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Deferedshadows/Model.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.defered));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.defered));
 
 	PreparePipelineLighting();
 	PreparePipelineSkyBox();
@@ -4846,7 +4864,7 @@ void Renderer::PreparePipelineLighting()
 	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.composition, 1);
 	pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
 	pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.composition));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.composition));
 
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
 	VkPipelineRasterizationStateCreateInfo rasterizationState = Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE, 0);
@@ -4923,7 +4941,7 @@ void Renderer::PreparePipelineLighting()
 	// Empty vertex input state, vertices are generated by the vertex shader
 	VkPipelineVertexInputStateCreateInfo emptyInputState = Init::pipelineVertexInputStateCreateInfo();
 	pipelineCI.pVertexInputState = &emptyInputState;
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.composition));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.composition));
 }
 /// @brief 全屏三角形->scene.textures.lutBrdf.image
 void Renderer::GenerateBRDFLUT()
@@ -4944,14 +4962,14 @@ void Renderer::GenerateBRDFLUT()
 	imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
 	imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
 	imageCI.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-	VK_CHECK_RESULT(vkCreateImage(m_device, &imageCI, nullptr, &scene.textures.lutBrdf.image));
+	Tool::CheckResult(vkCreateImage(m_device, &imageCI, nullptr, &scene.textures.lutBrdf.image));
 	VkMemoryAllocateInfo memAlloc = Init::memoryAllocateInfo();
 	VkMemoryRequirements memReqs;
 	vkGetImageMemoryRequirements(m_device, scene.textures.lutBrdf.image, &memReqs);
 	memAlloc.allocationSize = memReqs.size;
 	memAlloc.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &scene.textures.lutBrdf.deviceMemory));
-	VK_CHECK_RESULT(vkBindImageMemory(m_device, scene.textures.lutBrdf.image, scene.textures.lutBrdf.deviceMemory, 0));
+	Tool::CheckResult(vkAllocateMemory(m_device, &memAlloc, nullptr, &scene.textures.lutBrdf.deviceMemory));
+	Tool::CheckResult(vkBindImageMemory(m_device, scene.textures.lutBrdf.image, scene.textures.lutBrdf.deviceMemory, 0));
 
 	// Image view
 	VkImageViewCreateInfo viewCI = Init::imageViewCreateInfo();
@@ -4962,7 +4980,7 @@ void Renderer::GenerateBRDFLUT()
 	viewCI.subresourceRange.levelCount = 1;
 	viewCI.subresourceRange.layerCount = 1;
 	viewCI.image = scene.textures.lutBrdf.image;
-	VK_CHECK_RESULT(vkCreateImageView(m_device, &viewCI, nullptr, &scene.textures.lutBrdf.view));
+	Tool::CheckResult(vkCreateImageView(m_device, &viewCI, nullptr, &scene.textures.lutBrdf.view));
 
 	// Sampler
 	VkSamplerCreateInfo samplerCI = Init::samplerCreateInfo();
@@ -4975,7 +4993,7 @@ void Renderer::GenerateBRDFLUT()
 	samplerCI.minLod = 0.0f;
 	samplerCI.maxLod = 1.0f;
 	samplerCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-	VK_CHECK_RESULT(vkCreateSampler(m_device, &samplerCI, nullptr, &scene.textures.lutBrdf.sampler));
+	Tool::CheckResult(vkCreateSampler(m_device, &samplerCI, nullptr, &scene.textures.lutBrdf.sampler));
 
 	scene.textures.lutBrdf.descriptor.imageView = scene.textures.lutBrdf.view;
 	scene.textures.lutBrdf.descriptor.sampler = scene.textures.lutBrdf.sampler;
@@ -5027,7 +5045,7 @@ void Renderer::GenerateBRDFLUT()
 	renderPassCI.pDependencies = dependencies.data();
 
 	VkRenderPass renderpass;
-	VK_CHECK_RESULT(vkCreateRenderPass(m_device, &renderPassCI, nullptr, &renderpass));
+	Tool::CheckResult(vkCreateRenderPass(m_device, &renderPassCI, nullptr, &renderpass));
 
 	VkFramebufferCreateInfo framebufferCI = Init::framebufferCreateInfo();
 	framebufferCI.renderPass = renderpass;
@@ -5038,29 +5056,29 @@ void Renderer::GenerateBRDFLUT()
 	framebufferCI.layers = 1;
 
 	VkFramebuffer framebuffer;
-	VK_CHECK_RESULT(vkCreateFramebuffer(m_device, &framebufferCI, nullptr, &framebuffer));
+	Tool::CheckResult(vkCreateFramebuffer(m_device, &framebufferCI, nullptr, &framebuffer));
 
 	// Descriptors
 	VkDescriptorSetLayout descriptorsetlayout;
 	std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {};
 	VkDescriptorSetLayoutCreateInfo descriptorsetlayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorsetlayoutCI, nullptr, &descriptorsetlayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorsetlayoutCI, nullptr, &descriptorsetlayout));
 
 	// Descriptor Pool
 	std::vector<VkDescriptorPoolSize> poolSizes = {Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1)};
 	VkDescriptorPoolCreateInfo descriptorPoolCI = Init::descriptorPoolCreateInfo(poolSizes, 2);
 	VkDescriptorPool descriptorpool;
-	VK_CHECK_RESULT(vkCreateDescriptorPool(m_device, &descriptorPoolCI, nullptr, &descriptorpool));
+	Tool::CheckResult(vkCreateDescriptorPool(m_device, &descriptorPoolCI, nullptr, &descriptorpool));
 
 	// Descriptor sets
 	VkDescriptorSet descriptorset;
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(descriptorpool, &descriptorsetlayout, 1);
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &descriptorset));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &descriptorset));
 
 	// Pipeline layout
 	VkPipelineLayout pipelinelayout;
 	VkPipelineLayoutCreateInfo pipelineLayoutCI = Init::pipelineLayoutCreateInfo(&descriptorsetlayout, 1);
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &pipelinelayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &pipelinelayout));
 
 	// Pipeline
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
@@ -5091,7 +5109,7 @@ void Renderer::GenerateBRDFLUT()
 	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "pbribl/genbrdflut.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "pbribl/genbrdflut.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	VkPipeline pipeline;
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &pipeline));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &pipeline));
 
 	// Render
 	VkClearValue clearValues[1];
@@ -5154,15 +5172,15 @@ void Renderer::GenerateIrradianceCube()
 	imageCI.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	imageCI.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 	/*imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;*/
-	VK_CHECK_RESULT(vkCreateImage(m_device, &imageCI, nullptr, &scene.textures.irradianceCube.image));
+	Tool::CheckResult(vkCreateImage(m_device, &imageCI, nullptr, &scene.textures.irradianceCube.image));
 	VkMemoryAllocateInfo memAlloc = Init::memoryAllocateInfo();
 	VkMemoryRequirements memReqs;
 
 	vkGetImageMemoryRequirements(m_device, scene.textures.irradianceCube.image, &memReqs);
 	memAlloc.allocationSize = memReqs.size;
 	memAlloc.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &scene.textures.irradianceCube.deviceMemory));
-	VK_CHECK_RESULT(vkBindImageMemory(m_device, scene.textures.irradianceCube.image, scene.textures.irradianceCube.deviceMemory, 0));
+	Tool::CheckResult(vkAllocateMemory(m_device, &memAlloc, nullptr, &scene.textures.irradianceCube.deviceMemory));
+	Tool::CheckResult(vkBindImageMemory(m_device, scene.textures.irradianceCube.image, scene.textures.irradianceCube.deviceMemory, 0));
 
 	// Image view
 	VkImageViewCreateInfo viewCI = Init::imageViewCreateInfo();
@@ -5173,7 +5191,7 @@ void Renderer::GenerateIrradianceCube()
 	viewCI.subresourceRange.levelCount = numMips;
 	viewCI.subresourceRange.layerCount = 6;
 	viewCI.image = scene.textures.irradianceCube.image;
-	VK_CHECK_RESULT(vkCreateImageView(m_device, &viewCI, nullptr, &scene.textures.irradianceCube.view));
+	Tool::CheckResult(vkCreateImageView(m_device, &viewCI, nullptr, &scene.textures.irradianceCube.view));
 
 	// Sampler
 	VkSamplerCreateInfo samplerCI = Init::samplerCreateInfo();
@@ -5186,7 +5204,7 @@ void Renderer::GenerateIrradianceCube()
 	samplerCI.minLod = 0.0f;
 	samplerCI.maxLod = static_cast<float>(numMips);
 	samplerCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-	VK_CHECK_RESULT(vkCreateSampler(m_device, &samplerCI, nullptr, &scene.textures.irradianceCube.sampler));
+	Tool::CheckResult(vkCreateSampler(m_device, &samplerCI, nullptr, &scene.textures.irradianceCube.sampler));
 
 	scene.textures.irradianceCube.descriptor.imageView = scene.textures.irradianceCube.view;
 	scene.textures.irradianceCube.descriptor.sampler = scene.textures.irradianceCube.sampler;
@@ -5236,7 +5254,7 @@ void Renderer::GenerateIrradianceCube()
 	renderPassCI.dependencyCount = 2;
 	renderPassCI.pDependencies = dependencies.data();
 	VkRenderPass renderpass;
-	VK_CHECK_RESULT(vkCreateRenderPass(m_device, &renderPassCI, nullptr, &renderpass));
+	Tool::CheckResult(vkCreateRenderPass(m_device, &renderPassCI, nullptr, &renderpass));
 
 	struct
 	{
@@ -5262,15 +5280,15 @@ void Renderer::GenerateIrradianceCube()
 		imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		imageCreateInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 		imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		VK_CHECK_RESULT(vkCreateImage(m_device, &imageCreateInfo, nullptr, &offscreen.image));
+		Tool::CheckResult(vkCreateImage(m_device, &imageCreateInfo, nullptr, &offscreen.image));
 
 		VkMemoryAllocateInfo memAlloc = Init::memoryAllocateInfo();
 		VkMemoryRequirements memReqs;
 		vkGetImageMemoryRequirements(m_device, offscreen.image, &memReqs);
 		memAlloc.allocationSize = memReqs.size;
 		memAlloc.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &offscreen.memory));
-		VK_CHECK_RESULT(vkBindImageMemory(m_device, offscreen.image, offscreen.memory, 0));
+		Tool::CheckResult(vkAllocateMemory(m_device, &memAlloc, nullptr, &offscreen.memory));
+		Tool::CheckResult(vkBindImageMemory(m_device, offscreen.image, offscreen.memory, 0));
 
 		VkImageViewCreateInfo colorImageView = Init::imageViewCreateInfo();
 		colorImageView.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -5283,7 +5301,7 @@ void Renderer::GenerateIrradianceCube()
 		colorImageView.subresourceRange.baseArrayLayer = 0;
 		colorImageView.subresourceRange.layerCount = 1;
 		colorImageView.image = offscreen.image;
-		VK_CHECK_RESULT(vkCreateImageView(m_device, &colorImageView, nullptr, &offscreen.view));
+		Tool::CheckResult(vkCreateImageView(m_device, &colorImageView, nullptr, &offscreen.view));
 
 		VkFramebufferCreateInfo fbufCreateInfo = Init::framebufferCreateInfo();
 		fbufCreateInfo.renderPass = renderpass;
@@ -5292,7 +5310,7 @@ void Renderer::GenerateIrradianceCube()
 		fbufCreateInfo.width = dim;
 		fbufCreateInfo.height = dim;
 		fbufCreateInfo.layers = 1;
-		VK_CHECK_RESULT(vkCreateFramebuffer(m_device, &fbufCreateInfo, nullptr, &offscreen.framebuffer));
+		Tool::CheckResult(vkCreateFramebuffer(m_device, &fbufCreateInfo, nullptr, &offscreen.framebuffer));
 
 		VkCommandBuffer layoutCmd = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 		Tool::SetImageLayout(
@@ -5309,18 +5327,18 @@ void Renderer::GenerateIrradianceCube()
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0),
 	};
 	VkDescriptorSetLayoutCreateInfo descriptorsetlayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorsetlayoutCI, nullptr, &descriptorsetlayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorsetlayoutCI, nullptr, &descriptorsetlayout));
 
 	// Descriptor Pool
 	std::vector<VkDescriptorPoolSize> poolSizes = {Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1)};
 	VkDescriptorPoolCreateInfo descriptorPoolCI = Init::descriptorPoolCreateInfo(poolSizes, 2);
 	VkDescriptorPool descriptorpool;
-	VK_CHECK_RESULT(vkCreateDescriptorPool(m_device, &descriptorPoolCI, nullptr, &descriptorpool));
+	Tool::CheckResult(vkCreateDescriptorPool(m_device, &descriptorPoolCI, nullptr, &descriptorpool));
 
 	// Descriptor sets
 	VkDescriptorSet descriptorset;
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(descriptorpool, &descriptorsetlayout, 1);
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &descriptorset));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &descriptorset));
 	VkWriteDescriptorSet writeDescriptorSet = Init::writeDescriptorSet(descriptorset, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, &scene.textures.environmentCube.descriptor);
 	vkUpdateDescriptorSets(m_device, 1, &writeDescriptorSet, 0, nullptr);
 
@@ -5339,7 +5357,7 @@ void Renderer::GenerateIrradianceCube()
 	VkPipelineLayoutCreateInfo pipelineLayoutCI = Init::pipelineLayoutCreateInfo(&descriptorsetlayout, 1);
 	pipelineLayoutCI.pushConstantRangeCount = 1;
 	pipelineLayoutCI.pPushConstantRanges = pushConstantRanges.data();
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &pipelinelayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &pipelinelayout));
 
 	// Pipeline
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
@@ -5369,7 +5387,7 @@ void Renderer::GenerateIrradianceCube()
 	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "pbribl/filtercube.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "pbribl/irradiancecube.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	VkPipeline pipeline;
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &pipeline));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &pipeline));
 
 	// Render
 
@@ -5535,14 +5553,14 @@ void Renderer::GeneratePrefilteredCube()
 	imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
 	imageCI.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	imageCI.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-	VK_CHECK_RESULT(vkCreateImage(m_device, &imageCI, nullptr, &scene.textures.prefilteredCube.image));
+	Tool::CheckResult(vkCreateImage(m_device, &imageCI, nullptr, &scene.textures.prefilteredCube.image));
 	VkMemoryAllocateInfo memAlloc = Init::memoryAllocateInfo();
 	VkMemoryRequirements memReqs;
 	vkGetImageMemoryRequirements(m_device, scene.textures.prefilteredCube.image, &memReqs);
 	memAlloc.allocationSize = memReqs.size;
 	memAlloc.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &scene.textures.prefilteredCube.deviceMemory));
-	VK_CHECK_RESULT(vkBindImageMemory(m_device, scene.textures.prefilteredCube.image, scene.textures.prefilteredCube.deviceMemory, 0));
+	Tool::CheckResult(vkAllocateMemory(m_device, &memAlloc, nullptr, &scene.textures.prefilteredCube.deviceMemory));
+	Tool::CheckResult(vkBindImageMemory(m_device, scene.textures.prefilteredCube.image, scene.textures.prefilteredCube.deviceMemory, 0));
 
 	// Image view
 	VkImageViewCreateInfo viewCI = Init::imageViewCreateInfo();
@@ -5553,7 +5571,7 @@ void Renderer::GeneratePrefilteredCube()
 	viewCI.subresourceRange.levelCount = numMips;
 	viewCI.subresourceRange.layerCount = 6;
 	viewCI.image = scene.textures.prefilteredCube.image;
-	VK_CHECK_RESULT(vkCreateImageView(m_device, &viewCI, nullptr, &scene.textures.prefilteredCube.view));
+	Tool::CheckResult(vkCreateImageView(m_device, &viewCI, nullptr, &scene.textures.prefilteredCube.view));
 
 	// Sampler
 	VkSamplerCreateInfo samplerCI = Init::samplerCreateInfo();
@@ -5566,7 +5584,7 @@ void Renderer::GeneratePrefilteredCube()
 	samplerCI.minLod = 0.0f;
 	samplerCI.maxLod = static_cast<float>(numMips);
 	samplerCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-	VK_CHECK_RESULT(vkCreateSampler(m_device, &samplerCI, nullptr, &scene.textures.prefilteredCube.sampler));
+	Tool::CheckResult(vkCreateSampler(m_device, &samplerCI, nullptr, &scene.textures.prefilteredCube.sampler));
 
 	scene.textures.prefilteredCube.descriptor.imageView = scene.textures.prefilteredCube.view;
 	scene.textures.prefilteredCube.descriptor.sampler = scene.textures.prefilteredCube.sampler;
@@ -5618,7 +5636,7 @@ void Renderer::GeneratePrefilteredCube()
 	renderPassCI.pDependencies = dependencies.data();
 
 	VkRenderPass renderpass;
-	VK_CHECK_RESULT(vkCreateRenderPass(m_device, &renderPassCI, nullptr, &renderpass));
+	Tool::CheckResult(vkCreateRenderPass(m_device, &renderPassCI, nullptr, &renderpass));
 
 	struct
 	{
@@ -5644,15 +5662,15 @@ void Renderer::GeneratePrefilteredCube()
 		imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		imageCreateInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 		imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		VK_CHECK_RESULT(vkCreateImage(m_device, &imageCreateInfo, nullptr, &offscreen.image));
+		Tool::CheckResult(vkCreateImage(m_device, &imageCreateInfo, nullptr, &offscreen.image));
 
 		VkMemoryAllocateInfo memAlloc = Init::memoryAllocateInfo();
 		VkMemoryRequirements memReqs;
 		vkGetImageMemoryRequirements(m_device, offscreen.image, &memReqs);
 		memAlloc.allocationSize = memReqs.size;
 		memAlloc.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &offscreen.memory));
-		VK_CHECK_RESULT(vkBindImageMemory(m_device, offscreen.image, offscreen.memory, 0));
+		Tool::CheckResult(vkAllocateMemory(m_device, &memAlloc, nullptr, &offscreen.memory));
+		Tool::CheckResult(vkBindImageMemory(m_device, offscreen.image, offscreen.memory, 0));
 
 		VkImageViewCreateInfo colorImageView = Init::imageViewCreateInfo();
 		colorImageView.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -5665,7 +5683,7 @@ void Renderer::GeneratePrefilteredCube()
 		colorImageView.subresourceRange.baseArrayLayer = 0;
 		colorImageView.subresourceRange.layerCount = 1;
 		colorImageView.image = offscreen.image;
-		VK_CHECK_RESULT(vkCreateImageView(m_device, &colorImageView, nullptr, &offscreen.view));
+		Tool::CheckResult(vkCreateImageView(m_device, &colorImageView, nullptr, &offscreen.view));
 
 		VkFramebufferCreateInfo fbufCreateInfo = Init::framebufferCreateInfo();
 		fbufCreateInfo.renderPass = renderpass;
@@ -5674,7 +5692,7 @@ void Renderer::GeneratePrefilteredCube()
 		fbufCreateInfo.width = dim;
 		fbufCreateInfo.height = dim;
 		fbufCreateInfo.layers = 1;
-		VK_CHECK_RESULT(vkCreateFramebuffer(m_device, &fbufCreateInfo, nullptr, &offscreen.framebuffer));
+		Tool::CheckResult(vkCreateFramebuffer(m_device, &fbufCreateInfo, nullptr, &offscreen.framebuffer));
 
 		VkCommandBuffer layoutCmd = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 		Tool::SetImageLayout(
@@ -5692,18 +5710,18 @@ void Renderer::GeneratePrefilteredCube()
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0),
 	};
 	VkDescriptorSetLayoutCreateInfo descriptorsetlayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorsetlayoutCI, nullptr, &descriptorsetlayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorsetlayoutCI, nullptr, &descriptorsetlayout));
 
 	// Descriptor Pool
 	std::vector<VkDescriptorPoolSize> poolSizes = {Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1)};
 	VkDescriptorPoolCreateInfo descriptorPoolCI = Init::descriptorPoolCreateInfo(poolSizes, 2);
 	VkDescriptorPool descriptorpool;
-	VK_CHECK_RESULT(vkCreateDescriptorPool(m_device, &descriptorPoolCI, nullptr, &descriptorpool));
+	Tool::CheckResult(vkCreateDescriptorPool(m_device, &descriptorPoolCI, nullptr, &descriptorpool));
 
 	// Descriptor sets
 	VkDescriptorSet descriptorset;
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(descriptorpool, &descriptorsetlayout, 1);
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &descriptorset));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &descriptorset));
 	VkWriteDescriptorSet writeDescriptorSet = Init::writeDescriptorSet(descriptorset, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, &scene.textures.environmentCube.descriptor);
 	vkUpdateDescriptorSets(m_device, 1, &writeDescriptorSet, 0, nullptr);
 
@@ -5722,7 +5740,7 @@ void Renderer::GeneratePrefilteredCube()
 	VkPipelineLayoutCreateInfo pipelineLayoutCI = Init::pipelineLayoutCreateInfo(&descriptorsetlayout, 1);
 	pipelineLayoutCI.pushConstantRangeCount = 1;
 	pipelineLayoutCI.pPushConstantRanges = pushConstantRanges.data();
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &pipelinelayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &pipelinelayout));
 
 	// Pipeline
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
@@ -5752,7 +5770,7 @@ void Renderer::GeneratePrefilteredCube()
 	shaderStages[0] = LoadShader(Tool::GetShadersPath() + "pbribl/filtercube.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "pbribl/prefilterenvmap.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 	VkPipeline pipeline;
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &pipeline));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &pipeline));
 
 	// Render
 
@@ -5944,9 +5962,9 @@ void Renderer::CreateBuffersShadowOmni()
 {
 	if (m_shadowPointLightCount != 0)
 	{
-		VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_shadowOmniPass.CBuffer, m_shadowPointLightCount * sizeof(ShadowOmniPass::CBufferDesc)));
+		Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_shadowOmniPass.CBuffer, m_shadowPointLightCount * sizeof(ShadowOmniPass::CBufferDesc)));
 
-		VK_CHECK_RESULT(m_shadowOmniPass.CBuffer.Map());
+		Tool::CheckResult(m_shadowOmniPass.CBuffer.Map());
 	}
 
 	// VkDeviceSize bufferSize{ m_shadowPointLightCount * sizeof(glm::vec4) };
@@ -5983,7 +6001,7 @@ void Renderer::PreparePipelineShadowOmni()
 
 	pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
 	pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_shadowOmniPass.PipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_shadowOmniPass.PipelineLayout));
 
 	// Pipelines
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
@@ -6014,7 +6032,7 @@ void Renderer::PreparePipelineShadowOmni()
 	pipelineCI.pStages = shaderStages.data();
 	pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({vkglTF::VertexComponent::Position});
 
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_shadowOmniPass.Pipeline));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_shadowOmniPass.Pipeline));
 }
 void Renderer::AllocateDescriptorSetShadowOmni()
 {
@@ -6028,12 +6046,12 @@ void Renderer::AllocateDescriptorSetShadowOmni()
 		};
 
 		VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_shadowOmniPass.SetLayout));
+		Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_shadowOmniPass.SetLayout));
 
 		// Set
 		VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_shadowOmniPass.SetLayout, 1);
 
-		VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_shadowOmniPass.Set));
+		Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_shadowOmniPass.Set));
 		std::vector<VkWriteDescriptorSet> offScreenWriteDescriptorSets = {
 			// Binding 0 : Vertex shader uniform buffer
 			Init::writeDescriptorSet(m_shadowOmniPass.Set, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_shadowOmniPass.CBuffer.descriptor),
@@ -6087,7 +6105,7 @@ void Renderer::SetupPassShadowOmni()
 
 	for (int i = 0; i < m_shadowPointLightCount; ++i)
 	{
-		VK_CHECK_RESULT(vkCreateImage(m_device, &imageCreateInfo, nullptr, &m_shadowOmniPass.CubeMaps[i].Tex.image));
+		Tool::CheckResult(vkCreateImage(m_device, &imageCreateInfo, nullptr, &m_shadowOmniPass.CubeMaps[i].Tex.image));
 	}
 
 	if (m_shadowPointLightCount != 0)
@@ -6097,8 +6115,8 @@ void Renderer::SetupPassShadowOmni()
 	memAllocInfo.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	for (int i = 0; i < m_shadowPointLightCount; ++i)
 	{
-		VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAllocInfo, nullptr, &m_shadowOmniPass.CubeMaps[i].Tex.deviceMemory));
-		VK_CHECK_RESULT(vkBindImageMemory(m_device, m_shadowOmniPass.CubeMaps[i].Tex.image, m_shadowOmniPass.CubeMaps[i].Tex.deviceMemory, 0));
+		Tool::CheckResult(vkAllocateMemory(m_device, &memAllocInfo, nullptr, &m_shadowOmniPass.CubeMaps[i].Tex.deviceMemory));
+		Tool::CheckResult(vkBindImageMemory(m_device, m_shadowOmniPass.CubeMaps[i].Tex.image, m_shadowOmniPass.CubeMaps[i].Tex.deviceMemory, 0));
 	}
 
 	// Image barrier for optimal image (target)
@@ -6132,7 +6150,7 @@ void Renderer::SetupPassShadowOmni()
 	sampler.minLod = 0.0f;
 	sampler.maxLod = 1.0f;
 	sampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-	VK_CHECK_RESULT(vkCreateSampler(m_device, &sampler, nullptr, &m_shadowOmniPass.Sampler));
+	Tool::CheckResult(vkCreateSampler(m_device, &sampler, nullptr, &m_shadowOmniPass.Sampler));
 	// MARK
 
 	// Create image view
@@ -6150,7 +6168,7 @@ void Renderer::SetupPassShadowOmni()
 		view.subresourceRange.layerCount = 6;
 		view.subresourceRange.baseArrayLayer = 0;
 		view.image = m_shadowOmniPass.CubeMaps[i].Tex.image;
-		VK_CHECK_RESULT(vkCreateImageView(m_device, &view, nullptr, &m_shadowOmniPass.CubeMaps[i].Tex.view));
+		Tool::CheckResult(vkCreateImageView(m_device, &view, nullptr, &m_shadowOmniPass.CubeMaps[i].Tex.view));
 
 		view.viewType = VK_IMAGE_VIEW_TYPE_2D;
 		view.subresourceRange.layerCount = 1;
@@ -6159,7 +6177,7 @@ void Renderer::SetupPassShadowOmni()
 		for (uint32_t j = 0; j < 6; j++)
 		{
 			view.subresourceRange.baseArrayLayer = j;
-			VK_CHECK_RESULT(vkCreateImageView(m_device, &view, nullptr, &m_shadowOmniPass.CubeMaps[i].FaceViews[j]));
+			Tool::CheckResult(vkCreateImageView(m_device, &view, nullptr, &m_shadowOmniPass.CubeMaps[i].FaceViews[j]));
 		}
 	}
 
@@ -6215,7 +6233,7 @@ void Renderer::SetupPassShadowOmni()
 	renderPassCreateInfo.subpassCount = 1;
 	renderPassCreateInfo.pSubpasses = &subpass;
 
-	VK_CHECK_RESULT(vkCreateRenderPass(m_device, &renderPassCreateInfo, nullptr, &m_shadowOmniPass.RenderPass));
+	Tool::CheckResult(vkCreateRenderPass(m_device, &renderPassCreateInfo, nullptr, &m_shadowOmniPass.RenderPass));
 
 	PreparePipelineShadowOmni();
 
@@ -6241,7 +6259,7 @@ void Renderer::SetupPassShadowOmni()
 	imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	imageCreateInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	VK_CHECK_RESULT(vkCreateImage(m_device, &imageCreateInfo, nullptr, &m_shadowOmniPass.Depth.image));
+	Tool::CheckResult(vkCreateImage(m_device, &imageCreateInfo, nullptr, &m_shadowOmniPass.Depth.image));
 
 	layoutCmd = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 
@@ -6267,8 +6285,8 @@ void Renderer::SetupPassShadowOmni()
 	VkMemoryAllocateInfo memAlloc = Init::memoryAllocateInfo();
 	memAlloc.allocationSize = memReqs.size;
 	memAlloc.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &m_shadowOmniPass.Depth.memory));
-	VK_CHECK_RESULT(vkBindImageMemory(m_device, m_shadowOmniPass.Depth.image, m_shadowOmniPass.Depth.memory, 0));
+	Tool::CheckResult(vkAllocateMemory(m_device, &memAlloc, nullptr, &m_shadowOmniPass.Depth.memory));
+	Tool::CheckResult(vkBindImageMemory(m_device, m_shadowOmniPass.Depth.image, m_shadowOmniPass.Depth.memory, 0));
 
 	Tool::SetImageLayout(
 		layoutCmd,
@@ -6280,7 +6298,7 @@ void Renderer::SetupPassShadowOmni()
 	m_vulkanDevice->FlushCommandBuffer(layoutCmd, m_queues.graphicsQueue, true);
 
 	depthStencilView.image = m_shadowOmniPass.Depth.image;
-	VK_CHECK_RESULT(vkCreateImageView(m_device, &depthStencilView, nullptr, &m_shadowOmniPass.Depth.view));
+	Tool::CheckResult(vkCreateImageView(m_device, &depthStencilView, nullptr, &m_shadowOmniPass.Depth.view));
 
 	VkImageView attachments[2];
 	attachments[1] = m_shadowOmniPass.Depth.view;
@@ -6298,7 +6316,7 @@ void Renderer::SetupPassShadowOmni()
 		for (uint32_t i = 0; i < 6; i++)
 		{
 			attachments[0] = m_shadowOmniPass.CubeMaps[j].FaceViews[i];
-			VK_CHECK_RESULT(vkCreateFramebuffer(m_device, &fbufCreateInfo, nullptr, &m_shadowOmniPass.FrameBuffers[j][i]));
+			Tool::CheckResult(vkCreateFramebuffer(m_device, &fbufCreateInfo, nullptr, &m_shadowOmniPass.FrameBuffers[j][i]));
 		}
 	}
 	m_shadowOmniPass.CBufferData.reserve(m_shadowPointLightCount);
@@ -6490,8 +6508,8 @@ void Renderer::SaveToImage(const Texture &tex, const std::string &savePath)
 void Renderer::SetupPassDepthCubeMap()
 {
 	// Create Buffer
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_DepthCubePass.CBuffer, sizeof(m_DepthCubePass.CBufferData)));
-	VK_CHECK_RESULT(m_DepthCubePass.CBuffer.Map());
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_DepthCubePass.CBuffer, sizeof(m_DepthCubePass.CBufferData)));
+	Tool::CheckResult(m_DepthCubePass.CBuffer.Map());
 
 	// DescriptorSet
 	std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
@@ -6499,9 +6517,9 @@ void Renderer::SetupPassDepthCubeMap()
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0),
 	};
 	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_DepthCubePass.SetLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_DepthCubePass.SetLayout));
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_DepthCubePass.SetLayout, 1);
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_DepthCubePass.Set));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_DepthCubePass.Set));
 	std::vector<VkWriteDescriptorSet> offScreenWriteDescriptorSets = {
 		// Binding 0 : Vertex shader uniform buffer
 		Init::writeDescriptorSet(m_DepthCubePass.Set, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_DepthCubePass.CBuffer.descriptor),
@@ -6549,14 +6567,14 @@ void Renderer::SetupPassDepthCubeMap()
 	renderPassCreateInfo.pAttachments = osAttachments;
 	renderPassCreateInfo.subpassCount = 1;
 	renderPassCreateInfo.pSubpasses = &subpass;
-	VK_CHECK_RESULT(vkCreateRenderPass(m_device, &renderPassCreateInfo, nullptr, &m_DepthCubePass.RenderPass));
+	Tool::CheckResult(vkCreateRenderPass(m_device, &renderPassCreateInfo, nullptr, &m_DepthCubePass.RenderPass));
 
 	// Pipeline
 	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_DepthCubePass.SetLayout, 1);
 	VkPushConstantRange pushConstantRange = Init::pushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, sizeof(DepthCubeMapPass::PushBlockDesc), 0);
 	pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
 	pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_DepthCubePass.PipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_DepthCubePass.PipelineLayout));
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
 	VkPipelineRasterizationStateCreateInfo rasterizationState = Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE, 0);
 	VkPipelineColorBlendAttachmentState blendAttachmentState = Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE);
@@ -6582,7 +6600,7 @@ void Renderer::SetupPassDepthCubeMap()
 	pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
 	pipelineCI.pStages = shaderStages.data();
 	pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({vkglTF::VertexComponent::Position});
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_DepthCubePass.Pipeline));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_DepthCubePass.Pipeline));
 
 	// Color Image (depth)	VkImageCreateInfo imageCreateInfo = Init::imageCreateInfo();
 	VkImageCreateInfo colorImageCI = Init::imageCreateInfo();
@@ -6601,12 +6619,12 @@ void Renderer::SetupPassDepthCubeMap()
 	VkMemoryAllocateInfo memAllocInfo = Init::memoryAllocateInfo();
 	VkMemoryRequirements memReqs;
 
-	VK_CHECK_RESULT(vkCreateImage(m_device, &colorImageCI, nullptr, &m_DepthCubePass.cubeMap.Tex.image));
+	Tool::CheckResult(vkCreateImage(m_device, &colorImageCI, nullptr, &m_DepthCubePass.cubeMap.Tex.image));
 	vkGetImageMemoryRequirements(m_device, m_DepthCubePass.cubeMap.Tex.image, &memReqs);
 	memAllocInfo.allocationSize = memReqs.size;
 	memAllocInfo.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAllocInfo, nullptr, &m_DepthCubePass.cubeMap.Tex.deviceMemory));
-	VK_CHECK_RESULT(vkBindImageMemory(m_device, m_DepthCubePass.cubeMap.Tex.image, m_DepthCubePass.cubeMap.Tex.deviceMemory, 0));
+	Tool::CheckResult(vkAllocateMemory(m_device, &memAllocInfo, nullptr, &m_DepthCubePass.cubeMap.Tex.deviceMemory));
+	Tool::CheckResult(vkBindImageMemory(m_device, m_DepthCubePass.cubeMap.Tex.image, m_DepthCubePass.cubeMap.Tex.deviceMemory, 0));
 
 	m_DepthCubePass.cubeMap.Tex.height = m_DepthCubePass.cubeMap.Tex.width = offscreenImageSize;
 	m_DepthCubePass.cubeMap.Tex.format = offscreenImageFormat;
@@ -6625,7 +6643,7 @@ void Renderer::SetupPassDepthCubeMap()
 	sampler.minLod = 0.0f;
 	sampler.maxLod = 1.0f;
 	sampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-	VK_CHECK_RESULT(vkCreateSampler(m_device, &sampler, nullptr, &m_DepthCubePass.Sampler));
+	Tool::CheckResult(vkCreateSampler(m_device, &sampler, nullptr, &m_DepthCubePass.Sampler));
 	// Depth Image
 	VkImageCreateInfo imageCreateInfo = Init::imageCreateInfo();
 	imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -6640,15 +6658,15 @@ void Renderer::SetupPassDepthCubeMap()
 	imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	imageCreateInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	VK_CHECK_RESULT(vkCreateImage(m_device, &imageCreateInfo, nullptr, &m_DepthCubePass.Depth.image));
+	Tool::CheckResult(vkCreateImage(m_device, &imageCreateInfo, nullptr, &m_DepthCubePass.Depth.image));
 
 	VkMemoryAllocateInfo memAlloc = Init::memoryAllocateInfo();
 
 	vkGetImageMemoryRequirements(m_device, m_DepthCubePass.Depth.image, &memReqs);
 	memAlloc.allocationSize = memReqs.size;
 	memAlloc.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &m_DepthCubePass.Depth.memory));
-	VK_CHECK_RESULT(vkBindImageMemory(m_device, m_DepthCubePass.Depth.image, m_DepthCubePass.Depth.memory, 0));
+	Tool::CheckResult(vkAllocateMemory(m_device, &memAlloc, nullptr, &m_DepthCubePass.Depth.memory));
+	Tool::CheckResult(vkBindImageMemory(m_device, m_DepthCubePass.Depth.image, m_DepthCubePass.Depth.memory, 0));
 
 	VkCommandBuffer layoutCmd = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 	Tool::SetImageLayout(
@@ -6682,14 +6700,14 @@ void Renderer::SetupPassDepthCubeMap()
 	view.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 	view.subresourceRange.layerCount = 6;
 	view.image = m_DepthCubePass.cubeMap.Tex.image;
-	VK_CHECK_RESULT(vkCreateImageView(m_device, &view, nullptr, &m_DepthCubePass.cubeMap.Tex.view));
+	Tool::CheckResult(vkCreateImageView(m_device, &view, nullptr, &m_DepthCubePass.cubeMap.Tex.view));
 	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
 	view.subresourceRange.layerCount = 1;
 	// view.image = shadowCubeMap.texture.image;
 	for (uint32_t j = 0; j < 6; j++)
 	{
 		view.subresourceRange.baseArrayLayer = j;
-		VK_CHECK_RESULT(vkCreateImageView(m_device, &view, nullptr, &m_DepthCubePass.cubeMap.FaceViews[j]));
+		Tool::CheckResult(vkCreateImageView(m_device, &view, nullptr, &m_DepthCubePass.cubeMap.FaceViews[j]));
 	}
 
 	VkImageViewCreateInfo depthStencilView = Init::imageViewCreateInfo();
@@ -6707,7 +6725,7 @@ void Renderer::SetupPassDepthCubeMap()
 	depthStencilView.subresourceRange.baseArrayLayer = 0;
 	depthStencilView.subresourceRange.layerCount = 1;
 	depthStencilView.image = m_DepthCubePass.Depth.image;
-	VK_CHECK_RESULT(vkCreateImageView(m_device, &depthStencilView, nullptr, &m_DepthCubePass.Depth.view));
+	Tool::CheckResult(vkCreateImageView(m_device, &depthStencilView, nullptr, &m_DepthCubePass.Depth.view));
 
 	m_DepthCubePass.CBufferData.Proj = glm::perspective((float)(PI / 2.0), 1.0f, m_camera.znear, m_camera.zfar);
 
@@ -6727,7 +6745,7 @@ void Renderer::SetupPassDepthCubeMap()
 	for (uint32_t i = 0; i < 6; i++)
 	{
 		attachments[0] = m_DepthCubePass.cubeMap.FaceViews[i];
-		VK_CHECK_RESULT(vkCreateFramebuffer(m_device, &fbufCreateInfo, nullptr, &m_DepthCubePass.frameBuffer[i]));
+		Tool::CheckResult(vkCreateFramebuffer(m_device, &fbufCreateInfo, nullptr, &m_DepthCubePass.frameBuffer[i]));
 	}
 }
 
@@ -6920,7 +6938,7 @@ void Renderer::PrepareLightCullingBuffers()
 	m_compute.buffers.uniformBufferData.tileSize = m_compute.tileSize;
 	m_compute.buffers.uniformBufferData.screenSize = glm::vec2{m_width, m_height};
 	m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_compute.buffers.uniformBuffer, sizeof(LightCullingPass::UniformComputeCullingData));
-	VK_CHECK_RESULT(m_compute.buffers.uniformBuffer.Map());
+	Tool::CheckResult(m_compute.buffers.uniformBuffer.Map());
 
 	UpdateLightCullingUBO();
 }
@@ -6949,10 +6967,10 @@ void Renderer::SetupTileBasedLightingPass()
 	};
 
 	VkDescriptorSetLayoutCreateInfo descriptorLayout = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayout, nullptr, &m_compute.descriptorSetLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayout, nullptr, &m_compute.descriptorSetLayout));
 
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_compute.descriptorSetLayout, 1);
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_compute.descriptorSet));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_compute.descriptorSet));
 
 	std::vector<VkWriteDescriptorSet> computeWriteDescriptorSets =
 		{
@@ -6967,7 +6985,7 @@ void Renderer::SetupTileBasedLightingPass()
 	// Pipeline
 	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_compute.descriptorSetLayout, 1);
 
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_compute.pipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_compute.pipelineLayout));
 	VkComputePipelineCreateInfo computePipelineCreateInfo = Init::computePipelineCreateInfo(m_compute.pipelineLayout, 0);
 
 	computePipelineCreateInfo.stage = LoadShader(Tool::GetShadersPath() + "Main/TileBasedLighting.comp.spv", VK_SHADER_STAGE_COMPUTE_BIT);
@@ -6976,19 +6994,19 @@ void Renderer::SetupTileBasedLightingPass()
 
 	computePipelineCreateInfo.stage.pSpecializationInfo = &specIF;
 
-	VK_CHECK_RESULT(vkCreateComputePipelines(m_device, m_pipelineCache, 1, &computePipelineCreateInfo, nullptr, &m_compute.pipeline));
+	Tool::CheckResult(vkCreateComputePipelines(m_device, m_pipelineCache, 1, &computePipelineCreateInfo, nullptr, &m_compute.pipeline));
 
 	VkCommandPoolCreateInfo cmdPoolInfo = {};
 	cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	cmdPoolInfo.queueFamilyIndex = m_compute.queueFamilyIndex;
 	cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-	VK_CHECK_RESULT(vkCreateCommandPool(m_device, &cmdPoolInfo, nullptr, &m_compute.commandPool));
+	Tool::CheckResult(vkCreateCommandPool(m_device, &cmdPoolInfo, nullptr, &m_compute.commandPool));
 
 	m_compute.commandBuffer = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, m_compute.commandPool);
 
 	// Semaphore for compute & graphics sync
 	VkSemaphoreCreateInfo semaphoreCreateInfo = Init::semaphoreCreateInfo();
-	VK_CHECK_RESULT(vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_compute.semaphore));
+	Tool::CheckResult(vkCreateSemaphore(m_device, &semaphoreCreateInfo, nullptr, &m_compute.semaphore));
 
 	BuildTileBasedLightingCommandBuffer();
 }
@@ -6997,7 +7015,7 @@ void Renderer::BuildTileBasedLightingCommandBuffer()
 {
 	VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
 
-	VK_CHECK_RESULT(vkBeginCommandBuffer(m_compute.commandBuffer, &cmdBufInfo));
+	Tool::CheckResult(vkBeginCommandBuffer(m_compute.commandBuffer, &cmdBufInfo));
 
 	BeginDebugLabel(m_compute.commandBuffer, "Tile Based Lights Culling");
 	// Add memory barrier to ensure that the (graphics) vertex shader has fetched attributes before compute starts to write to the buffer
@@ -7104,13 +7122,13 @@ void Renderer::SetupSSAOPass()
 
 	m_SSAOPass.frameBuffer->AddAttachment(attachmentCI);
 
-	VK_CHECK_RESULT(m_SSAOPass.frameBuffer->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
-	VK_CHECK_RESULT(m_SSAOPass.frameBuffer->CreateRenderPass());
+	Tool::CheckResult(m_SSAOPass.frameBuffer->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	Tool::CheckResult(m_SSAOPass.frameBuffer->CreateRenderPass());
 }
 void Renderer::CreateBuffersSSAO()
 {
 	m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_SSAOPass.buffers.ubo, sizeof(SSAOPass::CBufferDesc));
-	VK_CHECK_RESULT(m_SSAOPass.buffers.ubo.Map());
+	Tool::CheckResult(m_SSAOPass.buffers.ubo.Map());
 	UpdateCBufferSSAO();
 	// GenerateNoiseTextureSSAO();
 	GenerateSampleKernel();
@@ -7141,11 +7159,11 @@ void Renderer::AllocateDescriptorSetSSAO()
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 6),
 	};
 	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_SSAOPass.setLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_SSAOPass.setLayout));
 
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_SSAOPass.setLayout, 1);
 	// Deferred composition
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_SSAOPass.set));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_SSAOPass.set));
 
 	VkDescriptorImageInfo texDescriptorPosition =
 		Init::descriptorImageInfo(
@@ -7180,7 +7198,7 @@ void Renderer::PreparePipelineSSAO()
 {
 	VkPipelineLayoutCreateInfo pipelineLayoutCI = Init::pipelineLayoutCreateInfo(&m_SSAOPass.setLayout, 1);
 
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &m_SSAOPass.pipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &m_SSAOPass.pipelineLayout));
 
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCI = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
 	VkPipelineRasterizationStateCreateInfo rasterizationStateCI = Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE, 0);
@@ -7210,7 +7228,7 @@ void Renderer::PreparePipelineSSAO()
 	pipelineCI.pStages = shaderStages.data();
 	pipelineCI.pVertexInputState = &emptyInputState;
 
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_SSAOPass.pipeline));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_SSAOPass.pipeline));
 }
 void Renderer::SetupPasses()
 {
@@ -7425,7 +7443,7 @@ void Renderer::CreateStorageBuffer(VkDeviceSize bufferSize)
 void Renderer::CreateBufferCameraInfos()
 {
 	m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_sharedBuffers.ConstBufferCamera, sizeof(CameraInfos));
-	VK_CHECK_RESULT(m_sharedBuffers.ConstBufferCamera.Map());
+	Tool::CheckResult(m_sharedBuffers.ConstBufferCamera.Map());
 
 	m_cameraInfosData.zNear = m_camera.znear;
 	m_cameraInfosData.zFar = m_camera.zfar;
@@ -7620,7 +7638,7 @@ void Renderer::SetupCSMPass()
 	renderPassCreateInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
 	renderPassCreateInfo.pDependencies = dependencies.data();
 
-	VK_CHECK_RESULT(vkCreateRenderPass(m_device, &renderPassCreateInfo, nullptr, &m_CSMPass.renderPass));
+	Tool::CheckResult(vkCreateRenderPass(m_device, &renderPassCreateInfo, nullptr, &m_CSMPass.renderPass));
 
 	/*
 		Layered depth image and views
@@ -7644,14 +7662,14 @@ void Renderer::SetupCSMPass()
 			imageInfo.format = depthFormat;
 			imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 			imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			VK_CHECK_RESULT(vkCreateImage(m_device, &imageInfo, nullptr, &depth.image));
+			Tool::CheckResult(vkCreateImage(m_device, &imageInfo, nullptr, &depth.image));
 			VkMemoryAllocateInfo memAlloc = Init::memoryAllocateInfo();
 			VkMemoryRequirements memReqs;
 			vkGetImageMemoryRequirements(m_device, depth.image, &memReqs);
 			memAlloc.allocationSize = memReqs.size;
 			memAlloc.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-			VK_CHECK_RESULT(vkAllocateMemory(m_device, &memAlloc, nullptr, &depth.memory));
-			VK_CHECK_RESULT(vkBindImageMemory(m_device, depth.image, depth.memory, 0));
+			Tool::CheckResult(vkAllocateMemory(m_device, &memAlloc, nullptr, &depth.memory));
+			Tool::CheckResult(vkBindImageMemory(m_device, depth.image, depth.memory, 0));
 			// Full depth map view (all layers)
 			VkImageViewCreateInfo viewInfo = Init::imageViewCreateInfo();
 			viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
@@ -7663,7 +7681,7 @@ void Renderer::SetupCSMPass()
 			viewInfo.subresourceRange.baseArrayLayer = 0;
 			viewInfo.subresourceRange.layerCount = SHADOW_MAP_CASCADE_COUNT;
 			viewInfo.image = depth.image;
-			VK_CHECK_RESULT(vkCreateImageView(m_device, &viewInfo, nullptr, &depth.view));
+			Tool::CheckResult(vkCreateImageView(m_device, &viewInfo, nullptr, &depth.view));
 			// std::array<Cascade, SHADOW_MAP_CASCADE_COUNT> cascades;
 			//  One image view and framebuffer per cascade
 			for (uint32_t i = 0; i < SHADOW_MAP_CASCADE_COUNT; i++)
@@ -7680,7 +7698,7 @@ void Renderer::SetupCSMPass()
 				viewInfo.subresourceRange.baseArrayLayer = i;
 				viewInfo.subresourceRange.layerCount = 1;
 				viewInfo.image = depth.image;
-				VK_CHECK_RESULT(vkCreateImageView(m_device, &viewInfo, nullptr, &m_CSMPass.Cascades[k][i].view));
+				Tool::CheckResult(vkCreateImageView(m_device, &viewInfo, nullptr, &m_CSMPass.Cascades[k][i].view));
 				// FramebufferManager
 				VkFramebufferCreateInfo framebufferInfo = Init::framebufferCreateInfo();
 				framebufferInfo.renderPass = m_CSMPass.renderPass;
@@ -7689,7 +7707,7 @@ void Renderer::SetupCSMPass()
 				framebufferInfo.width = SHADOWMAP_DIM;
 				framebufferInfo.height = SHADOWMAP_DIM;
 				framebufferInfo.layers = 1;
-				VK_CHECK_RESULT(vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &m_CSMPass.Cascades[k][i].frameBuffer));
+				Tool::CheckResult(vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &m_CSMPass.Cascades[k][i].frameBuffer));
 			}
 
 			VkSamplerCreateInfo sampler = Init::samplerCreateInfo();
@@ -7704,7 +7722,7 @@ void Renderer::SetupCSMPass()
 			sampler.minLod = 0.0f;
 			sampler.maxLod = 1.0f;
 			sampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-			VK_CHECK_RESULT(vkCreateSampler(m_device, &sampler, nullptr, &depth.sampler));
+			Tool::CheckResult(vkCreateSampler(m_device, &sampler, nullptr, &depth.sampler));
 
 			VkCommandBuffer cmd = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 			VkImageSubresourceRange subresourceRange = {};
@@ -7730,7 +7748,7 @@ void Renderer::SetupCSMPass()
 // void Renderer::CreateBuffersCSM()
 //{
 //	// Cascade matrices
-//	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+//	Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 //		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 //		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 //		&m_CSMPass.buffers.cascadeViewProjMatricesBuffer,
@@ -7738,21 +7756,21 @@ void Renderer::SetupCSMPass()
 //
 //	// Scene uniform buffer blocks
 //	// Lighting Pass buffer
-//	//VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+//	//Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 //	//	VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 //	//	VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 //	//	&uniformBuffers.VS,
 //	//	sizeof(uboVS)));
 //	//
-//	//VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+//	//Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 //	//	VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 //	//	VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 //	//	&m_CSMPass.buffers.uboFS,
 //	//	sizeof(UBOFS)));
 //
 //	// Map persistent
-//	VK_CHECK_RESULT(m_CSMPass.buffers.cascadeViewProjMatricesBuffer.Map());
-//	//VK_CHECK_RESULT(m_CSMPass.buffers.uboFS.Map());
+//	Tool::CheckResult(m_CSMPass.buffers.cascadeViewProjMatricesBuffer.Map());
+//	//Tool::CheckResult(m_CSMPass.buffers.uboFS.Map());
 //	//CreateLights();
 //	UpdateUBOCSM();
 // }
@@ -7785,11 +7803,11 @@ void Renderer::AllocateDescriptorSetCSM()
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0),
 	};
 	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_CSMPass.setLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_CSMPass.setLayout));
 
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_CSMPass.setLayout, 1);
 	// Deferred composition
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_CSMPass.set));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_CSMPass.set));
 
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets{
 		// Binding 0: fragment uniform buffer(Camera Matrix)
@@ -7803,7 +7821,7 @@ void Renderer::PreparePipelineCSM()
 	VkPushConstantRange pushConstantRange = Init::pushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, sizeof(CSMPass::PushBlock), 0);
 	pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
 	pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_CSMPass.pipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_CSMPass.pipelineLayout));
 
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
 	VkPipelineRasterizationStateCreateInfo rasterizationState = Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_FRONT_BIT, VK_FRONT_FACE_CLOCKWISE, 0);
@@ -7833,7 +7851,7 @@ void Renderer::PreparePipelineCSM()
 	// Enable depth clamp (if available)
 	rasterizationState.depthClampEnable = m_enabledFeatures.depthClamp;
 
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_CSMPass.pipeline));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_CSMPass.pipeline));
 }
 
 void Renderer::SetupHBAOPass()
@@ -7852,13 +7870,13 @@ void Renderer::SetupHBAOPass()
 
 	m_HBAOPass.FrameBuffer->AddAttachment(attachmentCI);
 
-	VK_CHECK_RESULT(m_HBAOPass.FrameBuffer->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
-	VK_CHECK_RESULT(m_HBAOPass.FrameBuffer->CreateRenderPass());
+	Tool::CheckResult(m_HBAOPass.FrameBuffer->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	Tool::CheckResult(m_HBAOPass.FrameBuffer->CreateRenderPass());
 }
 void Renderer::CreateBuffersHBAO()
 {
 	m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_HBAOPass.Buffers.ConstBuffer, sizeof(HBAOPass::ConstBufferDesc));
-	VK_CHECK_RESULT(m_HBAOPass.Buffers.ConstBuffer.Map());
+	Tool::CheckResult(m_HBAOPass.Buffers.ConstBuffer.Map());
 	// GenerateNoiseTextureHBAO();
 
 	// Init
@@ -7931,11 +7949,11 @@ void Renderer::AllocateDescriptorSetHBAO()
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 4),
 	};
 	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_HBAOPass.SetLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_HBAOPass.SetLayout));
 
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_HBAOPass.SetLayout, 1);
 	// Deferred composition
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_HBAOPass.Set));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_HBAOPass.Set));
 
 	VkDescriptorImageInfo texDescriptorNormal =
 		Init::descriptorImageInfo(
@@ -7962,7 +7980,7 @@ void Renderer::AllocateDescriptorSetHBAO()
 void Renderer::PreparePipelineHBAO()
 {
 	VkPipelineLayoutCreateInfo pipelineLayoutCI = Init::pipelineLayoutCreateInfo(&m_HBAOPass.SetLayout, 1);
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &m_HBAOPass.PipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &m_HBAOPass.PipelineLayout));
 
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCI = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
 	VkPipelineRasterizationStateCreateInfo rasterizationStateCI = Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE); // 因为是全屏pass
@@ -7993,7 +8011,7 @@ void Renderer::PreparePipelineHBAO()
 	pipelineCI.pStages = shaderStages.data();
 	pipelineCI.pVertexInputState = &emptyInputState;
 
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_HBAOPass.Pipeline));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_HBAOPass.Pipeline));
 }
 void Renderer::SetupGTAOPass()
 {
@@ -8011,8 +8029,8 @@ void Renderer::SetupGTAOPass()
 
 	m_GTAOPass.FrameBuffer->AddAttachment(attachmentCI);
 
-	VK_CHECK_RESULT(m_GTAOPass.FrameBuffer->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
-	VK_CHECK_RESULT(m_GTAOPass.FrameBuffer->CreateRenderPass());
+	Tool::CheckResult(m_GTAOPass.FrameBuffer->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	Tool::CheckResult(m_GTAOPass.FrameBuffer->CreateRenderPass());
 }
 
 void Renderer::UpdateCBufferGTAO()
@@ -8067,11 +8085,11 @@ void Renderer::AllocateDescriptorSetGTAO()
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 4),
 	};
 	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_GTAOPass.SetLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_GTAOPass.SetLayout));
 
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_GTAOPass.SetLayout, 1);
 	// Deferred composition
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_GTAOPass.Set));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_GTAOPass.Set));
 
 	VkDescriptorImageInfo texDescriptorNormal =
 		Init::descriptorImageInfo(
@@ -8099,7 +8117,7 @@ void Renderer::AllocateDescriptorSetGTAO()
 void Renderer::PreparePipelineGTAO()
 {
 	VkPipelineLayoutCreateInfo pipelineLayoutCI = Init::pipelineLayoutCreateInfo(&m_GTAOPass.SetLayout, 1);
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &m_GTAOPass.PipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &m_GTAOPass.PipelineLayout));
 
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCI = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
 	VkPipelineRasterizationStateCreateInfo rasterizationStateCI = Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE); // 因为是全屏pass
@@ -8130,12 +8148,12 @@ void Renderer::PreparePipelineGTAO()
 	pipelineCI.pStages = shaderStages.data();
 	pipelineCI.pVertexInputState = &emptyInputState;
 
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_GTAOPass.Pipeline));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_GTAOPass.Pipeline));
 }
 void Renderer::CreateBuffersGTAO()
 {
 	m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_GTAOPass.Buffers.ConstBuffer, sizeof(GTAOPass::ConstBufferDesc));
-	VK_CHECK_RESULT(m_GTAOPass.Buffers.ConstBuffer.Map());
+	Tool::CheckResult(m_GTAOPass.Buffers.ConstBuffer.Map());
 	// GenerateNoiseTextureGTAO();
 
 	// Init
@@ -8164,8 +8182,8 @@ void Renderer::SetupCBFPass()
 
 	m_CBFPass.FrameBufferX->AddAttachment(attachmentCI);
 
-	VK_CHECK_RESULT(m_CBFPass.FrameBufferX->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
-	VK_CHECK_RESULT(m_CBFPass.FrameBufferX->CreateRenderPass());
+	Tool::CheckResult(m_CBFPass.FrameBufferX->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	Tool::CheckResult(m_CBFPass.FrameBufferX->CreateRenderPass());
 
 	m_CBFPass.FrameBufferY = new FramebufferManager(m_vulkanDevice);
 	m_CBFPass.FrameBufferY->width = m_width;
@@ -8173,13 +8191,13 @@ void Renderer::SetupCBFPass()
 
 	m_CBFPass.FrameBufferY->AddAttachment(attachmentCI);
 
-	VK_CHECK_RESULT(m_CBFPass.FrameBufferY->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
-	VK_CHECK_RESULT(m_CBFPass.FrameBufferY->CreateRenderPass());
+	Tool::CheckResult(m_CBFPass.FrameBufferY->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	Tool::CheckResult(m_CBFPass.FrameBufferY->CreateRenderPass());
 }
 void Renderer::CreateBuffersCBF()
 {
 	m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &m_CBFPass.Buffers.ConstBuffer, sizeof(CrossBilateralFilterPass::ConstBufferDesc));
-	VK_CHECK_RESULT(m_CBFPass.Buffers.ConstBuffer.Map());
+	Tool::CheckResult(m_CBFPass.Buffers.ConstBuffer.Map());
 	// GenerateNoiseTextureGTAO();
 
 	// Init
@@ -8238,12 +8256,12 @@ void Renderer::AllocateDescriptorSetCBF()
 		// AO and Z
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)};
 	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_CBFPass.SetLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_CBFPass.SetLayout));
 
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_CBFPass.SetLayout, 1);
 	// Deferred composition
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_CBFPass.SetX));
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_CBFPass.SetY));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_CBFPass.SetX));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_CBFPass.SetY));
 
 	VkDescriptorImageInfo texDescriptorAOZ =
 		Init::descriptorImageInfo(
@@ -8273,7 +8291,7 @@ void Renderer::AllocateDescriptorSetCBF()
 void Renderer::PreparePipelineCBF()
 {
 	VkPipelineLayoutCreateInfo pipelineLayoutCI = Init::pipelineLayoutCreateInfo(&m_CBFPass.SetLayout, 1);
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &m_CBFPass.PipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &m_CBFPass.PipelineLayout));
 
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCI = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
 	VkPipelineRasterizationStateCreateInfo rasterizationStateCI = Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE); // 因为是全屏pass
@@ -8302,11 +8320,11 @@ void Renderer::PreparePipelineCBF()
 	pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
 	pipelineCI.pStages = shaderStages.data();
 	pipelineCI.pVertexInputState = &emptyInputState;
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_CBFPass.PipelineX));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_CBFPass.PipelineX));
 
 	pipelineCI.renderPass = m_CBFPass.FrameBufferY->renderPass;
 	shaderStages[1] = LoadShader(Tool::GetShadersPath() + "AO/BlurY.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_CBFPass.PipelineY));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_CBFPass.PipelineY));
 }
 void Renderer::UpdateCBufferCBF()
 {
@@ -8438,24 +8456,24 @@ void Renderer::InitializeUnifiedGPUPipelineResources()
 	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 	poolInfo.queueFamilyIndex = m_vulkanDevice->queueFamilyIndices.graphics;
-	VK_CHECK_RESULT(vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_unifiedGPUPipeline.commandPool));
+	Tool::CheckResult(vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_unifiedGPUPipeline.commandPool));
 
 	VkCommandBufferAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 	allocInfo.commandPool = m_unifiedGPUPipeline.commandPool;
 	allocInfo.commandBufferCount = 1;
-	VK_CHECK_RESULT(vkAllocateCommandBuffers(m_device, &allocInfo, &m_unifiedGPUPipeline.commandBuffer));
+	Tool::CheckResult(vkAllocateCommandBuffers(m_device, &allocInfo, &m_unifiedGPUPipeline.commandBuffer));
 
 	// 3. 创建同步对象
 	VkFenceCreateInfo fenceInfo{};
 	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // 初始状态为已完成
-	VK_CHECK_RESULT(vkCreateFence(m_device, &fenceInfo, nullptr, &m_unifiedGPUPipeline.executionFence));
+	Tool::CheckResult(vkCreateFence(m_device, &fenceInfo, nullptr, &m_unifiedGPUPipeline.executionFence));
 
 	VkSemaphoreCreateInfo semaphoreInfo{};
 	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-	VK_CHECK_RESULT(vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_unifiedGPUPipeline.completionSemaphore));
+	Tool::CheckResult(vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_unifiedGPUPipeline.completionSemaphore));
 
 	m_unifiedGPUPipeline.resourcesInitialized = true;
 	printf("Unified GPU Pipeline resources initialized\n");
@@ -8513,14 +8531,14 @@ void Renderer::InitializeUnifiedGPUPipelineResources()
 void Renderer::InitializeSolidNodeSelectionResources()
 {
 	// 创建Solid Node Buffer (存储筛选出的节点) - 需要HOST_VISIBLE以便CPU读取用于调试
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		&m_solidNodeSelection.solidNodeBuffer,
 		sizeof(SolidNodeSelection::SolidNode) * SolidNodeSelection::MAX_SOLID_NODES));
 
 	// 创建Counter Buffer (原子计数器) - 需要HOST_VISIBLE以便CPU清零
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		&m_solidNodeSelection.counterBuffer,
@@ -8550,7 +8568,7 @@ void Renderer::InitializeSolidNodeSelectionResources()
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
 	layoutInfo.pBindings = bindings.data();
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_solidNodeSelection.descriptorSetLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_solidNodeSelection.descriptorSetLayout));
 
 	// 创建管线布局 (支持Push Constants)
 	VkPushConstantRange pushConstantRange{};
@@ -8564,7 +8582,7 @@ void Renderer::InitializeSolidNodeSelectionResources()
 	pipelineLayoutInfo.pSetLayouts = &m_solidNodeSelection.descriptorSetLayout;
 	pipelineLayoutInfo.pushConstantRangeCount = 1;
 	pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_solidNodeSelection.pipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_solidNodeSelection.pipelineLayout));
 
 	// 加载Compute Shader
 	std::string shaderPath = Tool::GetShadersPath() + "SolidNodeSelection.Comp.spv";
@@ -8579,7 +8597,7 @@ void Renderer::InitializeSolidNodeSelectionResources()
 	computePipelineInfo.stage.pName = "main";
 	computePipelineInfo.layout = m_solidNodeSelection.pipelineLayout;
 
-	VK_CHECK_RESULT(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &computePipelineInfo, nullptr, &m_solidNodeSelection.pipeline));
+	Tool::CheckResult(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &computePipelineInfo, nullptr, &m_solidNodeSelection.pipeline));
 
 	// 清理shader module
 	vkDestroyShaderModule(m_device, shaderModule, nullptr);
@@ -8597,7 +8615,7 @@ void Renderer::InitializeSolidNodeSelectionResources()
 	poolInfo.maxSets = 1;
 
 	VkDescriptorPool descriptorPool;
-	VK_CHECK_RESULT(vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &descriptorPool));
+	Tool::CheckResult(vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &descriptorPool));
 
 	// 分配描述符集
 	VkDescriptorSetAllocateInfo descriptorAllocInfo{};
@@ -8606,7 +8624,7 @@ void Renderer::InitializeSolidNodeSelectionResources()
 	descriptorAllocInfo.descriptorSetCount = 1;
 	descriptorAllocInfo.pSetLayouts = &m_solidNodeSelection.descriptorSetLayout;
 
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &descriptorAllocInfo, &m_solidNodeSelection.descriptorSet));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &descriptorAllocInfo, &m_solidNodeSelection.descriptorSet));
 
 	// 绑定资源到描述符集
 	std::vector<VkWriteDescriptorSet> descriptorWrites;
@@ -8658,14 +8676,14 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 	// === Pass 1-3: 创建候选节点缓冲区 ===
 
 	// 候选节点缓冲区 (最多1000个候选节点)
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		&m_solidNodeSelectionB.candidateNodesBuffer,
 		sizeof(SolidNodeSelectionB::SolidNode) * SolidNodeSelectionB::MAX_CANDIDATE_NODES));
 
 	// 候选节点计数缓冲区
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		&m_solidNodeSelectionB.candidateCountBuffer,
@@ -8674,14 +8692,14 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 	// === Pass 4: 创建最终选择缓冲区 ===
 
 	// 最终选中节点缓冲区 (最多10个)
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		&m_solidNodeSelectionB.selectedNodesBuffer,
 		sizeof(SolidNodeSelectionB::SolidNode) * SolidNodeSelectionB::MAX_SELECTED_NODES));
 
 	// 最终节点计数缓冲区
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		&m_solidNodeSelectionB.selectedCountBuffer,
@@ -8714,7 +8732,7 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
 	layoutInfo.pBindings = bindings.data();
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_solidNodeSelectionB.descriptorSetLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_solidNodeSelectionB.descriptorSetLayout));
 
 	// 创建管线布局 - 添加push constants支持
 	VkPushConstantRange pushConstantRange{};
@@ -8728,7 +8746,7 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 	pipelineLayoutInfo.pSetLayouts = &m_solidNodeSelectionB.descriptorSetLayout;
 	pipelineLayoutInfo.pushConstantRangeCount = 1;
 	pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_solidNodeSelectionB.pipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_solidNodeSelectionB.pipelineLayout));
 
 	// 加载Compute Shader
 	std::string shaderPath = Tool::GetShadersPath() + "SolidNodeSelectionB.Comp.spv";
@@ -8743,7 +8761,7 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 	computePipelineInfo.stage.pName = "main";
 	computePipelineInfo.layout = m_solidNodeSelectionB.pipelineLayout;
 
-	VK_CHECK_RESULT(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &computePipelineInfo, nullptr, &m_solidNodeSelectionB.pipeline));
+	Tool::CheckResult(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &computePipelineInfo, nullptr, &m_solidNodeSelectionB.pipeline));
 
 	// 清理shader module
 	vkDestroyShaderModule(m_device, shaderModule, nullptr);
@@ -8761,7 +8779,7 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 	poolInfo.maxSets = 1;
 
 	VkDescriptorPool descriptorPool;
-	VK_CHECK_RESULT(vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &descriptorPool));
+	Tool::CheckResult(vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &descriptorPool));
 
 	// 分配描述符集
 	VkDescriptorSetAllocateInfo descriptorAllocInfo{};
@@ -8770,7 +8788,7 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 	descriptorAllocInfo.descriptorSetCount = 1;
 	descriptorAllocInfo.pSetLayouts = &m_solidNodeSelectionB.descriptorSetLayout;
 
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &descriptorAllocInfo, &m_solidNodeSelectionB.descriptorSet));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &descriptorAllocInfo, &m_solidNodeSelectionB.descriptorSet));
 
 	// 绑定buffer资源到描述符集
 	std::vector<VkWriteDescriptorSet> descriptorWrites;
@@ -8831,7 +8849,7 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 	collectionLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	collectionLayoutInfo.bindingCount = static_cast<uint32_t>(collectionBindings.size());
 	collectionLayoutInfo.pBindings = collectionBindings.data();
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &collectionLayoutInfo, nullptr, &m_solidNodeSelectionB.collectionDescriptorSetLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &collectionLayoutInfo, nullptr, &m_solidNodeSelectionB.collectionDescriptorSetLayout));
 
 	// 创建收集管线布局
 	VkPipelineLayoutCreateInfo collectionPipelineLayoutInfo{};
@@ -8840,7 +8858,7 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 	collectionPipelineLayoutInfo.pSetLayouts = &m_solidNodeSelectionB.collectionDescriptorSetLayout;
 	collectionPipelineLayoutInfo.pushConstantRangeCount = 1;
 	collectionPipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &collectionPipelineLayoutInfo, nullptr, &m_solidNodeSelectionB.collectionPipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &collectionPipelineLayoutInfo, nullptr, &m_solidNodeSelectionB.collectionPipelineLayout));
 
 	// 创建收集管线
 	std::string collectionShaderPath = Tool::GetShadersPath() + "SolidNodeCollectionB.Comp.spv";
@@ -8854,7 +8872,7 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 	collectionComputePipelineInfo.stage.pName = "main";
 	collectionComputePipelineInfo.layout = m_solidNodeSelectionB.collectionPipelineLayout;
 
-	VK_CHECK_RESULT(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &collectionComputePipelineInfo, nullptr, &m_solidNodeSelectionB.collectionPipeline));
+	Tool::CheckResult(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &collectionComputePipelineInfo, nullptr, &m_solidNodeSelectionB.collectionPipeline));
 	vkDestroyShaderModule(m_device, collectionShaderModule, nullptr);
 
 	// === 创建收集阶段的描述符集 ===
@@ -8872,7 +8890,7 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 	collectionPoolInfo.maxSets = 1;
 
 	VkDescriptorPool collectionDescriptorPool;
-	VK_CHECK_RESULT(vkCreateDescriptorPool(m_device, &collectionPoolInfo, nullptr, &collectionDescriptorPool));
+	Tool::CheckResult(vkCreateDescriptorPool(m_device, &collectionPoolInfo, nullptr, &collectionDescriptorPool));
 
 	// 分配收集阶段的描述符集
 	VkDescriptorSetAllocateInfo collectionAllocInfo{};
@@ -8880,7 +8898,7 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 	collectionAllocInfo.descriptorPool = collectionDescriptorPool;
 	collectionAllocInfo.descriptorSetCount = 1;
 	collectionAllocInfo.pSetLayouts = &m_solidNodeSelectionB.collectionDescriptorSetLayout;
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &collectionAllocInfo, &m_solidNodeSelectionB.collectionDescriptorSet));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &collectionAllocInfo, &m_solidNodeSelectionB.collectionDescriptorSet));
 
 	// 绑定收集阶段的缓冲区
 	std::vector<VkWriteDescriptorSet> collectionDescriptorWrites;
@@ -8961,14 +8979,14 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 	finalSelectionLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	finalSelectionLayoutInfo.bindingCount = static_cast<uint32_t>(finalSelectionBindings.size());
 	finalSelectionLayoutInfo.pBindings = finalSelectionBindings.data();
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &finalSelectionLayoutInfo, nullptr, &m_solidNodeSelectionB.finalSelectionDescriptorSetLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &finalSelectionLayoutInfo, nullptr, &m_solidNodeSelectionB.finalSelectionDescriptorSetLayout));
 
 	// 创建最终选择管线布局
 	VkPipelineLayoutCreateInfo finalSelectionPipelineLayoutInfo{};
 	finalSelectionPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	finalSelectionPipelineLayoutInfo.setLayoutCount = 1;
 	finalSelectionPipelineLayoutInfo.pSetLayouts = &m_solidNodeSelectionB.finalSelectionDescriptorSetLayout;
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &finalSelectionPipelineLayoutInfo, nullptr, &m_solidNodeSelectionB.finalSelectionPipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &finalSelectionPipelineLayoutInfo, nullptr, &m_solidNodeSelectionB.finalSelectionPipelineLayout));
 
 	// 分配最终选择管线描述符集
 	VkDescriptorSetAllocateInfo finalSelectionAllocInfo{};
@@ -8976,7 +8994,7 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 	finalSelectionAllocInfo.descriptorPool = m_descriptorPool;
 	finalSelectionAllocInfo.descriptorSetCount = 1;
 	finalSelectionAllocInfo.pSetLayouts = &m_solidNodeSelectionB.finalSelectionDescriptorSetLayout;
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &finalSelectionAllocInfo, &m_solidNodeSelectionB.finalSelectionDescriptorSet));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &finalSelectionAllocInfo, &m_solidNodeSelectionB.finalSelectionDescriptorSet));
 
 	// 创建最终选择管线
 	std::string finalSelectionShaderPath = Tool::GetShadersPath() + "SolidNodeSelectionB_Final.Comp.spv";
@@ -8993,7 +9011,7 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 	finalSelectionComputePipelineInfo.layout = m_solidNodeSelectionB.finalSelectionPipelineLayout;
 	finalSelectionComputePipelineInfo.stage = finalSelectionShaderStageInfo;
 
-	VK_CHECK_RESULT(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &finalSelectionComputePipelineInfo, nullptr, &m_solidNodeSelectionB.finalSelectionPipeline));
+	Tool::CheckResult(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &finalSelectionComputePipelineInfo, nullptr, &m_solidNodeSelectionB.finalSelectionPipeline));
 	vkDestroyShaderModule(m_device, finalSelectionShaderModule, nullptr);
 
 	// 绑定最终选择描述符集
@@ -9152,20 +9170,6 @@ void Renderer::ExecuteSolidNodeSelectionB(VkCommandBuffer commandBuffer)
 	// 清零最终节点计数器
 	vkCmdFillBuffer(commandBuffer, m_solidNodeSelectionB.selectedCountBuffer.buffer, 0, VK_WHOLE_SIZE, 0);
 
-	// // 屏障：确保清零完成
-	// VkBufferMemoryBarrier clearBarrier{};
-	// clearBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-	// clearBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	// clearBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-	// clearBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	// clearBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	// clearBarrier.buffer = m_solidNodeSelectionB.candidateCountBuffer.buffer;
-	// clearBarrier.offset = 0;
-	// clearBarrier.size = sizeof(uint32_t);
-
-	// vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-	// 					 0, 0, nullptr, 1, &clearBarrier, 0, nullptr);
-
 	// === Phase 2: Pass 1-3 候选节点收集 (Level 3→2→1) ===
 
 	// 绑定收集管线
@@ -9283,7 +9287,7 @@ void Renderer::ValidateSolidNodeSelectionBResults()
 	// Read back selected count
 	VkMemoryMapFlags mapFlags = 0;
 	void *selectedCountData;
-	VK_CHECK_RESULT(vkMapMemory(m_device, m_solidNodeSelectionB.selectedCountBuffer.memory, 0, sizeof(uint32_t), mapFlags, &selectedCountData));
+	Tool::CheckResult(vkMapMemory(m_device, m_solidNodeSelectionB.selectedCountBuffer.memory, 0, sizeof(uint32_t), mapFlags, &selectedCountData));
 	uint32_t selectedCount;
 	memcpy(&selectedCount, selectedCountData, sizeof(uint32_t));
 	vkUnmapMemory(m_device, m_solidNodeSelectionB.selectedCountBuffer.memory);
@@ -9307,7 +9311,7 @@ void Renderer::ValidateSolidNodeSelectionBResults()
 	// Read back selected nodes
 	void *selectedNodesData;
 	size_t selectedNodesSize = sizeof(SolidNodeSelectionB::SolidNode) * selectedCount;
-	VK_CHECK_RESULT(vkMapMemory(m_device, m_solidNodeSelectionB.selectedNodesBuffer.memory, 0, selectedNodesSize, mapFlags, &selectedNodesData));
+	Tool::CheckResult(vkMapMemory(m_device, m_solidNodeSelectionB.selectedNodesBuffer.memory, 0, selectedNodesSize, mapFlags, &selectedNodesData));
 
 	SolidNodeSelectionB::SolidNode *nodes = static_cast<SolidNodeSelectionB::SolidNode *>(selectedNodesData);
 
@@ -9373,21 +9377,21 @@ void Renderer::InitializeGPUDataPreparation()
 		glm::vec3 cameraPosition;
 		float padding;
 	};
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, // GPU-only
 		&m_gpuDataPreparation.cameraMatricesBuffer_GPU,
 		sizeof(CameraMatrix) * MultiViewDepthSDF::MAX_CAMERAS));
 
 	// 活跃相机数量缓冲区
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, // GPU-only
 		&m_gpuDataPreparation.activeCameraCountBuffer_GPU,
 		sizeof(uint32_t)));
 
 	// 间接绘制命令缓冲区
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 		VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, // GPU-only
 		&m_gpuDataPreparation.indirectDrawBuffer_GPU,
@@ -9415,7 +9419,7 @@ void Renderer::BindGPUDataPreparationDescriptors()
 	cameraMatrixAllocInfo.descriptorPool = m_descriptorPool;
 	cameraMatrixAllocInfo.descriptorSetCount = 1;
 	cameraMatrixAllocInfo.pSetLayouts = &m_gpuDataPreparation.cameraMatrixDescriptorLayout;
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &cameraMatrixAllocInfo, &m_gpuDataPreparation.cameraMatrixDescriptorSet));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &cameraMatrixAllocInfo, &m_gpuDataPreparation.cameraMatrixDescriptorSet));
 
 	// 分配间接命令生成描述符集
 	VkDescriptorSetAllocateInfo indirectCommandAllocInfo{};
@@ -9423,7 +9427,7 @@ void Renderer::BindGPUDataPreparationDescriptors()
 	indirectCommandAllocInfo.descriptorPool = m_descriptorPool;
 	indirectCommandAllocInfo.descriptorSetCount = 1;
 	indirectCommandAllocInfo.pSetLayouts = &m_gpuDataPreparation.indirectCommandDescriptorLayout;
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &indirectCommandAllocInfo, &m_gpuDataPreparation.indirectCommandDescriptorSet));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &indirectCommandAllocInfo, &m_gpuDataPreparation.indirectCommandDescriptorSet));
 
 	// === 绑定相机矩阵准备描述符集 ===
 	std::vector<VkWriteDescriptorSet> cameraMatrixDescriptorWrites;
@@ -9698,14 +9702,14 @@ void Renderer::InitializeAnalyticalSDFGenerationResources()
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
 	layoutInfo.pBindings = bindings.data();
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_analyticalSDFGeneration.descriptorSetLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_analyticalSDFGeneration.descriptorSetLayout));
 
 	// 创建管线布局
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipelineLayoutInfo.setLayoutCount = 1;
 	pipelineLayoutInfo.pSetLayouts = &m_analyticalSDFGeneration.descriptorSetLayout;
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_analyticalSDFGeneration.pipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_analyticalSDFGeneration.pipelineLayout));
 
 	// 加载Compute Shader
 	std::string shaderPath = Tool::GetShadersPath() + "AnalyticalSDF.Comp.spv";
@@ -9720,7 +9724,7 @@ void Renderer::InitializeAnalyticalSDFGenerationResources()
 	computePipelineInfo.stage.pName = "main";
 	computePipelineInfo.layout = m_analyticalSDFGeneration.pipelineLayout;
 
-	VK_CHECK_RESULT(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &computePipelineInfo, nullptr, &m_analyticalSDFGeneration.pipeline));
+	Tool::CheckResult(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &computePipelineInfo, nullptr, &m_analyticalSDFGeneration.pipeline));
 
 	// 清理shader module
 	vkDestroyShaderModule(m_device, shaderModule, nullptr);
@@ -9738,7 +9742,7 @@ void Renderer::InitializeAnalyticalSDFGenerationResources()
 	poolInfo.maxSets = 1;
 
 	VkDescriptorPool descriptorPool;
-	VK_CHECK_RESULT(vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &descriptorPool));
+	Tool::CheckResult(vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &descriptorPool));
 
 	// 分配描述符集
 	VkDescriptorSetAllocateInfo sdfDescriptorAllocInfo{};
@@ -9747,7 +9751,7 @@ void Renderer::InitializeAnalyticalSDFGenerationResources()
 	sdfDescriptorAllocInfo.descriptorSetCount = 1;
 	sdfDescriptorAllocInfo.pSetLayouts = &m_analyticalSDFGeneration.descriptorSetLayout;
 
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &sdfDescriptorAllocInfo, &m_analyticalSDFGeneration.descriptorSet));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &sdfDescriptorAllocInfo, &m_analyticalSDFGeneration.descriptorSet));
 
 	// 绑定资源到描述符集
 	std::vector<VkWriteDescriptorSet> descriptorWrites;
@@ -10081,7 +10085,7 @@ void Renderer::RecordUnifiedGPUPipelineCommands()
 	}
 
 	// false 为A
-	SetSolidNodeSelectionVersion(true);
+	SetSolidNodeSelectionVersion(false);
 
 	// 在录制命令之前，根据版本选择更新阶段四的descriptor set
 	UpdateAnalyticalSDFGenerationDescriptorSet();
@@ -10092,7 +10096,7 @@ void Renderer::RecordUnifiedGPUPipelineCommands()
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT; // 可以多次提交
-	VK_CHECK_RESULT(vkBeginCommandBuffer(cmd, &beginInfo));
+	Tool::CheckResult(vkBeginCommandBuffer(cmd, &beginInfo));
 
 	// ===== 统一GPU管线录制开始 =====
 	BeginDebugLabel(cmd, "Unified GPU Pipeline", 1.0f, 1.0f, 0.0f, 1.0f);
@@ -10193,7 +10197,7 @@ void Renderer::RecordUnifiedGPUPipelineCommands()
 	EndDebugLabel(cmd); // 结束统一GPU管线标签
 
 	// 结束命令录制
-	VK_CHECK_RESULT(vkEndCommandBuffer(cmd));
+	Tool::CheckResult(vkEndCommandBuffer(cmd));
 
 	m_unifiedGPUPipeline.commandsRecorded = true;
 	printf("Unified GPU Pipeline commands pre-recorded\n");
@@ -10209,7 +10213,7 @@ void Renderer::SubmitUnifiedGPUPipeline()
 	}
 
 	// // Fence用于时间统计，不阻塞管线执行，但需要重置
-	// VK_CHECK_RESULT(vkResetFences(m_device, 1, &m_unifiedGPUPipeline.executionFence));
+	// Tool::CheckResult(vkResetFences(m_device, 1, &m_unifiedGPUPipeline.executionFence));
 
 	// 更新体素化常量（每帧可能变化的数据）
 	UpdateVoxelizationConstants();
@@ -10228,7 +10232,7 @@ void Renderer::SubmitUnifiedGPUPipeline()
 	submitInfo.pWaitDstStageMask = &waitStage;
 	submitInfo.signalSemaphoreCount = 1;
 	submitInfo.pSignalSemaphores = &m_unifiedGPUPipeline.completionSemaphore;
-	VK_CHECK_RESULT(vkQueueSubmit(m_queues.graphicsQueue, 1, &submitInfo, nullptr));
+	Tool::CheckResult(vkQueueSubmit(m_queues.graphicsQueue, 1, &submitInfo, nullptr));
 
 	// 移除调试验证代码以减少CPU-GPU同步开销
 }
@@ -10338,10 +10342,10 @@ void Renderer::UpdateMultiViewDepthSDFDescriptorSets()
 	allocInfo.descriptorSetCount = 1;
 	allocInfo.pSetLayouts = &m_multiViewDepthSDF.depthPass.descriptorSetLayout;
 
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_multiViewDepthSDF.depthPass.descriptorSet));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_multiViewDepthSDF.depthPass.descriptorSet));
 
 	allocInfo.pSetLayouts = &m_multiViewDepthSDF.fusionPass.descriptorSetLayout;
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &m_multiViewDepthSDF.fusionPass.descriptorSet));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_multiViewDepthSDF.fusionPass.descriptorSet));
 
 	// === 更新深度渲染Pass描述符集 ===
 	// 使用GPU准备的相机矩阵数据而不是CPU可见的缓冲区
@@ -10433,7 +10437,7 @@ void Renderer::PrepareCameraMatricesFromStage3B()
 
 	// Map camera matrices buffer
 	void *mappedData;
-	VK_CHECK_RESULT(vkMapMemory(m_device, m_multiViewDepthSDF4C.gpuPreparation.cameraMatricesBuffer.memory, 0, VK_WHOLE_SIZE, 0, &mappedData));
+	Tool::CheckResult(vkMapMemory(m_device, m_multiViewDepthSDF4C.gpuPreparation.cameraMatricesBuffer.memory, 0, VK_WHOLE_SIZE, 0, &mappedData));
 
 	struct CameraBufferData
 	{
@@ -10449,13 +10453,13 @@ void Renderer::PrepareCameraMatricesFromStage3B()
 	if (m_useSolidNodeSelectionB)
 	{
 		// Map SolidNodeSelectionB buffer
-		VK_CHECK_RESULT(vkMapMemory(m_device, m_solidNodeSelectionB.selectedNodesBuffer.memory, 0, VK_WHOLE_SIZE, 0, &nodeData));
+		Tool::CheckResult(vkMapMemory(m_device, m_solidNodeSelectionB.selectedNodesBuffer.memory, 0, VK_WHOLE_SIZE, 0, &nodeData));
 		selectedNodes = (SolidNodeSelection::SolidNode *)nodeData;
 	}
 	else
 	{
 		// Map SolidNodeSelection buffer
-		VK_CHECK_RESULT(vkMapMemory(m_device, m_solidNodeSelection.solidNodeBuffer.memory, 0, VK_WHOLE_SIZE, 0, &nodeData));
+		Tool::CheckResult(vkMapMemory(m_device, m_solidNodeSelection.solidNodeBuffer.memory, 0, VK_WHOLE_SIZE, 0, &nodeData));
 		selectedNodes = (SolidNodeSelection::SolidNode *)nodeData;
 	}
 
@@ -10501,7 +10505,7 @@ void Renderer::PrepareIndirectDrawCommands()
 {
 	// Map indirect draw buffer
 	void *mappedData;
-	VK_CHECK_RESULT(vkMapMemory(m_device, m_multiViewDepthSDF4C.gpuPreparation.indirectCommandsBuffer.memory, 0, VK_WHOLE_SIZE, 0, &mappedData));
+	Tool::CheckResult(vkMapMemory(m_device, m_multiViewDepthSDF4C.gpuPreparation.indirectCommandsBuffer.memory, 0, VK_WHOLE_SIZE, 0, &mappedData));
 
 	VkDrawIndexedIndirectCommand *drawCommands = (VkDrawIndexedIndirectCommand *)mappedData;
 
@@ -10622,7 +10626,7 @@ void Renderer::CreateModelPartInfos4C()
 	// 创建并上传模型子部件信息缓冲区
 	VkDeviceSize bufferSize = sizeof(MultiViewDepthSDF4C::ModelPartInfo) * staticData.partInfos.size();
 
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		&staticData.modelPartsBuffer,
@@ -10670,7 +10674,7 @@ void Renderer::CreateModelMatrices4C()
 	// 创建并上传模型矩阵缓冲区
 	VkDeviceSize bufferSize = sizeof(glm::mat4) * modelMatrices.size();
 
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		&staticData.modelMatricesBuffer,
@@ -10709,7 +10713,7 @@ void Renderer::InitializeGPUDataPreparation4C()
 
 	// 创建相机矩阵缓冲区 (host-visible for CPU updates)
 	VkDeviceSize cameraBufferSize = sizeof(glm::vec4) * MultiViewDepthSDF4C::MAX_CAMERAS; // CameraMatrix{float4 cameraPosition;}
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		&gpuPrep.cameraMatricesBuffer,
@@ -10720,7 +10724,7 @@ void Renderer::InitializeGPUDataPreparation4C()
 	uint32_t maxCameras = MultiViewDepthSDF4C::MAX_CAMERAS;
 	uint32_t maxCommands = maxParts; // Now only one command per part
 	VkDeviceSize indirectBufferSize = sizeof(VkDrawIndexedIndirectCommand) * maxCommands;
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 		VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		&gpuPrep.indirectCommandsBuffer,
@@ -10728,7 +10732,7 @@ void Renderer::InitializeGPUDataPreparation4C()
 
 	// 创建相机数量缓冲区 (单个uint32_t)
 	VkDeviceSize cameraCountBufferSize = sizeof(uint32_t);
-	VK_CHECK_RESULT(m_vulkanDevice->CreateBuffer(
+	Tool::CheckResult(m_vulkanDevice->CreateBuffer(
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		&gpuPrep.activeCameraCountBuffer,
@@ -10792,7 +10796,7 @@ void Renderer::CreateCameraMatrixPreparationPipeline()
 	bindings.push_back(Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT, 3));
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo = Init::descriptorSetLayoutCreateInfo(bindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &gpuPrep.cameraMatrixDescriptorLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &gpuPrep.cameraMatrixDescriptorLayout));
 
 	// 2. 创建管线布局 (支持Push Constants)
 	VkPushConstantRange pushConstantRange{};
@@ -10804,7 +10808,7 @@ void Renderer::CreateCameraMatrixPreparationPipeline()
 	pipelineLayoutInfo.pushConstantRangeCount = 1;
 	pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &gpuPrep.cameraMatrixPipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &gpuPrep.cameraMatrixPipelineLayout));
 
 	// 3. 加载着色器并创建计算管线
 	VkPipelineShaderStageCreateInfo shaderStageInfo = LoadShader(Tool::GetShadersPath() + "CameraMatrixPreparation.Comp.spv", VK_SHADER_STAGE_COMPUTE_BIT);
@@ -10814,14 +10818,14 @@ void Renderer::CreateCameraMatrixPreparationPipeline()
 	pipelineInfo.stage = shaderStageInfo;
 	pipelineInfo.layout = gpuPrep.cameraMatrixPipelineLayout;
 
-	VK_CHECK_RESULT(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &gpuPrep.cameraMatrixPipeline));
+	Tool::CheckResult(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &gpuPrep.cameraMatrixPipeline));
 
 	// 清理着色器模块
 	vkDestroyShaderModule(m_device, shaderStageInfo.module, nullptr);
 
 	// 4. 分配描述符集
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &gpuPrep.cameraMatrixDescriptorLayout, 1);
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &gpuPrep.cameraMatrixDescriptorSet));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &gpuPrep.cameraMatrixDescriptorSet));
 
 	// 5. 更新描述符集
 	std::vector<VkWriteDescriptorSet> writes;
@@ -10879,7 +10883,7 @@ void Renderer::CreateIndirectCommandGenerationPipeline()
 	bindings.push_back(Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT, 2));
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo = Init::descriptorSetLayoutCreateInfo(bindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &gpuPrep.indirectCommandDescriptorLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &gpuPrep.indirectCommandDescriptorLayout));
 
 	// 2. 创建管线布局 (支持Push Constants)
 	VkPushConstantRange pushConstantRange{};
@@ -10891,7 +10895,7 @@ void Renderer::CreateIndirectCommandGenerationPipeline()
 	pipelineLayoutInfo.pushConstantRangeCount = 1;
 	pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &gpuPrep.indirectCommandPipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &gpuPrep.indirectCommandPipelineLayout));
 
 	// 3. 加载着色器并创建计算管线
 	VkPipelineShaderStageCreateInfo shaderStageInfo = LoadShader(Tool::GetShadersPath() + "IndirectCommandGeneration.Comp.spv", VK_SHADER_STAGE_COMPUTE_BIT);
@@ -10901,14 +10905,14 @@ void Renderer::CreateIndirectCommandGenerationPipeline()
 	pipelineInfo.stage = shaderStageInfo;
 	pipelineInfo.layout = gpuPrep.indirectCommandPipelineLayout;
 
-	VK_CHECK_RESULT(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &gpuPrep.indirectCommandPipeline));
+	Tool::CheckResult(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &gpuPrep.indirectCommandPipeline));
 
 	// 清理着色器模块
 	vkDestroyShaderModule(m_device, shaderStageInfo.module, nullptr);
 
 	// 4. 分配描述符集
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &gpuPrep.indirectCommandDescriptorLayout, 1);
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &gpuPrep.indirectCommandDescriptorSet));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &gpuPrep.indirectCommandDescriptorSet));
 
 	// 5. 更新描述符集
 	std::vector<VkWriteDescriptorSet> writes;
@@ -10973,7 +10977,7 @@ void Renderer::CreateDepthCubemapArray()
 	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-	VK_CHECK_RESULT(vkCreateImage(m_device, &imageInfo, nullptr, &depthPass.depthCubemapArray));
+	Tool::CheckResult(vkCreateImage(m_device, &imageInfo, nullptr, &depthPass.depthCubemapArray));
 
 	// 2. 分配内存
 	VkMemoryRequirements memReq;
@@ -10984,8 +10988,8 @@ void Renderer::CreateDepthCubemapArray()
 	allocInfo.allocationSize = memReq.size;
 	allocInfo.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-	VK_CHECK_RESULT(vkAllocateMemory(m_device, &allocInfo, nullptr, &depthPass.depthCubemapMemory));
-	VK_CHECK_RESULT(vkBindImageMemory(m_device, depthPass.depthCubemapArray, depthPass.depthCubemapMemory, 0));
+	Tool::CheckResult(vkAllocateMemory(m_device, &allocInfo, nullptr, &depthPass.depthCubemapMemory));
+	Tool::CheckResult(vkBindImageMemory(m_device, depthPass.depthCubemapArray, depthPass.depthCubemapMemory, 0));
 
 	// 3. 创建图像视图 (用于渲染)
 	VkImageViewCreateInfo renderViewInfo{};
@@ -10999,13 +11003,13 @@ void Renderer::CreateDepthCubemapArray()
 	renderViewInfo.subresourceRange.baseArrayLayer = 0;
 	renderViewInfo.subresourceRange.layerCount = totalLayers;
 
-	VK_CHECK_RESULT(vkCreateImageView(m_device, &renderViewInfo, nullptr, &depthPass.depthCubemapArrayView));
+	Tool::CheckResult(vkCreateImageView(m_device, &renderViewInfo, nullptr, &depthPass.depthCubemapArrayView));
 
 	// 4. 创建采样视图 (用于后续SDF融合阶段)
 	VkImageViewCreateInfo samplingViewInfo = renderViewInfo;
 	samplingViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY; // 立方体数组视图 (用于SDF融合采样)
 
-	VK_CHECK_RESULT(vkCreateImageView(m_device, &samplingViewInfo, nullptr, &depthPass.depthCubemapSamplingView));
+	Tool::CheckResult(vkCreateImageView(m_device, &samplingViewInfo, nullptr, &depthPass.depthCubemapSamplingView));
 
 	printf("Depth cubemap array created successfully (%u cameras, %u total layers)\n", cameraCount, totalLayers);
 }
@@ -11062,7 +11066,7 @@ void Renderer::CreateMultiViewDepthRenderPass()
 	renderPassInfo.subpassCount = 1;
 	renderPassInfo.pSubpasses = &subpass;
 
-	VK_CHECK_RESULT(vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &depthPass.renderPass));
+	Tool::CheckResult(vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &depthPass.renderPass));
 
 	// 5. Create depth attachment for depth testing
 	VkImageCreateInfo depthImageInfo{};
@@ -11080,7 +11084,7 @@ void Renderer::CreateMultiViewDepthRenderPass()
 	depthImageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	depthImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-	VK_CHECK_RESULT(vkCreateImage(m_device, &depthImageInfo, nullptr, &depthPass.depthAttachment));
+	Tool::CheckResult(vkCreateImage(m_device, &depthImageInfo, nullptr, &depthPass.depthAttachment));
 
 	VkMemoryRequirements depthMemReqs;
 	vkGetImageMemoryRequirements(m_device, depthPass.depthAttachment, &depthMemReqs);
@@ -11090,7 +11094,7 @@ void Renderer::CreateMultiViewDepthRenderPass()
 	depthAllocInfo.allocationSize = depthMemReqs.size;
 	depthAllocInfo.memoryTypeIndex = FindMemoryType(depthMemReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-	VK_CHECK_RESULT(vkAllocateMemory(m_device, &depthAllocInfo, nullptr, &depthPass.depthAttachmentMemory));
+	Tool::CheckResult(vkAllocateMemory(m_device, &depthAllocInfo, nullptr, &depthPass.depthAttachmentMemory));
 	vkBindImageMemory(m_device, depthPass.depthAttachment, depthPass.depthAttachmentMemory, 0);
 
 	VkImageViewCreateInfo depthViewInfo{};
@@ -11105,7 +11109,7 @@ void Renderer::CreateMultiViewDepthRenderPass()
 	depthViewInfo.subresourceRange.baseArrayLayer = 0;
 	depthViewInfo.subresourceRange.layerCount = MultiViewDepthSDF4C::MAX_CAMERAS * 6; // All 60 layers
 
-	VK_CHECK_RESULT(vkCreateImageView(m_device, &depthViewInfo, nullptr, &depthPass.depthAttachmentView));
+	Tool::CheckResult(vkCreateImageView(m_device, &depthViewInfo, nullptr, &depthPass.depthAttachmentView));
 
 	// 6. Create single framebuffer that binds both color array and depth attachment
 	VkImageView attachmentViews[2] = {depthPass.depthCubemapArrayView, depthPass.depthAttachmentView};
@@ -11119,7 +11123,7 @@ void Renderer::CreateMultiViewDepthRenderPass()
 	framebufferInfo.height = 64;								   // DepthRenderingPass4C::CUBEMAP_SIZE (降低到64)
 	framebufferInfo.layers = MultiViewDepthSDF4C::MAX_CAMERAS * 6; // All layers (10 cameras × 6 faces = 60)
 
-	VK_CHECK_RESULT(vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &depthPass.framebuffer));
+	Tool::CheckResult(vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &depthPass.framebuffer));
 
 	printf("Multi-layer depth render pass created successfully (no multiview, %u total layers)\n",
 		   MultiViewDepthSDF4C::MAX_CAMERAS * 6);
@@ -11139,7 +11143,7 @@ void Renderer::CreateMultiViewDepthPipeline()
 	bindings.push_back(Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 1));
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo = Init::descriptorSetLayoutCreateInfo(bindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &depthPass.descriptorSetLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &depthPass.descriptorSetLayout));
 
 	// 2. 创建管线布局 (包含Push Constants)
 	VkPushConstantRange pushConstantRange{};
@@ -11166,7 +11170,7 @@ void Renderer::CreateMultiViewDepthPipeline()
 	pipelineLayoutInfo.pushConstantRangeCount = 1;
 	pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &depthPass.pipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &depthPass.pipelineLayout));
 
 	// 3. 加载着色器
 	VkPipelineShaderStageCreateInfo vertShader = LoadShader(Tool::GetShadersPath() + "MultiViewDepth.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
@@ -11266,7 +11270,7 @@ void Renderer::CreateMultiViewDepthPipeline()
 	pipelineInfo.renderPass = depthPass.renderPass;
 	pipelineInfo.subpass = 0;
 
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &depthPass.pipeline));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &depthPass.pipeline));
 
 	// 清理着色器模块
 	vkDestroyShaderModule(m_device, vertShader.module, nullptr);
@@ -11274,7 +11278,7 @@ void Renderer::CreateMultiViewDepthPipeline()
 
 	// 11. 分配和更新描述符集
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &depthPass.descriptorSetLayout, 1);
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &depthPass.descriptorSet));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &depthPass.descriptorSet));
 
 	// 更新描述符集
 	std::vector<VkWriteDescriptorSet> writes;
@@ -11384,28 +11388,6 @@ void Renderer::ExecuteMultiViewDepthRendering(VkCommandBuffer cmd)
 	// 6. End render pass
 	vkCmdEndRenderPass(cmd);
 
-	// // 7. Transition image layout for shader reading
-	// VkImageMemoryBarrier barrier{};
-	// barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	// barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	// barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	// barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	// barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	// barrier.image = depthPass.depthCubemapArray;
-	// barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	// barrier.subresourceRange.baseMipLevel = 0;
-	// barrier.subresourceRange.levelCount = 1;
-	// barrier.subresourceRange.baseArrayLayer = 0;
-	// // Use maximum cameras for post-render barrier
-	// layerCount = MultiViewDepthSDF4C::MAX_CAMERAS * 6;
-	// barrier.subresourceRange.layerCount = layerCount;
-	// barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	// barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-	// vkCmdPipelineBarrier(cmd,
-	// 					 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-	// 					 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // Changed to COMPUTE for SDF fusion
-	// 					 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
 	printf("Multiview depth rendering executed: %u cameras × 6 faces × %u parts (hardcoded max)\n",
 		   MultiViewDepthSDF4C::MAX_CAMERAS, staticData.totalPartCount);
@@ -11844,7 +11826,7 @@ void Renderer::ExportSDFDataForVisualization()
 	bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-	VK_CHECK_RESULT(vkCreateBuffer(m_device, &bufferInfo, nullptr, &stagingBuffer));
+	Tool::CheckResult(vkCreateBuffer(m_device, &bufferInfo, nullptr, &stagingBuffer));
 
 	VkMemoryRequirements memRequirements;
 	vkGetBufferMemoryRequirements(m_device, stagingBuffer, &memRequirements);
@@ -11855,8 +11837,8 @@ void Renderer::ExportSDFDataForVisualization()
 	allocInfo.memoryTypeIndex = m_vulkanDevice->GetMemoryType(memRequirements.memoryTypeBits,
 															  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-	VK_CHECK_RESULT(vkAllocateMemory(m_device, &allocInfo, nullptr, &stagingBufferMemory));
-	VK_CHECK_RESULT(vkBindBufferMemory(m_device, stagingBuffer, stagingBufferMemory, 0));
+	Tool::CheckResult(vkAllocateMemory(m_device, &allocInfo, nullptr, &stagingBufferMemory));
+	Tool::CheckResult(vkBindBufferMemory(m_device, stagingBuffer, stagingBufferMemory, 0));
 
 	// 2. 复制SDF纹理到staging buffer
 	VkCommandBuffer commandBuffer = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
@@ -11913,7 +11895,7 @@ void Renderer::ExportSDFDataForVisualization()
 
 	// 3. 映射内存并保存到文件
 	void *data;
-	VK_CHECK_RESULT(vkMapMemory(m_device, stagingBufferMemory, 0, dataSize, 0, &data));
+	Tool::CheckResult(vkMapMemory(m_device, stagingBufferMemory, 0, dataSize, 0, &data));
 
 	// 添加调试信息：检查前几个数值
 	float *sdfData = static_cast<float *>(data);
@@ -11997,7 +11979,7 @@ void Renderer::ExportSDFDataForVisualization(Texture *texture, const std::string
     bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    VK_CHECK_RESULT(vkCreateBuffer(m_device, &bufferInfo, nullptr, &stagingBuffer));
+    Tool::CheckResult(vkCreateBuffer(m_device, &bufferInfo, nullptr, &stagingBuffer));
 
     VkMemoryRequirements memRequirements;
     vkGetBufferMemoryRequirements(m_device, stagingBuffer, &memRequirements);
@@ -12008,8 +11990,8 @@ void Renderer::ExportSDFDataForVisualization(Texture *texture, const std::string
     allocInfo.memoryTypeIndex =
         m_vulkanDevice->GetMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-    VK_CHECK_RESULT(vkAllocateMemory(m_device, &allocInfo, nullptr, &stagingBufferMemory));
-    VK_CHECK_RESULT(vkBindBufferMemory(m_device, stagingBuffer, stagingBufferMemory, 0));
+    Tool::CheckResult(vkAllocateMemory(m_device, &allocInfo, nullptr, &stagingBufferMemory));
+    Tool::CheckResult(vkBindBufferMemory(m_device, stagingBuffer, stagingBufferMemory, 0));
 
     // 2. 复制SDF纹理到staging buffer
     VkCommandBuffer commandBuffer = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
@@ -12065,7 +12047,7 @@ void Renderer::ExportSDFDataForVisualization(Texture *texture, const std::string
 
     // 3. 映射内存并保存到文件
     void *data;
-    VK_CHECK_RESULT(vkMapMemory(m_device, stagingBufferMemory, 0, dataSize, 0, &data));
+    Tool::CheckResult(vkMapMemory(m_device, stagingBufferMemory, 0, dataSize, 0, &data));
 
     float *sdfData = static_cast<float *>(data);
 
@@ -12124,14 +12106,14 @@ void Renderer::SetupSdfAOPass()
 
 	sdfAOPass_.frameBuffer->AddAttachment(attachmentCi);
 
-	VK_CHECK_RESULT(sdfAOPass_.frameBuffer->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
-	VK_CHECK_RESULT(sdfAOPass_.frameBuffer->CreateRenderPass());
+	Tool::CheckResult(sdfAOPass_.frameBuffer->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+	Tool::CheckResult(sdfAOPass_.frameBuffer->CreateRenderPass());
 }
 
 void Renderer::CreateBuffersSdfAO()
 {
 	m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &sdfAOPass_.buffers.cBuffer, sizeof(SdfAOPass::CBufferDesc));
-	VK_CHECK_RESULT(sdfAOPass_.buffers.cBuffer.Map());
+	Tool::CheckResult(sdfAOPass_.buffers.cBuffer.Map());
 	UpdateCBufferSdfAO();
 }
 void Renderer::UpdateCBufferSdfAO()
@@ -12171,11 +12153,11 @@ void Renderer::AllocateDescriptorSetSdfAO()
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 6),
 	};
 	VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &sdfAOPass_.setLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &sdfAOPass_.setLayout));
 
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &sdfAOPass_.setLayout, 1);
 	// Deferred composition
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(m_device, &allocInfo, &sdfAOPass_.set));
+	Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &sdfAOPass_.set));
 
 	VkDescriptorImageInfo texDescriptorPosition =
 		Init::descriptorImageInfo(
@@ -12211,7 +12193,7 @@ void Renderer::PreparePipelineSdfAO()
 {
 	VkPipelineLayoutCreateInfo pipelineLayoutCI = Init::pipelineLayoutCreateInfo(&sdfAOPass_.setLayout, 1);
 
-	VK_CHECK_RESULT(vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &sdfAOPass_.pipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &sdfAOPass_.pipelineLayout));
 
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCI = Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
 	VkPipelineRasterizationStateCreateInfo rasterizationStateCI = Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE, 0);
@@ -12241,9 +12223,29 @@ void Renderer::PreparePipelineSdfAO()
 	pipelineCI.pStages = shaderStages.data();
 	pipelineCI.pVertexInputState = &emptyInputState;
 
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &sdfAOPass_.pipeline));
+	Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &sdfAOPass_.pipeline));
 }
 MeshToSdf* Renderer::GetMeshToSdfOperator()
 {
     return meshToSdfOperator_;
 };
+glm::mat4 CalculateModelToStandardTransform(const vkglTF::Model& model)
+{
+    // 计算模型包围盒
+    glm::vec3 modelMin = model.actualDimensionsMin;
+    glm::vec3 modelMax = model.actualDimensionsMax;
+    glm::vec3 modelCenter = (modelMax + modelMin) * 0.5f;
+    glm::vec3 modelSize = modelMax - modelMin;
+
+    // 计算最大尺寸（保持比例）
+    float maxModelSize = glm::max(glm::max(modelSize.x, modelSize.y), modelSize.z);
+    float margin = maxModelSize * 0.1f; // 10% 边距
+    float totalSize = maxModelSize + margin;
+
+    // 构建变换矩阵：先移动到原点，再缩放到[-1,1]³
+    glm::mat4 transform = glm::mat4(1.0f);
+    transform = glm::translate(transform, -modelCenter);            // 第1步：移动到原点
+    transform = glm::scale(transform, glm::vec3(2.0f / totalSize)); // 第2步：缩放到[-1,1]³
+
+    return transform;
+}

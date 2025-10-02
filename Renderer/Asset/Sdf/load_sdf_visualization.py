@@ -121,12 +121,12 @@ def visualize_3d_isosurface(sdf_volume):
         grid.point_data["sdf"] = sdf_flipped.flatten()
         
         # 提取SDF=0的等值面
-        surface = grid.contour(isosurfaces=[0], scalars="sdf")
+        surface = grid.contour(isosurfaces=[0.05], scalars="sdf")
         
         if surface.n_points == 0:
             print("警告: 未找到SDF=0的表面，尝试其他等值面...")
             # 尝试接近0的值
-            for iso_value in [-0.5, 0.5, -1.0, 1.0]:
+            for iso_value in [0.05,0.1,0.2, 0.3, 1.0]:
                 surface = grid.contour(isosurfaces=[iso_value], scalars="sdf")
                 if surface.n_points > 0:
                     print(f"使用等值面 SDF={iso_value}")
@@ -151,32 +151,140 @@ def visualize_3d_isosurface(sdf_volume):
     except Exception as e:
         print(f"3D可视化失败: {e}")
 
+def apply_sign_from_reference(brute_sdf, signed_sdf):
+    """使用参考有符号SDF为暴力SDF添加符号信息"""
+    print("\n=== 符号信息附加 ===")
+
+    # 创建带符号的暴力SDF
+    signed_brute_sdf = brute_sdf.copy()
+
+    # 使用signed_sdf的符号信息
+    inside_mask = signed_sdf < 0  # 内部区域
+    outside_mask = signed_sdf >= 0  # 外部区域
+
+    # 为内部区域添加负号
+    signed_brute_sdf[inside_mask] = -signed_brute_sdf[inside_mask]
+
+    # 统计转换结果
+    inside_count = np.sum(inside_mask)
+    outside_count = np.sum(outside_mask)
+    total = brute_sdf.size
+
+    print(f"符号附加完成:")
+    print(f"  内部体素: {inside_count} ({inside_count/total*100:.1f}%)")
+    print(f"  外部体素: {outside_count} ({outside_count/total*100:.1f}%)")
+    print(f"  原始范围: [{brute_sdf.min():.3f}, {brute_sdf.max():.3f}]")
+    print(f"  附加符号后: [{signed_brute_sdf.min():.3f}, {signed_brute_sdf.max():.3f}]")
+
+    return signed_brute_sdf
+
+def compare_sdf_data(sdf1, sdf2, name1="SDF1", name2="SDF2"):
+    """对比两个SDF数据的差异"""
+    print(f"\n=== {name1} vs {name2} 对比 ===")
+
+    # 计算差异
+    diff = np.abs(sdf1 - sdf2)
+
+    print(f"{name1} 范围: [{sdf1.min():.3f}, {sdf1.max():.3f}]")
+    print(f"{name2} 范围: [{sdf2.min():.3f}, {sdf2.max():.3f}]")
+    print(f"绝对差异: 平均={diff.mean():.4f}, 最大={diff.max():.4f}, 标准差={diff.std():.4f}")
+
+    # 计算相关性
+    correlation = np.corrcoef(sdf1.flatten(), sdf2.flatten())[0, 1]
+    print(f"相关系数: {correlation:.4f}")
+
+    return diff
+
+def process_sdf_comparison(brute_file, signed_file):
+    """处理SDF对比的完整流程"""
+    # 加载两个SDF数据
+    print("加载BruteSdf数据...")
+    brute_sdf = load_sdf_data(brute_file)
+    brute_sdf = np.flip(brute_sdf, axis=0) 
+    brute_sdf = np.flip(brute_sdf, axis=1)
+
+    print("\n加载参考有符号SDF数据...")
+    signed_sdf = load_sdf_data(signed_file)
+
+
+    # 检查尺寸匹配
+    if brute_sdf.shape != signed_sdf.shape:
+        raise ValueError(f"SDF尺寸不匹配: BruteSdf{brute_sdf.shape} vs SignedSdf{signed_sdf.shape}")
+
+    # 分析原始数据
+    print("\n=== 原始BruteSdf分析 ===")
+    analyze_sdf_quality(brute_sdf)
+
+    print("\n=== 参考SignedSdf分析 ===")
+    analyze_sdf_quality(signed_sdf)
+
+    # 使用参考SDF为BruteSdf添加符号
+    signed_brute_sdf = apply_sign_from_reference(brute_sdf, signed_sdf)
+
+    # 分析附加符号后的数据
+    print("\n=== 附加符号后BruteSdf分析 ===")
+    analyze_sdf_quality(signed_brute_sdf)
+
+    # 对比两个有符号SDF
+    diff = compare_sdf_data(signed_brute_sdf, signed_sdf, "SignedBruteSdf", "ReferenceSdf")
+
+    # 保存结果
+    output_file = "SignedBruteSdf.raw"
+    signed_brute_sdf.astype(np.float32).tofile(output_file)
+    print(f"\n附加符号后的SDF已保存到: {output_file}")
+
+    return brute_sdf, signed_sdf, signed_brute_sdf, diff
+
+def interactive_visualization(brute_sdf, signed_sdf, signed_brute_sdf, diff):
+    """交互式可视化选择"""
+    print("\n选择可视化数据:")
+    print("1. 原始BruteSdf (仅正值)")
+    print("2. 参考SignedSdf")
+    print("3. 附加符号后BruteSdf")
+    print("4. 差异分析")
+
+    choice = input("请选择 (1-4): ").strip()
+
+    if choice == "1":
+        print("\n可视化原始BruteSdf...")
+        visualize_3d_isosurface(brute_sdf)
+    elif choice == "2":
+        print("\n可视化参考SignedSdf...")
+        visualize_3d_isosurface(signed_sdf)
+    elif choice == "3":
+        print("\n可视化附加符号后BruteSdf...")
+        visualize_3d_isosurface(signed_brute_sdf)
+    elif choice == "4":
+        print("\n可视化差异分析...")
+        visualize_2d_slices(diff, [0.5])
+    else:
+        print("\n默认可视化附加符号后BruteSdf...")
+        visualize_3d_isosurface(signed_brute_sdf)
+
+def print_validation_summary():
+    """打印验证总结"""
+    print("\n=== SDF验证完成 ===")
+    print("验证指标:")
+    print("1. 数据范围应该合理 (通常在±几个单位之内)")
+    print("2. 应该有明显的内部(负值)和外部(正值)区域")
+    print("3. 表面附近应该有连续的梯度变化")
+    print("4. 3D等值面应该形成合理的几何体表面")
+    print("5. 相关系数应该接近1.0表示高度相关")
+
 def main():
     """主函数"""
     # SDF文件路径（与Renderer.cpp中的输出路径对应）
-    sdf_file = "MeshToSdf.raw"
-    
+    sdf_file = "BruteSdf.raw"
+    signedSdf = "Analytical.raw"
     try:
-        # 加载SDF数据
-        sdf_volume = load_sdf_data(sdf_file)
-        
-        # 分析SDF质量
-        analyze_sdf_quality(sdf_volume)
-        
-        # # 2D切片可视化
-        # print("\n显示2D切片...")
-        # visualize_2d_slices(sdf_volume)
-        
-        # 3D等值面可视化
-        print("\n显示3D等值面...")
-        visualize_3d_isosurface(sdf_volume)
-        
-        print("\n=== SDF验证完成 ===")
-        print("验证指标:")
-        print("1. 数据范围应该合理 (通常在±几个单位之内)")
-        print("2. 应该有明显的内部(负值)和外部(正值)区域")
-        print("3. 表面附近应该有连续的梯度变化")
-        print("4. 3D等值面应该形成合理的几何体表面")
+        # 处理SDF对比
+        brute_sdf, signed_sdf, signed_brute_sdf, diff = process_sdf_comparison(sdf_file, signedSdf)
+
+        # 交互式可视化
+        interactive_visualization(brute_sdf, signed_sdf, signed_brute_sdf, diff)
+
+        # 打印验证总结
+        print_validation_summary()
         
     except Exception as e:
         print(f"错误: {e}")

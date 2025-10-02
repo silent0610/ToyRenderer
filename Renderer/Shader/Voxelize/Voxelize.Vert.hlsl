@@ -1,5 +1,4 @@
 // Voxelize.Vert.hlsl
-// Stage: Vertex Shader - 保守光栅化版本
 
 // Shared constants for the voxelization passes
 struct VoxelConstants {

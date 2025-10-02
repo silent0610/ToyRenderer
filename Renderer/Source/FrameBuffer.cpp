@@ -3,7 +3,7 @@ module;
 #include "vulkan/vulkan.h"
 
 module FrameBufferMod;
-#include "Macro.hpp"
+import ToolMod;
 import std;
 import InitMod;
 
@@ -121,12 +121,12 @@ uint32_t FramebufferManager::AddAttachment(AttachmentCreateInfo createinfo)
 	VkMemoryRequirements memReqs;
 
 	// Create image for this attachment
-	VK_CHECK_RESULT(vkCreateImage(vulkanDevice->logicalDevice, &image, nullptr, &attachment.image));
+	Tool::CheckResult(vkCreateImage(vulkanDevice->logicalDevice, &image, nullptr, &attachment.image));
 	vkGetImageMemoryRequirements(vulkanDevice->logicalDevice, attachment.image, &memReqs);
 	memAlloc.allocationSize = memReqs.size;
 	memAlloc.memoryTypeIndex = vulkanDevice->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(vulkanDevice->logicalDevice, &memAlloc, nullptr, &attachment.memory));
-	VK_CHECK_RESULT(vkBindImageMemory(vulkanDevice->logicalDevice, attachment.image, attachment.memory, 0));
+	Tool::CheckResult(vkAllocateMemory(vulkanDevice->logicalDevice, &memAlloc, nullptr, &attachment.memory));
+	Tool::CheckResult(vkBindImageMemory(vulkanDevice->logicalDevice, attachment.image, attachment.memory, 0));
 
 	attachment.subresourceRange = {};
 	attachment.subresourceRange.aspectMask = aspectMask;
@@ -141,7 +141,7 @@ uint32_t FramebufferManager::AddAttachment(AttachmentCreateInfo createinfo)
 	imageView.subresourceRange = attachment.subresourceRange;
 	imageView.subresourceRange.aspectMask = (attachment.HasDepth()) ? VK_IMAGE_ASPECT_DEPTH_BIT : aspectMask;
 	imageView.image = attachment.image;
-	VK_CHECK_RESULT(vkCreateImageView(vulkanDevice->logicalDevice, &imageView, nullptr, &attachment.view));
+	Tool::CheckResult(vkCreateImageView(vulkanDevice->logicalDevice, &imageView, nullptr, &attachment.view));
 
 	// Fill attachment description
 	attachment.description = {};
@@ -280,7 +280,7 @@ VkResult FramebufferManager::CreateRenderPass()
 	renderPassInfo.pSubpasses = &subpass;
 	renderPassInfo.dependencyCount = 2;
 	renderPassInfo.pDependencies = dependencies.data();
-	VK_CHECK_RESULT(vkCreateRenderPass(vulkanDevice->logicalDevice, &renderPassInfo, nullptr, &renderPass));
+	Tool::CheckResult(vkCreateRenderPass(vulkanDevice->logicalDevice, &renderPassInfo, nullptr, &renderPass));
 
 	std::vector<VkImageView> attachmentViews;
 	for (auto attachment : attachments)
@@ -306,7 +306,7 @@ VkResult FramebufferManager::CreateRenderPass()
 	framebufferInfo.width = width;
 	framebufferInfo.height = height;
 	framebufferInfo.layers = maxLayers;
-	VK_CHECK_RESULT(vkCreateFramebuffer(vulkanDevice->logicalDevice, &framebufferInfo, nullptr, &framebuffer));
+	Tool::CheckResult(vkCreateFramebuffer(vulkanDevice->logicalDevice, &framebufferInfo, nullptr, &framebuffer));
 
 	return VK_SUCCESS;
 }

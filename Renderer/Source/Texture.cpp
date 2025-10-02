@@ -11,7 +11,7 @@ module TextureMod;
 import InitMod;
 import ToolMod;
 import DeviceMod;
-#include "Macro.hpp"
+
 
 void Texture::UpdateDescriptor()
 {
@@ -57,15 +57,15 @@ void Texture2D::LoadFromFile(std::string filename, VkFormat format, OldVulkanDev
 	//// This buffer is used as a transfer source for the buffer copy
 	//bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	//bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	//VK_CHECK_RESULT(vkCreateBuffer(device->logicalDevice, &bufferCreateInfo, nullptr, &stagingBuffer));
+	//Tool::CheckResult(vkCreateBuffer(device->logicalDevice, &bufferCreateInfo, nullptr, &stagingBuffer));
 
 	//vkGetBufferMemoryRequirements(device->logicalDevice, stagingBuffer, &memReqs);
 	//memAllocInfo.allocationSize = memReqs.size;
 	//// Get memory type index for a host visible buffer
 	//memAllocInfo.memoryTypeIndex = device->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-	//VK_CHECK_RESULT(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &stagingBufferMemory));
+	//Tool::CheckResult(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &stagingBufferMemory));
 
-	//VK_CHECK_RESULT(vkBindBufferMemory(device->logicalDevice, stagingBuffer, stagingBufferMemory, 0));
+	//Tool::CheckResult(vkBindBufferMemory(device->logicalDevice, stagingBuffer, stagingBufferMemory, 0));
 
 
 	//uint8_t* data;
@@ -113,7 +113,7 @@ void Texture2DArray::FromBuffer(void* buffer, VkDeviceSize bufferSize, VkFormat 
 	bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-	VK_CHECK_RESULT(vkCreateBuffer(device->logicalDevice, &bufferCreateInfo, nullptr, &stagingBuffer));
+	Tool::CheckResult(vkCreateBuffer(device->logicalDevice, &bufferCreateInfo, nullptr, &stagingBuffer));
 
 	// 获取暂存缓冲区的内存需求
 	vkGetBufferMemoryRequirements(device->logicalDevice, stagingBuffer, &memReqs);
@@ -122,12 +122,12 @@ void Texture2DArray::FromBuffer(void* buffer, VkDeviceSize bufferSize, VkFormat 
 	memAllocInfo.memoryTypeIndex = device->GetMemoryType(memReqs.memoryTypeBits,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-	VK_CHECK_RESULT(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &stagingMemory));
-	VK_CHECK_RESULT(vkBindBufferMemory(device->logicalDevice, stagingBuffer, stagingMemory, 0));
+	Tool::CheckResult(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &stagingMemory));
+	Tool::CheckResult(vkBindBufferMemory(device->logicalDevice, stagingBuffer, stagingMemory, 0));
 
 	// 将纹理数据复制到暂存缓冲区
 	uint8_t* data;
-	VK_CHECK_RESULT(vkMapMemory(device->logicalDevice, stagingMemory, 0, memReqs.size, 0, (void**)&data));
+	Tool::CheckResult(vkMapMemory(device->logicalDevice, stagingMemory, 0, memReqs.size, 0, (void**)&data));
 	memcpy(data, buffer, bufferSize);
 	vkUnmapMemory(device->logicalDevice, stagingMemory);
 
@@ -168,14 +168,14 @@ void Texture2DArray::FromBuffer(void* buffer, VkDeviceSize bufferSize, VkFormat 
 		imageCreateInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	}
 
-	VK_CHECK_RESULT(vkCreateImage(device->logicalDevice, &imageCreateInfo, nullptr, &image));
+	Tool::CheckResult(vkCreateImage(device->logicalDevice, &imageCreateInfo, nullptr, &image));
 
 	vkGetImageMemoryRequirements(device->logicalDevice, image, &memReqs);
 	memAllocInfo.allocationSize = memReqs.size;
 	memAllocInfo.memoryTypeIndex = device->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-	VK_CHECK_RESULT(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
-	VK_CHECK_RESULT(vkBindImageMemory(device->logicalDevice, image, deviceMemory, 0));
+	Tool::CheckResult(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
+	Tool::CheckResult(vkBindImageMemory(device->logicalDevice, image, deviceMemory, 0));
 
 	VkImageSubresourceRange subresourceRange = {};
 	subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -230,7 +230,7 @@ void Texture2DArray::FromBuffer(void* buffer, VkDeviceSize bufferSize, VkFormat 
 	samplerCreateInfo.minLod = 0.0f;
 	samplerCreateInfo.maxLod = 0.0f;
 	samplerCreateInfo.maxAnisotropy = 1.0f;
-	VK_CHECK_RESULT(vkCreateSampler(device->logicalDevice, &samplerCreateInfo, nullptr, &sampler));
+	Tool::CheckResult(vkCreateSampler(device->logicalDevice, &samplerCreateInfo, nullptr, &sampler));
 
 	// 创建2D数组图像视图 (关键区别)
 	VkImageViewCreateInfo viewCreateInfo = {};
@@ -239,7 +239,7 @@ void Texture2DArray::FromBuffer(void* buffer, VkDeviceSize bufferSize, VkFormat 
 	viewCreateInfo.format = format;
 	viewCreateInfo.subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, layerCount }; // 包含所有层
 	viewCreateInfo.image = image;
-	VK_CHECK_RESULT(vkCreateImageView(device->logicalDevice, &viewCreateInfo, nullptr, &view));
+	Tool::CheckResult(vkCreateImageView(device->logicalDevice, &viewCreateInfo, nullptr, &view));
 
 	// 更新描述符图像信息
 	UpdateDescriptor();
@@ -269,7 +269,7 @@ void Texture2D::FromBuffer(void* buffer, VkDeviceSize bufferSize, VkFormat forma
 	bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-	VK_CHECK_RESULT(vkCreateBuffer(device->logicalDevice, &bufferCreateInfo, nullptr, &stagingBuffer));
+	Tool::CheckResult(vkCreateBuffer(device->logicalDevice, &bufferCreateInfo, nullptr, &stagingBuffer));
 
 	// Get memory requirements for the staging buffer (alignment, memory type bits)
 	vkGetBufferMemoryRequirements(device->logicalDevice, stagingBuffer, &memReqs);
@@ -278,12 +278,12 @@ void Texture2D::FromBuffer(void* buffer, VkDeviceSize bufferSize, VkFormat forma
 	// Get memory type index for a host visible buffer
 	memAllocInfo.memoryTypeIndex = device->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-	VK_CHECK_RESULT(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &stagingMemory));
-	VK_CHECK_RESULT(vkBindBufferMemory(device->logicalDevice, stagingBuffer, stagingMemory, 0));
+	Tool::CheckResult(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &stagingMemory));
+	Tool::CheckResult(vkBindBufferMemory(device->logicalDevice, stagingBuffer, stagingMemory, 0));
 
 	// Copy texture data into staging buffer
 	uint8_t* data;
-	VK_CHECK_RESULT(vkMapMemory(device->logicalDevice, stagingMemory, 0, memReqs.size, 0, (void**)&data));
+	Tool::CheckResult(vkMapMemory(device->logicalDevice, stagingMemory, 0, memReqs.size, 0, (void**)&data));
 	memcpy(data, buffer, bufferSize);
 	vkUnmapMemory(device->logicalDevice, stagingMemory);
 
@@ -314,15 +314,15 @@ void Texture2D::FromBuffer(void* buffer, VkDeviceSize bufferSize, VkFormat forma
 	{
 		imageCreateInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	}
-	VK_CHECK_RESULT(vkCreateImage(device->logicalDevice, &imageCreateInfo, nullptr, &image));
+	Tool::CheckResult(vkCreateImage(device->logicalDevice, &imageCreateInfo, nullptr, &image));
 
 	vkGetImageMemoryRequirements(device->logicalDevice, image, &memReqs);
 
 	memAllocInfo.allocationSize = memReqs.size;
 
 	memAllocInfo.memoryTypeIndex = device->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
-	VK_CHECK_RESULT(vkBindImageMemory(device->logicalDevice, image, deviceMemory, 0));
+	Tool::CheckResult(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
+	Tool::CheckResult(vkBindImageMemory(device->logicalDevice, image, deviceMemory, 0));
 
 	VkImageSubresourceRange subresourceRange = {};
 	subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -378,7 +378,7 @@ void Texture2D::FromBuffer(void* buffer, VkDeviceSize bufferSize, VkFormat forma
 	samplerCreateInfo.minLod = 0.0f;
 	samplerCreateInfo.maxLod = 0.0f;
 	samplerCreateInfo.maxAnisotropy = 1.0f;
-	VK_CHECK_RESULT(vkCreateSampler(device->logicalDevice, &samplerCreateInfo, nullptr, &sampler));
+	Tool::CheckResult(vkCreateSampler(device->logicalDevice, &samplerCreateInfo, nullptr, &sampler));
 
 	// Create image view
 	VkImageViewCreateInfo viewCreateInfo = {};
@@ -389,7 +389,7 @@ void Texture2D::FromBuffer(void* buffer, VkDeviceSize bufferSize, VkFormat forma
 	viewCreateInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
 	viewCreateInfo.subresourceRange.levelCount = 1;
 	viewCreateInfo.image = image;
-	VK_CHECK_RESULT(vkCreateImageView(device->logicalDevice, &viewCreateInfo, nullptr, &view));
+	Tool::CheckResult(vkCreateImageView(device->logicalDevice, &viewCreateInfo, nullptr, &view));
 
 	// Update descriptor image info member that can be used for setting up descriptor sets
 	UpdateDescriptor();
@@ -433,7 +433,7 @@ void TextureCubeMap::LoadFromFile(std::string filename, VkFormat format, OldVulk
 	bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 	bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-	VK_CHECK_RESULT(vkCreateBuffer(device->logicalDevice, &bufferCreateInfo, nullptr, &stagingBuffer));
+	Tool::CheckResult(vkCreateBuffer(device->logicalDevice, &bufferCreateInfo, nullptr, &stagingBuffer));
 
 	// Get memory requirements for the staging buffer (alignment, memory type bits)
 	vkGetBufferMemoryRequirements(device->logicalDevice, stagingBuffer, &memReqs);
@@ -442,12 +442,12 @@ void TextureCubeMap::LoadFromFile(std::string filename, VkFormat format, OldVulk
 	// Get memory type index for a host visible buffer
 	memAllocInfo.memoryTypeIndex = device->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-	VK_CHECK_RESULT(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &stagingMemory));
-	VK_CHECK_RESULT(vkBindBufferMemory(device->logicalDevice, stagingBuffer, stagingMemory, 0));
+	Tool::CheckResult(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &stagingMemory));
+	Tool::CheckResult(vkBindBufferMemory(device->logicalDevice, stagingBuffer, stagingMemory, 0));
 
 	// Copy texture data into staging buffer
 	uint8_t* data;
-	VK_CHECK_RESULT(vkMapMemory(device->logicalDevice, stagingMemory, 0, memReqs.size, 0, (void**)&data));
+	Tool::CheckResult(vkMapMemory(device->logicalDevice, stagingMemory, 0, memReqs.size, 0, (void**)&data));
 	memcpy(data, ktxTextureData, ktxTextureSize);
 	vkUnmapMemory(device->logicalDevice, stagingMemory);
 
@@ -498,15 +498,15 @@ void TextureCubeMap::LoadFromFile(std::string filename, VkFormat format, OldVulk
 	imageCreateInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 
 
-	VK_CHECK_RESULT(vkCreateImage(device->logicalDevice, &imageCreateInfo, nullptr, &image));
+	Tool::CheckResult(vkCreateImage(device->logicalDevice, &imageCreateInfo, nullptr, &image));
 
 	vkGetImageMemoryRequirements(device->logicalDevice, image, &memReqs);
 
 	memAllocInfo.allocationSize = memReqs.size;
 	memAllocInfo.memoryTypeIndex = device->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-	VK_CHECK_RESULT(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
-	VK_CHECK_RESULT(vkBindImageMemory(device->logicalDevice, image, deviceMemory, 0));
+	Tool::CheckResult(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
+	Tool::CheckResult(vkBindImageMemory(device->logicalDevice, image, deviceMemory, 0));
 
 	// Use a separate command buffer for texture loading
 	VkCommandBuffer copyCmd = device->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
@@ -561,7 +561,7 @@ void TextureCubeMap::LoadFromFile(std::string filename, VkFormat format, OldVulk
 	samplerCreateInfo.minLod = 0.0f;
 	samplerCreateInfo.maxLod = (float)mipLevels;
 	samplerCreateInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-	VK_CHECK_RESULT(vkCreateSampler(device->logicalDevice, &samplerCreateInfo, nullptr, &sampler));
+	Tool::CheckResult(vkCreateSampler(device->logicalDevice, &samplerCreateInfo, nullptr, &sampler));
 
 	// Create image view
 	VkImageViewCreateInfo viewCreateInfo = Init::imageViewCreateInfo();
@@ -571,7 +571,7 @@ void TextureCubeMap::LoadFromFile(std::string filename, VkFormat format, OldVulk
 	viewCreateInfo.subresourceRange.layerCount = 6;
 	viewCreateInfo.subresourceRange.levelCount = mipLevels;
 	viewCreateInfo.image = image;
-	VK_CHECK_RESULT(vkCreateImageView(device->logicalDevice, &viewCreateInfo, nullptr, &view));
+	Tool::CheckResult(vkCreateImageView(device->logicalDevice, &viewCreateInfo, nullptr, &view));
 
 	// Clean up staging resources
 	ktxTexture_Destroy(ktxTexture);
@@ -602,7 +602,7 @@ void Texture2DArray::Create(uint32_t width, uint32_t height, uint32_t layerCount
 	imageCreateInfo.usage = usage;
 	imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-	VK_CHECK_RESULT(vkCreateImage(device->logicalDevice, &imageCreateInfo, nullptr, &image));
+	Tool::CheckResult(vkCreateImage(device->logicalDevice, &imageCreateInfo, nullptr, &image));
 
 	VkMemoryRequirements memReqs;
 	vkGetImageMemoryRequirements(device->logicalDevice, image, &memReqs);
@@ -611,8 +611,8 @@ void Texture2DArray::Create(uint32_t width, uint32_t height, uint32_t layerCount
 	memAllocInfo.allocationSize = memReqs.size;
 	memAllocInfo.memoryTypeIndex = device->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-	VK_CHECK_RESULT(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
-	VK_CHECK_RESULT(vkBindImageMemory(device->logicalDevice, image, deviceMemory, 0));
+	Tool::CheckResult(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
+	Tool::CheckResult(vkBindImageMemory(device->logicalDevice, image, deviceMemory, 0));
 
 	// Create a default sampler
 	VkSamplerCreateInfo samplerCreateInfo = Init::samplerCreateInfo();
@@ -626,7 +626,7 @@ void Texture2DArray::Create(uint32_t width, uint32_t height, uint32_t layerCount
 	samplerCreateInfo.maxAnisotropy = 1.0f;
 	samplerCreateInfo.minLod = 0.0f;
 	samplerCreateInfo.maxLod = 1.0f;
-	VK_CHECK_RESULT(vkCreateSampler(device->logicalDevice, &samplerCreateInfo, nullptr, &sampler));
+	Tool::CheckResult(vkCreateSampler(device->logicalDevice, &samplerCreateInfo, nullptr, &sampler));
 
 	// Create image view
 	VkImageViewCreateInfo viewCreateInfo = Init::imageViewCreateInfo();
@@ -639,7 +639,7 @@ void Texture2DArray::Create(uint32_t width, uint32_t height, uint32_t layerCount
 	viewCreateInfo.subresourceRange.baseArrayLayer = 0;
 	viewCreateInfo.subresourceRange.layerCount = layerCount;
 
-	VK_CHECK_RESULT(vkCreateImageView(device->logicalDevice, &viewCreateInfo, nullptr, &view));
+	Tool::CheckResult(vkCreateImageView(device->logicalDevice, &viewCreateInfo, nullptr, &view));
 
 	// Set initial layout
 	imageLayout = VK_IMAGE_LAYOUT_GENERAL; // General layout is suitable for storage images
@@ -673,14 +673,14 @@ void Texture3D::Create(uint32_t dimX, uint32_t dimY, uint32_t dimZ, OldVulkanDev
 	imageInfo.usage = usage;
 	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	VK_CHECK_RESULT(vkCreateImage(device->logicalDevice, &imageInfo, nullptr, &image));
+	Tool::CheckResult(vkCreateImage(device->logicalDevice, &imageInfo, nullptr, &image));
 
 	VkMemoryRequirements memRequirement;
 	vkGetImageMemoryRequirements(device->logicalDevice, image, &memRequirement);
 	VkMemoryAllocateInfo memAllocInfo = Init::memoryAllocateInfo();
 	memAllocInfo.allocationSize = memRequirement.size;
 	memAllocInfo.memoryTypeIndex = device->GetMemoryType(memRequirement.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
+	Tool::CheckResult(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
 
 	vkBindImageMemory(device->logicalDevice, image, deviceMemory, 0);
 
@@ -690,7 +690,7 @@ void Texture3D::Create(uint32_t dimX, uint32_t dimY, uint32_t dimZ, OldVulkanDev
 	viewInfo.viewType = VK_IMAGE_VIEW_TYPE_3D;
 	viewInfo.format = format;
 	viewInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-	VK_CHECK_RESULT(vkCreateImageView(device->logicalDevice, &viewInfo, nullptr, &view));
+	Tool::CheckResult(vkCreateImageView(device->logicalDevice, &viewInfo, nullptr, &view));
 
 	// Create a default sampler
 	VkSamplerCreateInfo samplerCreateInfo = Init::samplerCreateInfo();
@@ -704,7 +704,7 @@ void Texture3D::Create(uint32_t dimX, uint32_t dimY, uint32_t dimZ, OldVulkanDev
 	samplerCreateInfo.maxAnisotropy = 1.0f;
 	samplerCreateInfo.minLod = 0.0f;
 	samplerCreateInfo.maxLod = 1.0f;
-	VK_CHECK_RESULT(vkCreateSampler(device->logicalDevice, &samplerCreateInfo, nullptr, &sampler));
+	Tool::CheckResult(vkCreateSampler(device->logicalDevice, &samplerCreateInfo, nullptr, &sampler));
 
 	VkCommandBuffer cmd = device->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 	Tool::SetImageLayout(cmd, image, VK_IMAGE_LAYOUT_UNDEFINED, imageLayout, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, layerCount });

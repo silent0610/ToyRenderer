@@ -8,15 +8,6 @@ import InitMod;
 import ToolMod;
 import Logger;
 import BufferMod;
-#define VK_CHECK_RESULT(f)                                                                                                                           \
-    {                                                                                                                                                \
-        VkResult res = (f);                                                                                                                          \
-        if (res != VK_SUCCESS)                                                                                                                       \
-        {                                                                                                                                            \
-            std::cout << "Fatal : VkResult is \"" << Tool::ErrorString(res) << "\" in " << __FILE__ << " at line " << __LINE__ << "\n";              \
-            assert(res == VK_SUCCESS);                                                                                                               \
-        }                                                                                                                                            \
-    }
 
 OldVulkanDevice::OldVulkanDevice(VkPhysicalDevice physicalDevice)
 {
@@ -343,7 +334,7 @@ VkResult OldVulkanDevice::CreateBuffer(VkBufferUsageFlags usageFlags, VkMemoryPr
     // Create the buffer handle
     VkBufferCreateInfo bufferCreateInfo = Init::bufferCreateInfo(usageFlags, size);
     bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    VK_CHECK_RESULT(vkCreateBuffer(logicalDevice, &bufferCreateInfo, nullptr, buffer));
+    Tool::CheckResult(vkCreateBuffer(logicalDevice, &bufferCreateInfo, nullptr, buffer));
 
     // Create the memory backing up the buffer handle
     VkMemoryRequirements memReqs;
@@ -360,13 +351,13 @@ VkResult OldVulkanDevice::CreateBuffer(VkBufferUsageFlags usageFlags, VkMemoryPr
         allocFlagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
         memAlloc.pNext = &allocFlagsInfo;
     }
-    VK_CHECK_RESULT(vkAllocateMemory(logicalDevice, &memAlloc, nullptr, memory));
+    Tool::CheckResult(vkAllocateMemory(logicalDevice, &memAlloc, nullptr, memory));
 
     // If a pointer to the buffer data has been passed, map the buffer and copy over the data
     if (data != nullptr)
     {
         void *mapped;
-        VK_CHECK_RESULT(vkMapMemory(logicalDevice, *memory, 0, size, 0, &mapped));
+        Tool::CheckResult(vkMapMemory(logicalDevice, *memory, 0, size, 0, &mapped));
         memcpy(mapped, data, size);
         // If host coherency hasn't been requested, do a manual flush to make writes visible
         if ((memoryPropertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
@@ -381,7 +372,7 @@ VkResult OldVulkanDevice::CreateBuffer(VkBufferUsageFlags usageFlags, VkMemoryPr
     }
 
     // Attach the memory to the buffer object
-    VK_CHECK_RESULT(vkBindBufferMemory(logicalDevice, *buffer, *memory, 0));
+    Tool::CheckResult(vkBindBufferMemory(logicalDevice, *buffer, *memory, 0));
 
     return VK_SUCCESS;
 }
@@ -404,7 +395,7 @@ VkResult OldVulkanDevice::CreateBuffer(VkBufferUsageFlags usageFlags, VkMemoryPr
 
     // Create the buffer handle
     VkBufferCreateInfo bufferCreateInfo = Init::bufferCreateInfo(usageFlags, size);
-    VK_CHECK_RESULT(vkCreateBuffer(logicalDevice, &bufferCreateInfo, nullptr, &buffer->buffer));
+    Tool::CheckResult(vkCreateBuffer(logicalDevice, &bufferCreateInfo, nullptr, &buffer->buffer));
 
     // Create the memory backing up the buffer handle
     VkMemoryRequirements memReqs;
@@ -421,7 +412,7 @@ VkResult OldVulkanDevice::CreateBuffer(VkBufferUsageFlags usageFlags, VkMemoryPr
         allocFlagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
         memAlloc.pNext = &allocFlagsInfo;
     }
-    VK_CHECK_RESULT(vkAllocateMemory(logicalDevice, &memAlloc, nullptr, &buffer->memory));
+    Tool::CheckResult(vkAllocateMemory(logicalDevice, &memAlloc, nullptr, &buffer->memory));
 
     buffer->alignment = memReqs.alignment;
     buffer->size = size;
@@ -431,7 +422,7 @@ VkResult OldVulkanDevice::CreateBuffer(VkBufferUsageFlags usageFlags, VkMemoryPr
     // If a pointer to the buffer data has been passed, map the buffer and copy over the data
     if (data != nullptr)
     {
-        VK_CHECK_RESULT(buffer->Map());
+        Tool::CheckResult(buffer->Map());
         memcpy(buffer->mapped, data, size);
         if ((memoryPropertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
             buffer->Flush();
@@ -493,7 +484,7 @@ VkCommandPool OldVulkanDevice::CreateCommandPool(uint32_t queueFamilyIndex, VkCo
     cmdPoolInfo.queueFamilyIndex = queueFamilyIndex;
     cmdPoolInfo.flags = createFlags;
     VkCommandPool cmdPool;
-    VK_CHECK_RESULT(vkCreateCommandPool(logicalDevice, &cmdPoolInfo, nullptr, &cmdPool));
+    Tool::CheckResult(vkCreateCommandPool(logicalDevice, &cmdPoolInfo, nullptr, &cmdPool));
     return cmdPool;
 }
 
@@ -510,12 +501,12 @@ VkCommandBuffer OldVulkanDevice::CreateCommandBuffer(VkCommandBufferLevel level,
 {
     VkCommandBufferAllocateInfo cmdBufAllocateInfo = Init::commandBufferAllocateInfo(pool, level, 1);
     VkCommandBuffer cmdBuffer;
-    VK_CHECK_RESULT(vkAllocateCommandBuffers(logicalDevice, &cmdBufAllocateInfo, &cmdBuffer));
+    Tool::CheckResult(vkAllocateCommandBuffers(logicalDevice, &cmdBufAllocateInfo, &cmdBuffer));
     // If requested, also start recording for the new command buffer
     if (begin)
     {
         VkCommandBufferBeginInfo cmdBufInfo = Init::commandBufferBeginInfo();
-        VK_CHECK_RESULT(vkBeginCommandBuffer(cmdBuffer, &cmdBufInfo));
+        Tool::CheckResult(vkBeginCommandBuffer(cmdBuffer, &cmdBufInfo));
     }
     return cmdBuffer;
 }
@@ -543,7 +534,7 @@ void OldVulkanDevice::FlushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue 
         return;
     }
 
-    VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer));
+    Tool::CheckResult(vkEndCommandBuffer(commandBuffer));
 
     if (debug)
     {
@@ -556,11 +547,11 @@ void OldVulkanDevice::FlushCommandBuffer(VkCommandBuffer commandBuffer, VkQueue 
     // Create fence to ensure that the command buffer has finished executing
     VkFenceCreateInfo fenceInfo = Init::fenceCreateInfo(VkFenceCreateFlags(0));
     VkFence fence;
-    VK_CHECK_RESULT(vkCreateFence(logicalDevice, &fenceInfo, nullptr, &fence));
+    Tool::CheckResult(vkCreateFence(logicalDevice, &fenceInfo, nullptr, &fence));
     // Submit to the queue
-    VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &submitInfo, fence));
+    Tool::CheckResult(vkQueueSubmit(queue, 1, &submitInfo, fence));
     // Wait for the fence to signal that command buffer has finished executing
-    VK_CHECK_RESULT(vkWaitForFences(logicalDevice, 1, &fence, VK_TRUE, UINT64_MAX));
+    Tool::CheckResult(vkWaitForFences(logicalDevice, 1, &fence, VK_TRUE, UINT64_MAX));
     vkDestroyFence(logicalDevice, fence, nullptr);
 
     if (free)

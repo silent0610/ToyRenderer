@@ -4,7 +4,6 @@ module;
 #include "vulkan/vulkan.h"
 #include "glm/glm.hpp"
 module UIMod;
-#include "Macro.hpp"
 import InitMod;
 import ToolMod;
 UIOverlay::UIOverlay()
@@ -75,14 +74,14 @@ void UIOverlay::PrepareResources()
 	imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	VK_CHECK_RESULT(vkCreateImage(device->logicalDevice, &imageInfo, nullptr, &fontImage));
+	Tool::CheckResult(vkCreateImage(device->logicalDevice, &imageInfo, nullptr, &fontImage));
 	VkMemoryRequirements memReqs;
 	vkGetImageMemoryRequirements(device->logicalDevice, fontImage, &memReqs);
 	VkMemoryAllocateInfo memAllocInfo = Init::memoryAllocateInfo();
 	memAllocInfo.allocationSize = memReqs.size;
 	memAllocInfo.memoryTypeIndex = device->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK_RESULT(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &fontMemory));
-	VK_CHECK_RESULT(vkBindImageMemory(device->logicalDevice, fontImage, fontMemory, 0));
+	Tool::CheckResult(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &fontMemory));
+	Tool::CheckResult(vkBindImageMemory(device->logicalDevice, fontImage, fontMemory, 0));
 
 	// Image view
 	VkImageViewCreateInfo viewInfo = Init::imageViewCreateInfo();
@@ -92,12 +91,12 @@ void UIOverlay::PrepareResources()
 	viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	viewInfo.subresourceRange.levelCount = 1;
 	viewInfo.subresourceRange.layerCount = 1;
-	VK_CHECK_RESULT(vkCreateImageView(device->logicalDevice, &viewInfo, nullptr, &fontView));
+	Tool::CheckResult(vkCreateImageView(device->logicalDevice, &viewInfo, nullptr, &fontView));
 
 	// Staging buffers for font data upload
 	Buffer stagingBuffer;
 
-	VK_CHECK_RESULT(device->CreateBuffer(
+	Tool::CheckResult(device->CreateBuffer(
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 		&stagingBuffer,
@@ -160,25 +159,25 @@ void UIOverlay::PrepareResources()
 	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 	samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-	VK_CHECK_RESULT(vkCreateSampler(device->logicalDevice, &samplerInfo, nullptr, &sampler));
+	Tool::CheckResult(vkCreateSampler(device->logicalDevice, &samplerInfo, nullptr, &sampler));
 
 	// Descriptor pool
 	std::vector<VkDescriptorPoolSize> poolSizes = {
 		Init::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1)
 	};
 	VkDescriptorPoolCreateInfo descriptorPoolInfo = Init::descriptorPoolCreateInfo(poolSizes, 2);
-	VK_CHECK_RESULT(vkCreateDescriptorPool(device->logicalDevice, &descriptorPoolInfo, nullptr, &descriptorPool));
+	Tool::CheckResult(vkCreateDescriptorPool(device->logicalDevice, &descriptorPoolInfo, nullptr, &descriptorPool));
 
 	// Descriptor set layout
 	std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
 		Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0),
 	};
 	VkDescriptorSetLayoutCreateInfo descriptorLayout = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
-	VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device->logicalDevice, &descriptorLayout, nullptr, &descriptorSetLayout));
+	Tool::CheckResult(vkCreateDescriptorSetLayout(device->logicalDevice, &descriptorLayout, nullptr, &descriptorSetLayout));
 
 	// Descriptor set
 	VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(descriptorPool, &descriptorSetLayout, 1);
-	VK_CHECK_RESULT(vkAllocateDescriptorSets(device->logicalDevice, &allocInfo, &descriptorSet));
+	Tool::CheckResult(vkAllocateDescriptorSets(device->logicalDevice, &allocInfo, &descriptorSet));
 	VkDescriptorImageInfo fontDescriptor = Init::descriptorImageInfo(
 		sampler,
 		fontView,
@@ -199,7 +198,7 @@ void UIOverlay::PreparePipeline(const VkPipelineCache pipelineCache, const VkRen
 	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&descriptorSetLayout, 1);
 	pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
 	pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
-	VK_CHECK_RESULT(vkCreatePipelineLayout(device->logicalDevice, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout));
+	Tool::CheckResult(vkCreatePipelineLayout(device->logicalDevice, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout));
 
 	// Setup graphics pipeline for UI rendering
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState =
@@ -286,7 +285,7 @@ void UIOverlay::PreparePipeline(const VkPipelineCache pipelineCache, const VkRen
 
 	pipelineCreateInfo.pVertexInputState = &vertexInputState;
 
-	VK_CHECK_RESULT(vkCreateGraphicsPipelines(device->logicalDevice, pipelineCache, 1, &pipelineCreateInfo, nullptr, &pipeline));
+	Tool::CheckResult(vkCreateGraphicsPipelines(device->logicalDevice, pipelineCache, 1, &pipelineCreateInfo, nullptr, &pipeline));
 }
 
 /** Update vertex and index buffer containing the imGui elements when required */
@@ -315,7 +314,7 @@ bool UIOverlay::Update()
 	{
 		vertexBuffer.Unmap();
 		vertexBuffer.Destroy();
-		VK_CHECK_RESULT(device->CreateBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, &vertexBuffer, vertexBufferSize));
+		Tool::CheckResult(device->CreateBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, &vertexBuffer, vertexBufferSize));
 		vertexCount = imDrawData->TotalVtxCount;
 		vertexBuffer.Unmap();
 		vertexBuffer.Map();
@@ -327,7 +326,7 @@ bool UIOverlay::Update()
 	{
 		indexBuffer.Unmap();
 		indexBuffer.Destroy();
-		VK_CHECK_RESULT(device->CreateBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, &indexBuffer, indexBufferSize));
+		Tool::CheckResult(device->CreateBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, &indexBuffer, indexBufferSize));
 		indexCount = imDrawData->TotalIdxCount;
 		indexBuffer.Map();
 		updateCmdBuffers = true;

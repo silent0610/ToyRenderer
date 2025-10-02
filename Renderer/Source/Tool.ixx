@@ -36,4 +36,5 @@ namespace Tool
 	export bool CheckFileExists(const std::string &filename);
 	export bool GetSupportedDepthFormat(VkPhysicalDevice physicalDevice, VkFormat *depthFormat);
 	export inline void CheckResult(VkResult res, const std::source_location &loc = std::source_location::current());
-}
+    export bool SaveImageToRaw(const std::string& filename,  void* data,size_t size);
+    }

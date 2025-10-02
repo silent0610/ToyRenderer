@@ -29,6 +29,8 @@ import CameraMod;
 import GPUMipmapOctreeMod;
 import MeshToSdf;
 
+
+
 const int LIGHT_COUNT = 3;
 struct ShadowSettings
 {
@@ -2029,12 +2031,15 @@ private:
 
 	// Voxelization debug flag
 	bool m_voxelizationDebugEnabled{ false };
-
-private:
+    glm::mat4 CalculateModelToStandardTransform(const vkglTF::Model& model);
+ private:
 	void InitializeMeshToSdfOperator();
 	MeshToSdf* meshToSdfOperator_{};
     VkCommandBuffer meshToSdfCommandBuffer_{};
 
 public:
     MeshToSdf* GetMeshToSdfOperator();
+
+public: 
+	void TestBruteSdfAndSave();
 };

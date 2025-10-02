@@ -8,15 +8,7 @@ module SwapChainMod;
 import std;
 import ToolMod;
 
-#define VK_CHECK_RESULT(f)                                                                                                              \
-	{                                                                                                                                   \
-		VkResult res = (f);                                                                                                             \
-		if (res != VK_SUCCESS)                                                                                                          \
-		{                                                                                                                               \
-			std::cout << "Fatal : VkResult is \"" << Tool::ErrorString(res) << "\" in " << __FILE__ << " at line " << __LINE__ << "\n"; \
-			assert(res == VK_SUCCESS);                                                                                                  \
-		}                                                                                                                               \
-	}
+
 
 void VulkanSwapChain::InitSurface(VkSurfaceKHR surface)
 {
@@ -96,11 +88,11 @@ void VulkanSwapChain::InitSurface(VkSurfaceKHR surface)
 
 	// Get list of supported surface formats
 	uint32_t formatCount;
-	VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, NULL));
+	Tool::CheckResult(vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, NULL));
 	assert(formatCount > 0);
 
 	std::vector<VkSurfaceFormatKHR> surfaceFormats(formatCount);
-	VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, surfaceFormats.data()));
+	Tool::CheckResult(vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, surfaceFormats.data()));
 
 	// We want to get a format that best suits our needs, so we try to get one from a set of preferred formats
 	// Initialize the format to the first one returned by the implementation in case we can't find one of the preffered formats
@@ -212,11 +204,11 @@ void VulkanSwapChain::InitSurface(void *platformHandle, void *platformWindow)
 
 	// Get list of supported surface formats
 	uint32_t formatCount;
-	VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, NULL));
+	Tool::CheckResult(vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, NULL));
 	assert(formatCount > 0);
 
 	std::vector<VkSurfaceFormatKHR> surfaceFormats(formatCount);
-	VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, surfaceFormats.data()));
+	Tool::CheckResult(vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, surfaceFormats.data()));
 
 	// We want to get a format that best suits our needs, so we try to get one from a set of preferred formats
 	// Initialize the format to the first one returned by the implementation in case we can't find one of the preffered formats
@@ -251,7 +243,7 @@ void VulkanSwapChain::Create(uint32_t &width, uint32_t &height, bool vsync, bool
 
 	// Get physical device surface properties and formats
 	VkSurfaceCapabilitiesKHR surfCaps;
-	VK_CHECK_RESULT(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &surfCaps));
+	Tool::CheckResult(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &surfCaps));
 
 	VkExtent2D swapchainExtent = {};
 	// If width (and height) equals the special value 0xFFFFFFFF, the size of the surface will be set by the swapchain
@@ -271,11 +263,11 @@ void VulkanSwapChain::Create(uint32_t &width, uint32_t &height, bool vsync, bool
 
 	// Select a present mode for the swapchain
 	uint32_t presentModeCount;
-	VK_CHECK_RESULT(vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, NULL));
+	Tool::CheckResult(vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, NULL));
 	assert(presentModeCount > 0);
 
 	std::vector<VkPresentModeKHR> presentModes(presentModeCount);
-	VK_CHECK_RESULT(vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data()));
+	Tool::CheckResult(vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data()));
 
 	// The VK_PRESENT_MODE_FIFO_KHR mode must always be present as per spec
 	// This mode waits for the vertical blank ("v-sync")
@@ -368,7 +360,7 @@ void VulkanSwapChain::Create(uint32_t &width, uint32_t &height, bool vsync, bool
 	// 	swapchainCI.imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	// }
 
-	VK_CHECK_RESULT(vkCreateSwapchainKHR(m_device, &swapchainCI, nullptr, &swapChain));
+	Tool::CheckResult(vkCreateSwapchainKHR(m_device, &swapchainCI, nullptr, &swapChain));
 
 	// If an existing swap chain is re-created, destroy the old swap chain and the ressources owned by the application (image views, images are owned by the swap chain)
 	if (oldSwapchain != VK_NULL_HANDLE)
@@ -380,11 +372,11 @@ void VulkanSwapChain::Create(uint32_t &width, uint32_t &height, bool vsync, bool
 		vkDestroySwapchainKHR(m_device, oldSwapchain, nullptr);
 	}
 	uint32_t imageCount{0};
-	VK_CHECK_RESULT(vkGetSwapchainImagesKHR(m_device, swapChain, &imageCount, nullptr));
+	Tool::CheckResult(vkGetSwapchainImagesKHR(m_device, swapChain, &imageCount, nullptr));
 
 	// Get the swap chain images
 	images.resize(imageCount);
-	VK_CHECK_RESULT(vkGetSwapchainImagesKHR(m_device, swapChain, &imageCount, images.data()));
+	Tool::CheckResult(vkGetSwapchainImagesKHR(m_device, swapChain, &imageCount, images.data()));
 
 	// Get the swap chain buffers containing the image and imageview
 	imageViews.resize(imageCount);
@@ -407,7 +399,7 @@ void VulkanSwapChain::Create(uint32_t &width, uint32_t &height, bool vsync, bool
 		colorAttachmentView.viewType = VK_IMAGE_VIEW_TYPE_2D;
 		colorAttachmentView.flags = 0;
 		colorAttachmentView.image = images[i];
-		VK_CHECK_RESULT(vkCreateImageView(m_device, &colorAttachmentView, nullptr, &imageViews[i]));
+		Tool::CheckResult(vkCreateImageView(m_device, &colorAttachmentView, nullptr, &imageViews[i]));
 	}
 }
 void VulkanSwapChain::Cleanup()

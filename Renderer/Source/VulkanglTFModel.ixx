@@ -271,6 +271,7 @@ namespace vkglTF
 		void createEmptyTexture(VkQueue transferQueue);
 
 	public:
+        glm::mat4 GetModelToStandardTransform() const;
 		OldVulkanDevice *device;
 		VkDescriptorPool descriptorPool;
 
@@ -314,7 +315,7 @@ namespace vkglTF
 		std::string path;
 
 		std::vector<uint32_t> indexBuffer;
-		std::vector<Vertex> vertexBuffer;
+        std::vector<Vertex> vertexBuffer; // 如果使用了Flags, 则为预处理后的顶点数据
 
 		Model() {};
 		~Model();
