@@ -6,7 +6,7 @@ import Logger;
 
 MeshToSdf::MeshToSdf() : device_(nullptr), queue_(VK_NULL_HANDLE), currentMesh_(nullptr), sdfTexture_(nullptr)
 {
-    sdfParam_ = {};
+    //sdfParam_ = {};
 }
 void MeshToSdf::Initialize(OldVulkanDevice* device, VkQueue queue, VkDescriptorPool descriptorPool, vkglTF::Model* mesh)
 {
@@ -14,6 +14,7 @@ void MeshToSdf::Initialize(OldVulkanDevice* device, VkQueue queue, VkDescriptorP
     device_ = device;
     queue_ = queue;
     currentMesh_ = mesh;
+    worldToLocal_ = currentMesh_->GetModelToStandardTransform();
     // 纹理资源
     CreateSdfResource();
 
@@ -32,13 +33,13 @@ void MeshToSdf::Initialize(OldVulkanDevice* device, VkQueue queue, VkDescriptorP
 }
 
 // 2. GenerateSdf 方法 - 执行SDF生成管线
-void MeshToSdf::GenerateSdf(VkCommandBuffer cmd, const glm::mat4& worldToLocal)
+void MeshToSdf::GenerateSdf(VkCommandBuffer cmd)
 {
     std::array<VkDescriptorSet, 3> sets{descriptor_.NormalSet, descriptor_.PingSet, descriptor_.JumpPingSet};
 
     // 准备push constant数据
     MeshToSDFConstant constants{};
-    constants.worldToLocal = worldToLocal;
+    constants.worldToLocal = worldToLocal_;
     constants.voxelResolution = glm::ivec4(sdfParam_.voxelResolution, sdfParam_.voxelResolution, sdfParam_.voxelResolution,
                                            sdfParam_.voxelResolution * sdfParam_.voxelResolution * sdfParam_.voxelResolution);
 
@@ -46,7 +47,7 @@ void MeshToSdf::GenerateSdf(VkCommandBuffer cmd, const glm::mat4& worldToLocal)
     float cellSize = sdfParam_.size / static_cast<float>(sdfParam_.voxelResolution);
     float maxDistance = glm::length(glm::vec3(sdfParam_.size));
     float initialDistance = maxDistance * 1.01f;
-    glm::vec3 origin = glm::vec3(-sdfParam_.size * 0.5f);
+    glm::vec3 origin = glm::vec3(-1.0f);
 
     constants.maxDistance = maxDistance;
     constants.initialDistance = initialDistance;

@@ -15,8 +15,8 @@ public:
     struct SdfParameters
     {
         glm::ivec3 voxelResolution{64, 64, 64};
-        glm::vec3 origin{-2.5f, -2.5f, -2.5f};
-        float cellSize{0.078125f}; // 5.0f / 64.0f
+        glm::vec3 origin{-1.0f, -1.0f, -1.0f};
+        float cellSize{2.0f/64.0f}; // 5.0f / 64.0f
         bool signedDistance{false}; // 是否计算有符号距离
     };
 

@@ -29,5 +29,14 @@
         "radius": 0.3,
         "stepNum": 4,
         "dirNum": 6
+    },
+    "SdfConfig": {
+        "WorldSize": 2.0,
+        "Resolution": 64.0,
+        "Mode": "multiView",
+        "MeshToSdfMode": "jump",
+        "MeshToSdfIters": 10,
+        "MeshToSdfDistanceMode": "signed",
+        "MeshToSdfQuality": "ultra"
     }
 }

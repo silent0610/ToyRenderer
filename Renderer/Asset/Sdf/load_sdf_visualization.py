@@ -99,57 +99,75 @@ def visualize_2d_slices(sdf_volume, slice_positions=[0.25, 0.5, 0.75]):
     
     plt.tight_layout()
     plt.show()
-
-def visualize_3d_isosurface(sdf_volume):
-    """3D等值面可视化"""
+def visualize_3d_isosurface(sdf_volume, voxel_half_extent=32, iso_value=0.0):
+    """3D等值面可视化 — 显示完整体素范围 [-extent, extent]^3"""
     if not HAS_PYVISTA:
         print("跳过3D可视化 (需要安装PyVista)")
         return
-    
+
     try:
-        # 应用Y和Z轴翻转以匹配着色器坐标系
-        print("应用坐标系翻转...")
-        sdf_flipped = sdf_volume.copy()
-        # sdf_flipped = np.flip(sdf_flipped, axis=1)  # 翻转Y轴 (axis=1)
-        sdf_flipped = np.flip(sdf_flipped, axis=0) 
-        sdf_flipped = np.flip(sdf_flipped, axis=1) 
-        # 创建PyVista网格
+        # 翻转坐标系（按需修改）
+        sdf = np.flip(np.flip(sdf_volume.copy(), axis=0), axis=1)
+
+        nx, ny, nz = sdf.shape
+        origin = (-voxel_half_extent, -voxel_half_extent, -voxel_half_extent)
+        spacing = (
+            (2.0 * voxel_half_extent) / (nx - 1),
+            (2.0 * voxel_half_extent) / (ny - 1),
+            (2.0 * voxel_half_extent) / (nz - 1),
+        )
+
+        # 旧版本用 ImageData
         grid = pv.ImageData()
-        grid.dimensions = sdf_flipped.shape
-        grid.origin = (0, 0, 0)
-        grid.spacing = (1, 1, 1)
-        grid.point_data["sdf"] = sdf_flipped.flatten()
-        
-        # 提取SDF=0的等值面
-        surface = grid.contour(isosurfaces=[0.05], scalars="sdf")
-        
+        grid.dimensions = (nx, ny, nz)
+        grid.origin = origin
+        grid.spacing = spacing
+
+        # 保证数据对应到坐标
+        grid.point_data["sdf"] = sdf.ravel(order="F")
+
+        # 提取等值面
+        surface = grid.contour(isosurfaces=[iso_value], scalars="sdf")
         if surface.n_points == 0:
-            print("警告: 未找到SDF=0的表面，尝试其他等值面...")
-            # 尝试接近0的值
-            for iso_value in [0.05,0.1,0.2, 0.3, 1.0]:
-                surface = grid.contour(isosurfaces=[iso_value], scalars="sdf")
+            for iso_try in [0.05, 0.1, 0.2, 0.5, 1.0]:
+                surface = grid.contour(isosurfaces=[iso_try], scalars="sdf")
                 if surface.n_points > 0:
-                    print(f"使用等值面 SDF={iso_value}")
+                    print(f"使用等值面 SDF={iso_try}")
                     break
-        
-        if surface.n_points == 0:
-            print("错误: 无法提取任何等值面，SDF数据可能有问题")
-            return
-        
-        print(f"等值面提取成功: {surface.n_points}个顶点, {surface.n_cells}个面片")
-        
-        # 渲染3D表面
-        plotter = pv.Plotter(window_size=[800, 600])
-        plotter.add_mesh(surface, color='lightblue', show_edges=True)
+
+        # 绘制
+        plotter = pv.Plotter(window_size=[1000, 700])
+        plotter.add_mesh(surface, color="lightblue", show_edges=False)
+
+        # 显示完整边界框
+        bbox = pv.Cube(center=(0.0, 0.0, 0.0),
+                       x_length=2 * voxel_half_extent,
+                       y_length=2 * voxel_half_extent,
+                       z_length=2 * voxel_half_extent)
+        plotter.add_mesh(bbox, style="wireframe", color="black", line_width=2)
+
         plotter.add_axes()
-        plotter.show_grid()
-        plotter.set_background('white')
-        
-        print("3D可视化窗口已打开，关闭窗口继续...")
+        plotter.show_bounds(all_edges=True, location="outer")
+        plotter.set_background("white")
+
+        plotter.enable_parallel_projection() 
+    
+        # 相机调整，确保全范围可见
+        plotter.reset_camera(bounds=bbox.bounds)
+        cam = plotter.camera
+        cam_pos = cam.position
+        cam.position = (cam_pos[0] * 1.2, cam_pos[1] * 1.2, cam_pos[2] * 1.2)
+        #cam.SetClippingRange(0.1, max(1.0, 2 * voxel_half_extent) * 10.0)
+
+        print("3D可视化窗口已打开（完整范围 [-extent,extent]^3 可见）")
         plotter.show()
-        
+
     except Exception as e:
         print(f"3D可视化失败: {e}")
+
+
+
+
 
 def apply_sign_from_reference(brute_sdf, signed_sdf):
     """使用参考有符号SDF为暴力SDF添加符号信息"""
@@ -274,24 +292,29 @@ def print_validation_summary():
 def main():
     """主函数"""
     # SDF文件路径（与Renderer.cpp中的输出路径对应）
-    sdf_file = "BruteSdf.raw"
-    signedSdf = "Analytical.raw"
-    try:
-        # 处理SDF对比
-        brute_sdf, signed_sdf, signed_brute_sdf, diff = process_sdf_comparison(sdf_file, signedSdf)
+    bruteSdf = "BruteSdf.raw"
+    analyticalSdf = "AnalyticalSdf.raw"
+    meshToSdf = "MeshToSdf.raw"
+    multiViewSdf = "MultiViewSdf.raw"
+    data = load_sdf_data(bruteSdf, resolution=64)
+    
+    visualize_3d_isosurface(data)
+    # try:
+    #     # 处理SDF对比
+    #     brute_sdf, signed_sdf, signed_brute_sdf, diff = process_sdf_comparison(sdf_file, signedSdf)
 
-        # 交互式可视化
-        interactive_visualization(brute_sdf, signed_sdf, signed_brute_sdf, diff)
+    #     # 交互式可视化
+    #     interactive_visualization(brute_sdf, signed_sdf, signed_brute_sdf, diff)
 
-        # 打印验证总结
-        print_validation_summary()
+    #     # 打印验证总结
+    #     print_validation_summary()
         
-    except Exception as e:
-        print(f"错误: {e}")
-        print("\n请确保:")
-        print("1. 先运行渲染器并按E键导出SDF数据")
-        print("2. sdf_output.raw文件存在于当前目录")
-        print("3. 已安装必要的Python包: numpy, matplotlib, pyvista")
+    # except Exception as e:
+    #     print(f"错误: {e}")
+    #     print("\n请确保:")
+    #     print("1. 先运行渲染器并按E键导出SDF数据")
+    #     print("2. sdf_output.raw文件存在于当前目录")
+    #     print("3. 已安装必要的Python包: numpy, matplotlib, pyvista")
 
 if __name__ == "__main__":
     main()

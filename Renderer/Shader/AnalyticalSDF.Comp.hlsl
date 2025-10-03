@@ -1,7 +1,7 @@
 // === Constants ===
 #define SDF_RESOLUTION 64
 #define MAX_CUBES 512
-
+#define WORLD_SIZE 2
 // === Solid Node Structure ===
 struct SolidNode {
     float3 center;       // World space center
@@ -27,7 +27,7 @@ void main(uint3 id : SV_DispatchThreadID) {
     // Convert texture coordinate to world position
     // Convert from [0, SDF_RESOLUTION] to [-2.5, 2.5] world space
     float3 normalizedCoord = (float3(coord) + 0.5f) / float(SDF_RESOLUTION);
-    float3 worldPos = normalizedCoord * 5.0f - 2.5f;
+    float3 worldPos = normalizedCoord * WORLD_SIZE  - WORLD_SIZE/2;
     
     // 应用与其他着色器一致的Y/Z轴翻转
     // 匹配体素化和相机坐标系的约定

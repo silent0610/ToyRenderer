@@ -4,7 +4,7 @@
 
 // SDF Grid Configuration
 static const uint SDF_RESOLUTION = 64;          // 256³ voxels
-static const float SDF_WORLD_SIZE = 5.0f;       // 10 units world space
+static const float SDF_WORLD_SIZE = 2.0f;       // 10 units world space
 static const float VOXEL_SIZE = SDF_WORLD_SIZE / SDF_RESOLUTION; // Size of each voxel
 static const float3 SDF_MIN_BOUNDS = float3(-SDF_WORLD_SIZE * 0.5f, -SDF_WORLD_SIZE * 0.5f, -SDF_WORLD_SIZE * 0.5f);
 

@@ -455,7 +455,7 @@ private:
 	void SetupBloomPass();
 	void SetupToneMappingPass();
 
-	void BuildPostCmdBuffer();
+
 
 	// PBR
 	void GenerateBRDFLUT();
@@ -612,7 +612,7 @@ private:
 	void RenderToCube(const vkglTF::Model& model, const glm::vec3& pos, const std::string& savePath);
 	void SaveToImage(const Texture& tex, const std::string& savePath);
 	void ExportSDFDataForVisualization(); // 导出SDF数据用于Python可视化验证
-    void ExportSDFDataForVisualization(Texture *texture, const std::string outputPath);
+    void ExportSDFDataForVisualization(Texture* texture, VkImageLayout oldLayout,const std::string outputPath);
 	struct DepthCubeMapPass
 	{
 		static const int WIDTH{ 512 };
@@ -1236,7 +1236,7 @@ private:
 	struct AnalyticalSDFGeneration
 	{
 		// GPU资源
-		Texture sdfTexture; // 64x64x64 SDF输出纹理
+        Texture sdfTexture{}; // 64x64x64 SDF输出纹理
 		VkPipeline pipeline = VK_NULL_HANDLE;
 		VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 		VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
@@ -1267,6 +1267,19 @@ private:
 		}
 	} m_analyticalSDFGeneration;
 
+	Texture* GetAnalyticalSdfTexture()
+	{
+        m_analyticalSDFGeneration.sdfTexture.dimZ = m_analyticalSDFGeneration.SDF_RESOLUTION;
+		return &m_analyticalSDFGeneration.sdfTexture;
+    }
+    Texture* GetMultiViewDepthSdfTexture()
+    {
+        // return m_multiViewDepthSDF4C.sdfFusionPass.finalSDFTexture
+        Texture* sdfTex{new Texture};
+        sdfTex->image = m_multiViewDepthSDF4C.sdfFusionPass.finalSDFTexture;
+        sdfTex->dimZ = m_multiViewDepthSDF4C.sdfFusionPass.SDF_RESOLUTION;
+        return sdfTex;
+    }
 	// 阶段四 (版本B): 多视角深度渲染与融合 (Multi-View Depth SDF)
 	struct MultiViewDepthSDF
 	{
@@ -1520,6 +1533,7 @@ private:
 			// 渲染参数结构体
 			struct RenderParams
 			{
+                glm::mat4 ModelMatrix;
 				glm::mat4 projectionMatrix;
 				uint32_t totalPartCount;
 				uint32_t activeCameraCount;

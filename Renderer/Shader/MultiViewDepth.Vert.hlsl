@@ -52,10 +52,11 @@ static const float3 CUBE_UP_VECTORS[6] = {
 
 // 资源绑定
 [[vk::binding(0, 0)]] StructuredBuffer<CameraMatrix> cameraMatrices;
-[[vk::binding(1, 0)]] StructuredBuffer<ModelMatrix> modelMatrices;
+[[vk::binding(1, 0)]] StructuredBuffer<float4x4> modelMatrices;
 
 // Push Constants
 struct PushConstants {
+    float4x4 ModelMatrix;
     float4x4 projectionMatrix;  // 统一的透视投影矩阵
     uint totalPartCount;        // 总子部件数量
     uint activeCameraCount;     // 活跃相机数量
@@ -116,12 +117,7 @@ VertexOutput main(VertexInput input, uint instanceID : SV_InstanceID) {
     // 每个相机占用6个连续的layer (cubemap的6个面)
     output.renderTargetIndex = cameraIndex * 6 + faceIndex;
 
-    // 3. 构建模型矩阵 (M) - Use identity since vertices are pre-transformed
-    float4x4 modelMatrix = float4x4(
-        1, 0, 0, 0,
-        0, 1, 0, 0,
-        0, 0, 1, 0,
-        0, 0, 0, 1);
+
 
     // 4. 获取相机位置并构建视图矩阵 (V)
     // 每个相机从其位置看向cubemap的6个标准方向
@@ -135,7 +131,7 @@ VertexOutput main(VertexInput input, uint instanceID : SV_InstanceID) {
     float4x4 viewMatrix = BuildLookAtMatrix(cameraPos, cameraPos + lookDir, upDir);
 
     // 5. 计算世界坐标
-    float4 worldPos = mul(modelMatrix, float4(input.position, 1.0));
+    float4 worldPos = mul(pushConsts.ModelMatrix, float4(input.position, 1.0));
     output.worldPosition = worldPos.xyz;
     output.cameraPosition = cameraPos;
 
@@ -144,7 +140,7 @@ VertexOutput main(VertexInput input, uint instanceID : SV_InstanceID) {
     float4x4 projMatrix = pushConsts.projectionMatrix;
     //projMatrix[1][1] = -projMatrix[1][1]; // Flip Y axis
 
-    float4x4 mvpMatrix = mul(projMatrix, mul(viewMatrix, modelMatrix));
+    float4x4 mvpMatrix = mul(projMatrix, mul(viewMatrix, pushConsts.ModelMatrix));
     output.position = mul(mvpMatrix, float4(input.position, 1.0));
 
     // 7. Debug: Pass view matrix first row for verification  

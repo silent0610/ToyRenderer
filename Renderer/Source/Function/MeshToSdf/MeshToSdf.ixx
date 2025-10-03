@@ -32,7 +32,7 @@ public:
 	struct SdfParam
 	{
 		int voxelResolution{64};
-		float size{5.0f};
+		float size{2.0f};
 		FloodMode floodMode{FloodMode::Jump};
 		DistanceMode distanceMode{DistanceMode::Signed};
         FloodFillQuality FloodFillQuality{FloodFillQuality::Normal};
@@ -41,7 +41,7 @@ public:
 	};
 	MeshToSdf();
     void Initialize(OldVulkanDevice *device, VkQueue queue, VkDescriptorPool descriptorPool, vkglTF::Model *mesh);
-	void GenerateSdf(VkCommandBuffer cmd,  const glm::mat4& worldToLocal = glm::mat4(1.0f));
+	void GenerateSdf(VkCommandBuffer cmd);
 	void SetSdfParams(const SdfParam& params) { sdfParam_ = params; }
 	const SdfParam& GetSdfParams() const { return sdfParam_; }
 	VkImageView GetSdfTextureView() const;
@@ -114,6 +114,7 @@ private:
 	OldVulkanDevice *device_{};
 	VkQueue queue_{};
 	vkglTF::Model* currentMesh_{};
+    glm::mat4 worldToLocal_{1.0f};
 	Texture3D *sdfTexture_{};
 	Buffer sdfBuffer_{};
 	Buffer sdfBufferBis_{};
