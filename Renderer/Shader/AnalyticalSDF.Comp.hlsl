@@ -1,7 +1,7 @@
 // === Constants ===
 #define SDF_RESOLUTION 64
 #define MAX_CUBES 512
-#define WORLD_SIZE 2
+#define WORLD_SIZE 2.0f
 // === Solid Node Structure ===
 struct SolidNode {
     float3 center;       // World space center
@@ -14,6 +14,11 @@ struct SolidNode {
 StructuredBuffer<uint> counterBuffer : register(t0);        // nodeCount - Binding 0
 StructuredBuffer<SolidNode> solidNodeBuffer : register(t1); // Solid nodes - Binding 1
 RWTexture3D<float> sdfTexture : register(u2);               // SDF texture - Binding 2
+struct PushConstantDesc
+{
+uint Resolution;
+};
+[[vk::push_constant]] PushConstantDesc PC;
 
 // === Main Compute Shader ===
 [numthreads(4, 4, 4)]
@@ -21,13 +26,12 @@ void main(uint3 id : SV_DispatchThreadID) {
     uint3 coord = id;
 
     // Skip threads outside texture bounds
-    if (any(coord >= SDF_RESOLUTION))
+    if (any(coord >= PC.Resolution))
     return;
 
-    // Convert texture coordinate to world position
-    // Convert from [0, SDF_RESOLUTION] to [-2.5, 2.5] world space
-    float3 normalizedCoord = (float3(coord) + 0.5f) / float(SDF_RESOLUTION);
-    float3 worldPos = normalizedCoord * WORLD_SIZE  - WORLD_SIZE/2;
+    // Convert from [0, SDF_RESOLUTION] to [-1, 1] world space
+    float3 normalizedCoord = (float3(coord) + 0.5f) / float(PC.Resolution);
+    float3 worldPos = normalizedCoord * WORLD_SIZE  - WORLD_SIZE/2.0f;
     
     // 应用与其他着色器一致的Y/Z轴翻转
     // 匹配体素化和相机坐标系的约定

@@ -4,7 +4,7 @@ module;
 module MeshToSdf;
 import Logger;
 
-MeshToSdf::MeshToSdf() : device_(nullptr), queue_(VK_NULL_HANDLE), currentMesh_(nullptr), sdfTexture_(nullptr)
+MeshToSdf::MeshToSdf() : device_{nullptr}, queue_(VK_NULL_HANDLE), currentMesh_(nullptr), sdfTexture_(nullptr)
 {
     //sdfParam_ = {};
 }

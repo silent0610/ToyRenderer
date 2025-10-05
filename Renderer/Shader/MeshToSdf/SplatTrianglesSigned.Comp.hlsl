@@ -21,16 +21,16 @@ void main(uint GIndex : SV_GroupIndex, uint3 GId : SV_GroupID, uint3 DTid : SV_D
     float3 tri1 = GetPos(GetIndex(triangleIndex + 1));
     float3 tri2 = GetPos(GetIndex(triangleIndex + 2));
 
-    // 变换到SDF空间(以SDF的最小角点为原点,可能是因为texture看起来是三维的, 但实际上只有一个最小角点)
+    // 变换到SDF空间(仍然是世界空间, 因为后面cellPosition是世界坐标, 所以tri只能在世界空间下)
     tri0 = mul(pc.worldToLocal, float4(tri0, 1)).xyz;
     tri1 = mul(pc.worldToLocal, float4(tri1, 1)).xyz;
     tri2 = mul(pc.worldToLocal, float4(tri2, 1)).xyz;
 
-    // 计算三角形AABB包围盒（加上边距）
+    // 计算三角形AABB包围盒（加上边距, 在世界空间）
     float3 aabbMin = min(tri0, min(tri1, tri2)) - float3(MARGIN, MARGIN, MARGIN);
     float3 aabbMax = max(tri0, max(tri1, tri2)) + float3(MARGIN, MARGIN, MARGIN);
 
-    // 转换为网格坐标
+    // 将AABB转换为sdf局部坐标, 最小角点为000)
     int3 gridMin = GetSdfCoordinates(aabbMin) - GRID_MARGIN;
     int3 gridMax = GetSdfCoordinates(aabbMax) + GRID_MARGIN;
 
@@ -49,9 +49,9 @@ void main(uint GIndex : SV_GroupIndex, uint3 GId : SV_GroupID, uint3 DTid : SV_D
         {
             for(int x = gridMin.x;x<=gridMax.x;++x)
             {
-                int3 gridCellCoordinate = int3(x,y,z);
+                int3 gridCellCoordinate = int3(x,y,z); // 最小角点为0,0,0. 对应的世界坐标为-1,-1,-1
                 int gridCellIndex = GetSdfCellIndex(gridCellCoordinate);
-                // 以最小角点为原点的局部SDF坐标系. 尺度和世界坐标系相同
+                // cell中心在世界坐标系下的位置. 尺度和世界坐标系相同
                 float3 cellPosition = GetSdfCellPosition(gridCellCoordinate);
 
                 float distance = SignedDistancePointToTriangle(cellPosition,tri0,tri1,tri2);

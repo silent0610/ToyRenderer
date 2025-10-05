@@ -16,11 +16,6 @@ int main(int argc, char *argv[])
 	// 高性能logging + std::format格式化
 	Log::Info("Starting MyToyRenderer application [ASYNC MODE]");
 
-	// 使用 std::format 进行格式化
-	int frameCount = 42;
-	double fps = 60.5;
-	Log::Info(std::format("Frame {}, FPS {:.1f}", frameCount, fps));
-
 	Config *config = new Config{Tool::GetProjectPath() + "/Config.json"};
 
 	if (argc == 1)
@@ -45,7 +40,7 @@ int main(int argc, char *argv[])
 	if (config->enableValidation)
 		std::cout << "enable validation\n";
 
-	std::cout << "=== USING NEW RENDERER ARCHITECTURE ===" << std::endl;
+	//std::cout << "=== USING NEW RENDERER ARCHITECTURE ===" << std::endl;
 
 	// Old renderer disabled during refactor testing
 	Renderer oldRenderer{config};

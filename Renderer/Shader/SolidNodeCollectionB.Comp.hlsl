@@ -106,7 +106,7 @@ void main(uint3 id : SV_DispatchThreadID) {
     uint nodeValue = ReadCurrentLevelTexture(coord).x;
     if(nodeValue != SOLID) return;  // Only collect SOLID nodes
 
-    uint coordPrev = coord/2;
+    uint3 coordPrev = coord/2;
     uint complexity = ReadPrevLevelTexture(coordPrev);
 
     // 计算距离中心的权重 (远离中心权重更高)

@@ -232,6 +232,12 @@ void Renderer::InitVulkan()
 
     BuildCommandBuffers();
     BuildDeferredCommandBuffer();
+
+    // 1. 初始化GPUMipmapOctree（限制到第4层，4x4x4分辨率）
+    if (!m_gpuMipmapOctree)
+    {
+        m_gpuMipmapOctree = std::make_unique<GPUMipmapOctree>(m_vulkanDevice, m_config->Sdf.Resolution);
+    }
     // SetupGpuOctreePass();
     SetupVoxelizationPass();
     BuildVoxelizationCommandBuffer();
@@ -243,7 +249,7 @@ void Renderer::InitVulkan()
 
     // MeshToSdf
     InitializeMeshToSdfOperator();
-    // TestBruteSdf();
+
 }
 void Renderer::TestBruteSdfAndSave()
 {
@@ -251,8 +257,10 @@ void Renderer::TestBruteSdfAndSave()
     BruteForceSdf::SdfParameters sdfParams{};
 
     // 更新参数
-    sdfParams.origin = glm::vec3(-1.0f, -1.0f, -1.0f);
-    sdfParams.cellSize = (2.0f) / sdfParams.voxelResolution.x;
+    sdfParams.signedDistance = false;
+    sdfParams.voxelResolution = glm::vec3(m_config->Sdf.Resolution, m_config->Sdf.Resolution, m_config->Sdf.Resolution);
+    sdfParams.origin = glm::vec3(-m_config->Sdf.WorldSize / 2.0f, -m_config->Sdf.WorldSize / 2.0f, -m_config->Sdf.WorldSize / 2.0f);
+    sdfParams.cellSize = m_config->Sdf.WorldSize / static_cast<float>(m_config->Sdf.Resolution);
     sdfGenerator.Initialize(sdfParams);
     sdfGenerator.SetModel(&m_glTFModel);
     const int totalVoxels = sdfParams.voxelResolution.x * sdfParams.voxelResolution.y * sdfParams.voxelResolution.z;
@@ -268,13 +276,14 @@ void Renderer::InitializeMeshToSdfOperator()
     meshToSdfOperator_ = new MeshToSdf{};
     meshToSdfOperator_->Initialize(m_vulkanDevice, m_queues.graphicsQueue, m_descriptorPool, &m_glTFModel);
     MeshToSdf::SdfParam sdfParams{};
-    sdfParams.distanceMode = MeshToSdf::DistanceMode::Signed;
-    sdfParams.FloodFillQuality = MeshToSdf::FloodFillQuality::Ultra;
-    sdfParams.floodMode = MeshToSdf::FloodMode::Jump;
-    sdfParams.floodIterations = 10;
+    
+    sdfParams.distanceMode = static_cast<MeshToSdf::DistanceMode>(m_config->Sdf.MeshToSdfDistanceMode);
+    sdfParams.FloodFillQuality = static_cast<MeshToSdf::FloodFillQuality>(m_config->Sdf.MeshToSdfQuality);
+    sdfParams.floodMode = static_cast<MeshToSdf::FloodMode>(m_config->Sdf.MeshToSdfMode);
+    sdfParams.floodIterations = static_cast<int>(m_config->Sdf.MeshToSdfIteration);
     sdfParams.offset = 0.0f;
-    sdfParams.size = 2.0f;
-    sdfParams.voxelResolution = 64;
+    sdfParams.size = m_config->Sdf.WorldSize;
+    sdfParams.voxelResolution = static_cast<int>(m_config->Sdf.Resolution);
     meshToSdfOperator_->SetSdfParams(sdfParams);
 
     meshToSdfCommandBuffer_ = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, false);
@@ -2020,9 +2029,9 @@ void Renderer::InitVoxelizationTextures()
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_3D;
-    imageInfo.extent.width = VoxelizationPass::GRID_SIZE;
-    imageInfo.extent.height = VoxelizationPass::GRID_SIZE;
-    imageInfo.extent.depth = VoxelizationPass::GRID_SIZE;
+    imageInfo.extent.width = m_config->Sdf.Resolution;
+    imageInfo.extent.height = m_config->Sdf.Resolution;
+    imageInfo.extent.depth = m_config->Sdf.Resolution;
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.format = VK_FORMAT_R32_SINT;
@@ -2100,6 +2109,9 @@ void Renderer::InitVoxelizationTextures()
     {
         throw std::runtime_error("Failed to create final voxel state texture view!");
     }
+
+    // 将view传递给Mipmap
+    m_gpuMipmapOctree->SetVoxelTexture(m_voxelizationPass.finalVoxelStateTexture.view);
 
     // Create uniform buffer for voxelization constants
     VkDeviceSize bufferSize = sizeof(VoxelizationPass::VoxelConstants);
@@ -2407,7 +2419,7 @@ void Renderer::UpdateVoxelizationConstants()
     m_voxelizationPass.constants.view = glm::mat4(1.0f);
 
     m_voxelizationPass.constants.projection = glm::ortho(-1.0f, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f);
-    m_voxelizationPass.constants.voxelGridSize = glm::uvec3(VoxelizationPass::GRID_SIZE);
+    m_voxelizationPass.constants.voxelGridSize = glm::uvec3(m_config->Sdf.Resolution);
 
     // 拷贝到GPU缓冲
     void* data;
@@ -2429,7 +2441,7 @@ void Renderer::VoxelizationMarkPass(VkCommandBuffer cmd)
     // Begin debug label
     BeginDebugLabel(cmd, "Voxelization Mark Pass", 0.0f, 1.0f, 0.0f, 1.0f);
 
-    // --- 纹理清理和屏障部分（您的代码是正确的，保持不变）---
+    // --- 纹理清理和屏障部分=---
     // Clear voxel counter texture to zero
     VkImageMemoryBarrier clearBarrier{};
     clearBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -2470,7 +2482,7 @@ void Renderer::VoxelizationMarkPass(VkCommandBuffer cmd)
     // === 新增：开始动态渲染 ===
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    renderingInfo.renderArea = {{0, 0}, {VoxelizationPass::GRID_SIZE, VoxelizationPass::GRID_SIZE}};
+    renderingInfo.renderArea = {{0, 0}, {m_config->Sdf.Resolution, m_config->Sdf.Resolution}};
     renderingInfo.layerCount = 1;
     renderingInfo.colorAttachmentCount = 0; // 无颜色附件
     renderingInfo.pColorAttachments = nullptr;
@@ -2481,15 +2493,15 @@ void Renderer::VoxelizationMarkPass(VkCommandBuffer cmd)
 
     // === 设置视口和裁剪 ===
     VkViewport viewport = {};
-    viewport.width = (float)VoxelizationPass::GRID_SIZE;
-    viewport.height = (float)VoxelizationPass::GRID_SIZE;
+    viewport.width = static_cast<float>(m_config->Sdf.Resolution);
+    viewport.height = static_cast<float>(m_config->Sdf.Resolution);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
     VkRect2D scissor = {};
     scissor.offset = {0, 0};
-    scissor.extent = {VoxelizationPass::GRID_SIZE, VoxelizationPass::GRID_SIZE};
+    scissor.extent = {m_config->Sdf.Resolution, m_config->Sdf.Resolution};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     // === 绑定管线和描述符集 ===
@@ -2501,9 +2513,9 @@ void Renderer::VoxelizationMarkPass(VkCommandBuffer cmd)
     m_glTFModel.Draw(cmd);
 
     // === 新增：结束动态渲染 ===
-    vkCmdEndRendering(cmd); // <--- 关键修复：添加此行
+    vkCmdEndRendering(cmd); 
 
-    // === 队列族所有权释放屏障 (您的代码是正确的，保持不变) ===
+    // === 队列族所有权释放屏障  ===
     VkImageMemoryBarrier releaseBarrier{};
     releaseBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     releaseBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -2559,15 +2571,15 @@ void Renderer::VoxelizationFillPass(VkCommandBuffer cmd)
     // Dispatch compute shader
     uint32_t groupSizeX = 8;
     uint32_t groupSizeY = 8;
-    uint32_t dispatchX = (VoxelizationPass::GRID_SIZE + groupSizeX - 1) / groupSizeX;
-    uint32_t dispatchY = (VoxelizationPass::GRID_SIZE + groupSizeY - 1) / groupSizeY;
+    uint32_t dispatchX = (m_config->Sdf.Resolution + groupSizeX - 1) / groupSizeX;
+    uint32_t dispatchY = (m_config->Sdf.Resolution + groupSizeY - 1) / groupSizeY;
     vkCmdDispatch(cmd, dispatchX, dispatchY, 1);
 
     EndDebugLabel(cmd);
 }
 void Renderer::SaveVoxelTextureWithValidation(const std::string& filename)
 {
-    const uint32_t gridSize = VoxelizationPass::GRID_SIZE;
+    const uint32_t gridSize = m_config->Sdf.Resolution;
     const VkDeviceSize imageSize = gridSize * gridSize * gridSize * 4; // RGBA
 
     printf("Starting voxel texture save: %dx%dx%d (%llu bytes)\n", gridSize, gridSize, gridSize, imageSize);
@@ -7939,7 +7951,7 @@ void Renderer::UpdateCBufferCBF()
 }
 bool Renderer::ReadFinalVoxelStateTextureToCPU_Staging()
 {
-    const uint32_t gridSize = m_voxelizationPass.GRID_SIZE;
+    const uint32_t gridSize = m_config->Sdf.Resolution;
     const VkDeviceSize imageSize = gridSize * gridSize * gridSize * sizeof(uint8_t);
 
     voxelData_.resize(imageSize);
@@ -8029,11 +8041,7 @@ void Renderer::InitializeUnifiedGPUPipelineResources()
     if (m_unifiedGPUPipeline.resourcesInitialized)
         return;
 
-    // 1. 初始化GPUMipmapOctree（限制到第4层，4x4x4分辨率）
-    if (!m_gpuMipmapOctree)
-    {
-        m_gpuMipmapOctree = std::make_unique<GPUMipmapOctree>(m_vulkanDevice, 64);
-    }
+
 
     // 2. 创建专用command pool和command buffer
     VkCommandPoolCreateInfo poolInfo{};
@@ -8137,11 +8145,12 @@ void Renderer::InitializeSolidNodeSelectionResources()
         // Binding 1: Solid node buffer (output)
         {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         // Binding 2-6: Mipmap octree texture array (input) - 5个mipmap层级 (level 0-4)
-        {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 0: 64x64x64
-        {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 1: 32x32x32
-        {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 2: 16x16x16
-        {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 3: 8x8x8
-        {6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}  // Level 4: 4x4x4
+        {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 0: basesize 128
+        {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 1: 64
+        {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 2: 32
+        {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 3: 16
+        {6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 4: 8
+        {7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}  // Level 4: 4
     };
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
@@ -8154,7 +8163,7 @@ void Renderer::InitializeSolidNodeSelectionResources()
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(glm::vec3) + sizeof(float); // modelCenter + halfSizeWithMargin = 16字节
+    pushConstantRange.size = sizeof(SolidNodeSelection::SolidNodeSelectionPushConstant); // modelCenter + halfSizeWithMargin = 16字节
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -8185,7 +8194,7 @@ void Renderer::InitializeSolidNodeSelectionResources()
     // 创建描述符池
     std::vector<VkDescriptorPoolSize> poolSizes = {
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2},        // counter + solid node buffers
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5} // 5 mipmap textures (level 0-4)
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6} // 5 mipmap textures (level 0-4)
     };
 
     VkDescriptorPoolCreateInfo poolInfo{};
@@ -8321,22 +8330,22 @@ void Renderer::InitializeSolidNodeSelectionBResources()
     Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_solidNodeSelectionB.pipelineLayout));
 
     // 加载Compute Shader
-    std::string shaderPath = Tool::GetShadersPath() + "SolidNodeSelectionB.Comp.spv";
-    VkShaderModule shaderModule = Tool::LoadShader(shaderPath.c_str(), m_device);
+    //std::string shaderPath = Tool::GetShadersPath() + "SolidNodeSelectionB.Comp.spv";
+    //VkShaderModule shaderModule = Tool::LoadShader(shaderPath.c_str(), m_device);
 
     // 创建Compute Pipeline
-    VkComputePipelineCreateInfo computePipelineInfo{};
-    computePipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    computePipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    computePipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    computePipelineInfo.stage.module = shaderModule;
-    computePipelineInfo.stage.pName = "main";
-    computePipelineInfo.layout = m_solidNodeSelectionB.pipelineLayout;
+    //VkComputePipelineCreateInfo computePipelineInfo{};
+    //computePipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    //computePipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    //computePipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    //computePipelineInfo.stage.module = shaderModule;
+    //computePipelineInfo.stage.pName = "main";
+    //computePipelineInfo.layout = m_solidNodeSelectionB.pipelineLayout;
 
     // Tool::CheckResult(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &computePipelineInfo, nullptr, &m_solidNodeSelectionB.pipeline));
 
     // 清理shader module
-    vkDestroyShaderModule(m_device, shaderModule, nullptr);
+    //vkDestroyShaderModule(m_device, shaderModule, nullptr);
 
     // 创建描述符池
     std::vector<VkDescriptorPoolSize> poolSizes = {
@@ -8670,7 +8679,7 @@ void Renderer::UpdateSolidNodeSelectionBDescriptorSet()
     std::vector<VkDescriptorImageInfo> imageInfos;
 
     // 只绑定前4个mipmap级别 (Levels 0-3: 32x32x32 to 4x4x4)
-    const uint32_t maxUsedLevel = 4;
+    const uint32_t maxUsedLevel = m_gpuMipmapOctree->GetMaxLevel();
     imageInfos.reserve(maxUsedLevel);
     descriptorWrites.reserve(maxUsedLevel);
 
@@ -9180,9 +9189,9 @@ void Renderer::InitializeAnalyticalSDFGenerationResources()
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_3D;
-    imageInfo.extent.width = AnalyticalSDFGeneration::SDF_RESOLUTION;
-    imageInfo.extent.height = AnalyticalSDFGeneration::SDF_RESOLUTION;
-    imageInfo.extent.depth = AnalyticalSDFGeneration::SDF_RESOLUTION;
+    imageInfo.extent.width = m_config->Sdf.Resolution;
+    imageInfo.extent.height = m_config->Sdf.Resolution;
+    imageInfo.extent.depth = m_config->Sdf.Resolution;
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.format = VK_FORMAT_R32_SFLOAT;
@@ -9232,8 +9241,8 @@ void Renderer::InitializeAnalyticalSDFGenerationResources()
     // 设置基本属性
     m_analyticalSDFGeneration.sdfTexture.device = m_vulkanDevice;
     m_analyticalSDFGeneration.sdfTexture.format = VK_FORMAT_R16_SFLOAT;
-    m_analyticalSDFGeneration.sdfTexture.width = AnalyticalSDFGeneration::SDF_RESOLUTION;
-    m_analyticalSDFGeneration.sdfTexture.height = AnalyticalSDFGeneration::SDF_RESOLUTION;
+    m_analyticalSDFGeneration.sdfTexture.width = m_config->Sdf.Resolution;
+    m_analyticalSDFGeneration.sdfTexture.height = m_config->Sdf.Resolution;
     m_analyticalSDFGeneration.sdfTexture.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
     // 注意：图像布局转换将在执行时处理
@@ -9257,6 +9266,9 @@ void Renderer::InitializeAnalyticalSDFGenerationResources()
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 1;
     pipelineLayoutInfo.pSetLayouts = &m_analyticalSDFGeneration.descriptorSetLayout;
+    VkPushConstantRange pushConstantRange{Init::pushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, sizeof(uint32_t), 0)};
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
     Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_analyticalSDFGeneration.pipelineLayout));
 
     // 加载Compute Shader
@@ -9461,7 +9473,7 @@ void Renderer::UpdateSolidNodeSelectionDescriptorSet()
     }
 
     // 准备mipmap纹理的descriptor信息 (Bindings 2-6: 5个mipmap层级)
-    const uint32_t maxUsedLevel = 5; // Use levels 0, 1, 2, 3, 4 (5 levels total)
+    const uint32_t maxUsedLevel = m_gpuMipmapOctree->GetMaxLevel(); // Use levels 0, 1, 2, 3, 4 (5 levels total)
     std::vector<VkWriteDescriptorSet> descriptorWrites;
     std::vector<VkDescriptorImageInfo> imageInfos;
 
@@ -9532,22 +9544,20 @@ void Renderer::ExecuteSolidNodeSelection(VkCommandBuffer cmd)
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_solidNodeSelection.pipelineLayout, 0, 1, &m_solidNodeSelection.descriptorSet, 0,
                             nullptr);
 
-    // 推送坐标变换参数 (与voxelization一致)
-    struct SolidNodeSelectionPushConstants
-    {
-        glm::vec3 modelCenter;    // 模型中心
-        float halfSizeWithMargin; // 包含边距的半尺寸
-    } pushConstants;
-
+    SolidNodeSelection::SolidNodeSelectionPushConstant pushConstants;
+    pushConstants.SampledLevel = m_config->Sdf.AnalyticalSampledLevel;
+    pushConstants.BaseSize = m_config->Sdf.Resolution; // 64
     pushConstants.modelCenter = glm::vec3(0.0f, 0.0f, 0.0f);
     pushConstants.halfSizeWithMargin = 1.0f;
 
     vkCmdPushConstants(cmd, m_solidNodeSelection.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pushConstants), &pushConstants);
 
-    // 分发compute工作：Shader使用4x4x1线程组，更精细的网格化采样
-    uint32_t groupCountX = (64 + 3) / 4; // 16 groups for 64x64 grid
-    uint32_t groupCountY = (64 + 3) / 4; // 16 groups for 64x64 grid
-    uint32_t groupCountZ = 1;            // Z轴在shader内部遍历
+    uint32_t levelSize = m_config->Sdf.Resolution >> m_config->Sdf.AnalyticalSampledLevel;
+    uint32_t groupSize = 4;
+    uint32_t groupCountX = (levelSize + groupSize - 1) / groupSize;
+    uint32_t groupCountY = (levelSize + groupSize - 1) / groupSize;
+    uint32_t groupCountZ = (levelSize + groupSize - 1) / groupSize;
+
     vkCmdDispatch(cmd, groupCountX, groupCountY, groupCountZ);
 
     printf("  Solid Node Selection: Dispatched %dx%dx%d thread groups (%d threads)\n", groupCountX, groupCountY, groupCountZ,
@@ -9556,11 +9566,10 @@ void Renderer::ExecuteSolidNodeSelection(VkCommandBuffer cmd)
 
 void Renderer::ExecuteVoxelizationMarkPass(VkCommandBuffer cmd)
 {
-
     // === 开始Dynamic Rendering ===
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    renderingInfo.renderArea = {{0, 0}, {VoxelizationPass::GRID_SIZE, VoxelizationPass::GRID_SIZE}};
+    renderingInfo.renderArea = {{0, 0}, {m_config->Sdf.Resolution, m_config->Sdf.Resolution}};
     renderingInfo.layerCount = 1;
     renderingInfo.colorAttachmentCount = 0;
     renderingInfo.pColorAttachments = nullptr;
@@ -9573,15 +9582,15 @@ void Renderer::ExecuteVoxelizationMarkPass(VkCommandBuffer cmd)
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = (float)VoxelizationPass::GRID_SIZE;
-    viewport.height = (float)VoxelizationPass::GRID_SIZE;
+    viewport.width =static_cast<float>(m_config->Sdf.Resolution);
+    viewport.height = static_cast<float>(m_config->Sdf.Resolution);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
     VkRect2D scissor = {};
     scissor.offset = {0, 0};
-    scissor.extent = {VoxelizationPass::GRID_SIZE, VoxelizationPass::GRID_SIZE};
+    scissor.extent = {m_config->Sdf.Resolution, m_config->Sdf.Resolution};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     // === 绑定管线和描述符集 ===
@@ -9606,7 +9615,7 @@ void Renderer::ExecuteVoxelizationFillPass(VkCommandBuffer cmd)
 
     // === 执行Compute Shader ===
     // 方案要求：64x64个线程，每个线程沿Z轴扫描VoxelCounterTexture
-    uint32_t groupSize = (VoxelizationPass::GRID_SIZE + 7) / 8; // 8x8 线程组 (XY平面)
+    uint32_t groupSize = (m_config->Sdf.Resolution + 7) / 8; // 8x8 线程组 (XY平面)
     vkCmdDispatch(cmd, groupSize, groupSize, 1);                // Z轴扫描，因此Z维度为1
 }
 
@@ -9624,8 +9633,8 @@ void Renderer::RecordUnifiedGPUPipelineCommands()
         return; // 已经录制过了
     }
 
-    // false 为A
-    SetSolidNodeSelectionVersion(true);
+
+    SetSolidNodeSelectionVersion(m_config->Sdf.SdfMode == 1?true:false);
 
     // 在录制命令之前，根据版本选择更新阶段四的descriptor set
     UpdateAnalyticalSDFGenerationDescriptorSet();
@@ -9857,14 +9866,16 @@ void Renderer::ExecuteAnalyticalSDFGeneration(VkCommandBuffer cmd)
 
     // 绑定管线和描述符集
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_analyticalSDFGeneration.pipeline);
+    vkCmdPushConstants(cmd, m_analyticalSDFGeneration.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                            sizeof(uint32_t), &m_config->Sdf.Resolution);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_analyticalSDFGeneration.pipelineLayout, 0, 1,
                             &m_analyticalSDFGeneration.descriptorSet, 0, nullptr);
 
     // 分发compute工作：64x64x64的线程网格，每个线程计算一个SDF体素
     // Shader使用4x4x4的工作组
-    uint32_t groupCountX = (AnalyticalSDFGeneration::SDF_RESOLUTION + 3) / 4; // 16 groups
-    uint32_t groupCountY = (AnalyticalSDFGeneration::SDF_RESOLUTION + 3) / 4; // 16 groups
-    uint32_t groupCountZ = (AnalyticalSDFGeneration::SDF_RESOLUTION + 3) / 4; // 16 groups
+    uint32_t groupCountX = (m_config->Sdf.Resolution + 3) / 4;                // 16 groups
+    uint32_t groupCountY = (m_config->Sdf.Resolution + 3) / 4;                // 16 groups
+    uint32_t groupCountZ = (m_config->Sdf.Resolution + 3) / 4;                // 16 groups
     vkCmdDispatch(cmd, groupCountX, groupCountY, groupCountZ);
 
     printf("  Analytical SDF Generation: Dispatched %dx%dx%d compute groups (262144 total threads)\n", groupCountX, groupCountY, groupCountZ);

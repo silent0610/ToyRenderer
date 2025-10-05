@@ -25,8 +25,8 @@ void BruteForceSdf::GenerateGroundTruth(std::vector<float> &sdfData)
         return ;
     }
 
-    glm::vec3 worldPos = GetVoxelWorldPosition(0, 0, 0);
-    float distance = FindClosestDistance(worldPos);
+    //glm::vec3 worldPos = GetVoxelWorldPosition(0, 0, 0);
+    //float distance = FindClosestDistance(worldPos);
 
     Log::Info(std::format("BruteForceSdf: Generating ground truth for {} voxels...", sdfData.size()));
 

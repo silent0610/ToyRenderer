@@ -296,7 +296,7 @@ def main():
     analyticalSdf = "AnalyticalSdf.raw"
     meshToSdf = "MeshToSdf.raw"
     multiViewSdf = "MultiViewSdf.raw"
-    data = load_sdf_data(bruteSdf, resolution=64)
+    data = load_sdf_data(meshToSdf, resolution=64)
     
     visualize_3d_isosurface(data)
     # try:

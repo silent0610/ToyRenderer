@@ -1,5 +1,5 @@
 // === Constants ===
-#define GRID_SIZE 32  // Base grid size for Level 0
+
 #define MAX_SOLID_NODES 1024
 #define EMPTY 0
 #define MIXED 1
@@ -17,15 +17,18 @@ struct SolidNode {
 RWStructuredBuffer<uint> counterBuffer : register(u0);     // nodeCount - Binding 0
 RWStructuredBuffer<SolidNode> solidNodeBuffer : register(u1); // Solid nodes - Binding 1
 
-// Mipmap textures - Bindings 2-6 (levels 0-4: 64x64x64 to 4x4x4)
-Texture3D<uint> mipmapTexture0 : register(t2); // Level 0: 64x64x64
-Texture3D<uint> mipmapTexture1 : register(t3); // Level 1: 32x32x32
-Texture3D<uint> mipmapTexture2 : register(t4); // Level 2: 16x16x16
-Texture3D<uint> mipmapTexture3 : register(t5); // Level 3: 8x8x8
-Texture3D<uint> mipmapTexture4 : register(t6); // Level 4: 4x4x4
-
+// Mipmap textures - Bindings 2-7 level 0-5 若base为128,则(128,64,32,16,8,4)
+Texture3D<uint> mipmapTexture0 : register(t2); // Level 0: 128
+Texture3D<uint> mipmapTexture1 : register(t3); // Level 1: 64
+Texture3D<uint> mipmapTexture2 : register(t4); // Level 2: 32
+Texture3D<uint> mipmapTexture3 : register(t5); // Level 3: 16
+Texture3D<uint> mipmapTexture4 : register(t6); // Level 4: 8
+Texture3D<uint> mipmapTexture5 : register(t7); // Level 4: 4
 // Push constants for coordinate transformation (matching voxelization)
-struct PushConstants {
+struct PushConstants {  
+    uint BaseSize;
+    uint SampledLevel;
+    uint2 padding;
     float3 modelCenter;        // 模型中心，与voxelization一致
     float halfSizeWithMargin;  // 包含边距的半尺寸，与voxelization一致
 };
@@ -35,7 +38,7 @@ struct PushConstants {
 
 // Calculate world space center from grid coordinates and level
 float3 CalculateWorldCenter(uint3 coord, uint level) {
-    float levelSize = GRID_SIZE >> level; // Size of grid at this level
+    float levelSize = pushConsts.BaseSize >> level; // Size of grid at this level
 
     // Convert grid coordinates to normalized [0, 1] space
     float3 normalizedCoord = (float3(coord) + 0.5f) / levelSize;
@@ -51,48 +54,54 @@ float3 CalculateWorldCenter(uint3 coord, uint level) {
     return worldPos;
 }
 
+uint SampleSdfLevel(int4 coord, uint level)
+{
+    switch (level)
+    {
+        case 0: return mipmapTexture0.Load(coord);
+        case 1: return mipmapTexture1.Load(coord);
+        case 2: return mipmapTexture2.Load(coord);
+        case 3: return mipmapTexture3.Load(coord);
+        case 4: return mipmapTexture4.Load(coord);
+        case 5: return mipmapTexture5.Load(coord);
+        default:
+            // 超出范围时返回 0 或某种标记值
+            return 0;
+    }
+}
+
 // Calculate cube edge length in world space
 float CalculateCubeSize(uint level) {
-    float levelSize = GRID_SIZE >> level; // Size of grid at this level
+    float levelSize = pushConsts.BaseSize >> level; // Size of grid at this level
     return 2.0f * pushConsts.halfSizeWithMargin / levelSize; // Size of each cube in world space
 }
 
 // === Main Compute Shader ===
-[numthreads(4, 4, 1)]  // Reduced thread count for more controlled sampling
+[numthreads(4, 4, 4)]  // Reduced thread count for more controlled sampling
 void main(uint3 id : SV_DispatchThreadID) {
     uint3 globalID = id;
+    uint levelSize = pushConsts.BaseSize >> pushConsts.SampledLevel;
+    // 越界检查（因为 dispatch 组数可能不是整数倍）
+    if (any(id >= uint3(levelSize, levelSize, levelSize)))
+        return;
+    uint3 currentCoord = uint3(globalID.xyz);
 
-    uint level =2;
-    uint levelSize = 8;
+    // Read current node value
+    uint currentValue = SampleSdfLevel(int4(currentCoord, 0),pushConsts.SampledLevel);
 
-    // Skip if coordinates exceed level dimensions  
-    //if(globalID.x >= levelSize || globalID.y >= levelSize) continue;
+    // Select SOLID and MIXED nodes with Level 3→2→1→0 priority
+    // MIXED nodes provide boundary information, SOLID for interior
+    if(currentValue == EMPTY) return;
 
-    // Test: Force complete Z traversal to see if positive Z data exists
-    for(uint z = 0; z < levelSize; ++z) {
-        uint3 currentCoord = uint3(globalID.xy, z);
+    // Select SOLID/MIXED nodes with strict priority for higher levels
+    // Level 4 gets first priority, then 3, then 2, then 1
+    uint nodeIndex;
+    InterlockedAdd(counterBuffer[0], 1, nodeIndex);
 
-        // Read current node value
-        uint currentValue;
-
-        currentValue = mipmapTexture2.Load(int4(currentCoord, 0));
-
-        // Select SOLID and MIXED nodes with Level 3→2→1→0 priority
-        // MIXED nodes provide boundary information, SOLID for interior
-        if(currentValue == EMPTY) continue;
-
-        // Select SOLID/MIXED nodes with strict priority for higher levels
-        // Level 4 gets first priority, then 3, then 2, then 1
-        uint nodeIndex;
-        InterlockedAdd(counterBuffer[0], 1, nodeIndex);
-
-        // Only store if within the 20 node limit
-        if(nodeIndex < 512) {
-            solidNodeBuffer[nodeIndex].center = CalculateWorldCenter(currentCoord, uint(level));
-            solidNodeBuffer[nodeIndex].size = CalculateCubeSize(uint(level));
-            solidNodeBuffer[nodeIndex].level = uint(level);
-        }
-
-        // Continue processing to allow mix of different levels if high levels are sparse
+    // Only store if within the 20 node limit
+    if(nodeIndex < 512) {
+        solidNodeBuffer[nodeIndex].center = CalculateWorldCenter(currentCoord, pushConsts.SampledLevel);
+        solidNodeBuffer[nodeIndex].size = CalculateCubeSize(pushConsts.SampledLevel);
+        solidNodeBuffer[nodeIndex].level = pushConsts.SampledLevel;
     }
 }

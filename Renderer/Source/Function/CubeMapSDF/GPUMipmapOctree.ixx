@@ -55,14 +55,14 @@ export class GPUMipmapOctree
 public:
     GPUMipmapOctree(OldVulkanDevice *device, uint32_t baseSize = 64);
     ~GPUMipmapOctree();
-
+    void SetVoxelTexture(VkImageView view);
     // Build mipmap octree from 3D binary texture
     void BuildFromVoxelTexture(VkCommandBuffer commandBuffer, Texture *voxelTexture);
 
     // Build mipmap octree with semaphore optimization (parallel levels)
     void BuildFromVoxelTextureOptimized(VkCommandBuffer commandBuffer, Texture *voxelTexture, VkQueue computeQueue, VkCommandPool computeCommandPool);
 
-    // Query interface for CPU
+    // Query interface for CPU (不应当使用)
     std::vector<OctreeNode> FindSolidNodes(uint32_t minLevel = 2);
     OctreeNode GetNode(glm::uvec3 position, uint32_t level);
     std::vector<OctreeNode> ExtractNodes(const NodeSelectionConfig &config);
@@ -77,14 +77,16 @@ public:
     uint32_t GetMaxLevel() const { return m_maxLevel; }
     VkImageView GetMipLevelView(uint32_t level) const;
     VkSampler GetSampler() const { return m_sampler; }
+    uint32_t GetMaxLevel();
 
 private:
+    VkImageView voxelTextureView_{};
     // Device reference
     OldVulkanDevice *m_device{};
 
     // Configuration
-    uint32_t m_baseSize;                 // Base resolution (64)
-    uint32_t m_maxLevel;                 // Number of mip levels (6)
+    uint32_t m_baseSize;                 // 基础分辨率, 即m_config->Sdf.Resolution
+    uint32_t m_maxLevel;                 // 保存最大可以的mip等级
     VkDeviceSize m_alignedLevelInfoSize; // Aligned size of LevelInfo for uniform buffer
 
     // GPU resources
@@ -127,4 +129,5 @@ private:
     void CopyImageToBuffer(uint32_t level, VkBuffer stagingBuffer, uint32_t size);
     void WaitForTransferComplete();
     void ClearAllMipLevels();
+    
 };

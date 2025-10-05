@@ -1,5 +1,5 @@
 module;
-
+#include <stdint.h>
 export module ConfigMod;
 import GlmMod;
 import std;
@@ -32,4 +32,17 @@ export struct Config
 		float StepNum;
 		float DirNum;
 	}HBAO;
+
+	struct SdfConfig
+    {
+        float WorldSize{2.0f};
+        uint32_t Resolution{64};
+        uint32_t SdfMode{1}; //Multiview Analytical
+        uint32_t AnalyticalSampledLevel{1};
+        uint32_t MeshToSdfMode{1}; // floodfill:0, jump:1
+        uint32_t MeshToSdfIteration{10};
+        uint32_t MeshToSdfDistanceMode{1}; // unsigned:0, signed:1
+        uint32_t MeshToSdfQuality{0};      // normal:0, ultra:1
+    };
+    SdfConfig Sdf;
 };

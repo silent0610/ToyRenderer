@@ -19,7 +19,7 @@ import FrameBufferMod;
 // import VulkanFactory;
 import TextureMod;
 import SettingMod;
-import MeshOctreeMod;
+//import MeshOctreeMod;
 import GlmMod;
 import InitMod;
 import ToolMod;
@@ -273,7 +273,7 @@ private:
 	// Core::UniquePtr<RhiDevice> rhiDevice_;
 
 	vkglTF::Model m_glTFModel;
-	std::unique_ptr<MeshOctree> m_meshOctree;
+	//std::unique_ptr<MeshOctree> m_meshOctree;
 
 	Camera m_camera;
 	uint32_t currentBuffer = 0;
@@ -1001,8 +1001,8 @@ private:
 	struct VoxelizationPass
 	{
 		// GPU Resources
-		Texture2DArray voxelCounterTexture;	  // R32_SINT format for atomic operations
-		Texture2DArray finalVoxelStateTexture; // R32_UINT format for final result
+		Texture2D voxelCounterTexture;	  // R32_SINT format for atomic operations
+		Texture3D finalVoxelStateTexture; // R32_UINT format for final result
 		Buffer voxelUniformBuffer;		  // Uniform buffer for constants
 
 		// Descriptor sets and layouts
@@ -1034,9 +1034,6 @@ private:
 			glm::mat4 projection;
 			glm::uvec3 voxelGridSize;
 		} constants;
-
-		// Grid settings
-		static const uint32_t GRID_SIZE = 64; // 256x256x256 voxel grid
 	};
 	VoxelizationPass m_voxelizationPass;
 	std::vector<uint8_t> voxelData_;
@@ -1089,7 +1086,7 @@ private:
 		}
 	} m_unifiedGPUPipeline;
 
-	// 阶段三：实体节点筛选 (Solid Node Selection)
+	// Analytical 的节点选择
 	struct SolidNodeSelection
 	{
 		// Solid node data structure
@@ -1100,6 +1097,15 @@ private:
 			uint32_t level;		 // Mipmap层级
 			uint32_t padding[3]; // 对齐到16字节
 		};
+
+        struct SolidNodeSelectionPushConstant
+        {
+            uint32_t BaseSize{128};
+            uint32_t SampledLevel{0};
+            glm::uvec2 Padding;
+            alignas(16)glm::vec3 modelCenter;    // 模型中心
+            float halfSizeWithMargin; // 包含边距的半尺寸
+        };
 
 		// GPU资源
 		Buffer solidNodeBuffer; // 存储筛选出的solid nodes
@@ -1243,7 +1249,6 @@ private:
 		VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
 
 		// 参数
-		static constexpr uint32_t SDF_RESOLUTION = 64; // 64x64x64分辨率
 		static constexpr uint32_t MAX_CUBES = 20;	   // 限制处理20个立方体
 
 		void cleanup(VkDevice device)
@@ -1269,7 +1274,7 @@ private:
 
 	Texture* GetAnalyticalSdfTexture()
 	{
-        m_analyticalSDFGeneration.sdfTexture.dimZ = m_analyticalSDFGeneration.SDF_RESOLUTION;
+        m_analyticalSDFGeneration.sdfTexture.dimZ = m_config->Sdf.Resolution;
 		return &m_analyticalSDFGeneration.sdfTexture;
     }
     Texture* GetMultiViewDepthSdfTexture()

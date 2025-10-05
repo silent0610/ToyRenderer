@@ -46,8 +46,8 @@ RWStructuredBuffer<int> JumpBufferRW : register(u1, space2);
 
 
 // 常量定义
-#define MARGIN pc.cellSize
-#define GRID_MARGIN int3(1, 1, 1)
+#define MARGIN pc.cellSize // 将三角形的AABB包围盒向外扩展一个体素单元的大小
+#define GRID_MARGIN int3(1, 1, 1) // 在将世界空间AABB转换为体素网格索引后,再额外扩展1个体素单元
 #define SQRT_2 1.41421356
 #define SQRT_3 1.73205081
 

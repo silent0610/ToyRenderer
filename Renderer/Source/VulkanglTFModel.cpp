@@ -1426,13 +1426,13 @@ void vkglTF::Model::loadFromFile(std::string filename, OldVulkanDevice *device, 
                 const glm::mat4 localMatrix = node->getMatrix();
 
                 // Added to print the matrix line by line
-                std::cout << "\nNode Name: " << node->name << std::endl;
-                std::cout << "Matrix:" << std::endl;
-                for (int i = 0; i < 4; i++)
-                {
-                    std::cout << "  " << localMatrix[0][i] << "\t" << localMatrix[1][i] << "\t" << localMatrix[2][i] << "\t" << localMatrix[3][i]
-                              << std::endl;
-                }
+                //std::cout << "\nNode Name: " << node->name << std::endl;
+                //std::cout << "Matrix:" << std::endl;
+                //for (int i = 0; i < 4; i++)
+                //{
+                //    std::cout << "  " << localMatrix[0][i] << "\t" << localMatrix[1][i] << "\t" << localMatrix[2][i] << "\t" << localMatrix[3][i]
+                //              << std::endl;
+                //}
 
                 for (Primitive *primitive : node->mesh->primitives)
                 {
@@ -1524,7 +1524,7 @@ void vkglTF::Model::loadFromFile(std::string filename, OldVulkanDevice *device, 
 
     // Manually record the actual min and max from vertexBuffer for verification
     {
-        std::cout << "\n--- Verifying Scene Dimensions ---" << std::endl;
+        //std::cout << "\n--- Verifying Scene Dimensions ---" << std::endl;
         glm::vec3 actualMin(FLT_MAX);
         glm::vec3 actualMax(-FLT_MAX);
 
@@ -1540,13 +1540,13 @@ void vkglTF::Model::loadFromFile(std::string filename, OldVulkanDevice *device, 
         }
         actualDimensionsMin = actualMin;
         actualDimensionsMax = actualMax;
-        std::cout << "Actual Min (from vertex buffer): (" << actualMin.x << ", " << actualMin.y << ", " << actualMin.z << ")" << std::endl;
-        std::cout << "Actual Max (from vertex buffer): (" << actualMax.x << ", " << actualMax.y << ", " << actualMax.z << ")" << std::endl;
-        std::cout << "Calculated Min (from getSceneDimensions): (" << dimensions.min.x << ", " << dimensions.min.y << ", " << dimensions.min.z << ")"
-                  << std::endl;
-        std::cout << "Calculated Max (from getSceneDimensions): (" << dimensions.max.x << ", " << dimensions.max.y << ", " << dimensions.max.z << ")"
-                  << std::endl;
-        std::cout << "-------------------------------------\n" << std::endl;
+        //std::cout << "Actual Min (from vertex buffer): (" << actualMin.x << ", " << actualMin.y << ", " << actualMin.z << ")" << std::endl;
+        //std::cout << "Actual Max (from vertex buffer): (" << actualMax.x << ", " << actualMax.y << ", " << actualMax.z << ")" << std::endl;
+        //std::cout << "Calculated Min (from getSceneDimensions): (" << dimensions.min.x << ", " << dimensions.min.y << ", " << dimensions.min.z << ")"
+        //          << std::endl;
+        //std::cout << "Calculated Max (from getSceneDimensions): (" << dimensions.max.x << ", " << dimensions.max.y << ", " << dimensions.max.z << ")"
+        //          << std::endl;
+        //std::cout << "-------------------------------------\n" << std::endl;
     }
 
     // Setup descriptors

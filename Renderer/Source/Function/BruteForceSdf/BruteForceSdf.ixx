@@ -15,7 +15,7 @@ public:
     struct SdfParameters
     {
         glm::ivec3 voxelResolution{64, 64, 64};
-        glm::vec3 origin{-1.0f, -1.0f, -1.0f};
+        glm::vec3 origin{-1.0f, -1.0f, -1.0f}; // 指体素网格的起始位置的世界空间坐标, 如64的网格, 其网格坐标为[0,64]. 其中起始点为[0,0,0], 如果世界尺寸为2.0f,则为[-1,-1,-1]
         float cellSize{2.0f/64.0f}; // 5.0f / 64.0f
         bool signedDistance{false}; // 是否计算有符号距离
     };

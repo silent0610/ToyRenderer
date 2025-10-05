@@ -15,7 +15,7 @@ def CompileFile(file,  isForce):
         current_time = time.time()
 
         # 设置一个时间阈值，例如过去 1 小时
-        threshold = 60 * 60 * 2  # 1 小时 = 60 分钟 * 60 秒
+        threshold = 60 * 60 * 10  # 1 小时 = 60 分钟 * 60 秒
 
         # 判断文件是否在过去1小时内被修改
         if current_time - last_modified_time >= threshold:

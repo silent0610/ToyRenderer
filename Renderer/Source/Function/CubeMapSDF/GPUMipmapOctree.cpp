@@ -13,7 +13,7 @@ GPUMipmapOctree::GPUMipmapOctree(OldVulkanDevice *device, uint32_t baseSize)
 {
 	// Calculate number of mip levels
 	uint32_t size = baseSize;
-	while (size > 1)
+	while (size > 4) // 认为小于4, 即2x2x2没有意义了,不再细分
 	{
 		m_maxLevel++;
 		size /= 2;
@@ -360,7 +360,6 @@ void GPUMipmapOctree::CreateDescriptorSets()
 
 void GPUMipmapOctree::BuildFromVoxelTexture(VkCommandBuffer commandBuffer, Texture *voxelTexture)
 {
-
 	if (!m_buildPipeline)
 	{
 		std::cout << "Warning: Build pipeline not available, skipping octree construction" << std::endl;
@@ -557,7 +556,7 @@ OctreeNode GPUMipmapOctree::GetNode(glm::uvec3 position, uint32_t level)
 
 uint32_t GPUMipmapOctree::CalculateMipSize(uint32_t level) const
 {
-	// Level 0 should output 32³, Level 1 should output 16³, etc.
+	// Level 0 即 base 的下一个等级, base64, 则level0为32
 	return m_baseSize >> (level + 1);
 }
 
@@ -1319,12 +1318,24 @@ void GPUMipmapOctree::ClearAllMipLevels()
 	vkFreeCommandBuffers(m_device->logicalDevice, m_device->commandPool, 1, &cmdBuffer);
 }
 
+void GPUMipmapOctree::SetVoxelTexture(VkImageView view)
+{
+    voxelTextureView_ = view;
+}
 VkImageView GPUMipmapOctree::GetMipLevelView(uint32_t level) const
 {
-	if (level >= m_maxLevel)
+    if (level == 0)
+    {
+        return voxelTextureView_;
+    }
+	if (level > m_maxLevel)
 	{
 		throw std::runtime_error("Invalid mip level");
 	}
 
-	return m_mipLevels[level].view;
+	return m_mipLevels[level-1].view;
+}
+uint32_t GPUMipmapOctree::GetMaxLevel()
+{
+    return m_maxLevel;
 }

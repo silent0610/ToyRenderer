@@ -32,11 +32,12 @@
     },
     "SdfConfig": {
         "WorldSize": 2.0,
-        "Resolution": 64.0,
-        "Mode": "multiView",
-        "MeshToSdfMode": "jump",
-        "MeshToSdfIters": 10,
-        "MeshToSdfDistanceMode": "signed",
-        "MeshToSdfQuality": "ultra"
+        "Resolution": 64,
+        "SdfMode": 0,
+        "AnalyticalSampledLevel": 3,
+        "MeshToSdfMode": 1,
+        "MeshToSdfIteration": 10,
+        "MeshToSdfDistanceMode": 1,
+        "MeshToSdfQuality": 1
     }
 }

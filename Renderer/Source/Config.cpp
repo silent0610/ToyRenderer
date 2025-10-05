@@ -23,4 +23,16 @@ Config::Config(std::string configPath)
 	HBAO.Radius = config["HBAOBase"]["radius"];
 	HBAO.DirNum = config["HBAOBase"]["dirNum"];
 	HBAO.StepNum = config["HBAOBase"]["stepNum"];
+    if (config.contains("SdfConfig"))
+    {
+        const auto& sdfConfig{config["SdfConfig"]};
+		Sdf.WorldSize = sdfConfig.value("WorldSize", 2.0f); // 默认值
+        Sdf.Resolution = sdfConfig.value("Resolution", 64);
+        Sdf.SdfMode = sdfConfig.value("SdfMode", 1);
+        Sdf.MeshToSdfMode = sdfConfig.value("MeshToSdfMode", 1);
+        Sdf.MeshToSdfIteration = sdfConfig.value("MeshToSdfIteration", 10);
+        Sdf.MeshToSdfDistanceMode = sdfConfig.value("MeshToSdfDistanceMode", 1);
+        Sdf.MeshToSdfQuality = sdfConfig.value("MeshToSdfQuality", 1);
+        Sdf.AnalyticalSampledLevel = sdfConfig.value("AnalyticalSampledLevel", 1);
+    }
 }
