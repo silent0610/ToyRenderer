@@ -1,9 +1,7 @@
 // === Constants ===
-
-#define MAX_SOLID_NODES 1024
 #define EMPTY 0
-#define MIXED 1
-#define SOLID 2
+#define MIXED 2
+#define SOLID 1
 
 // === Solid Node Structure ===
 struct SolidNode {

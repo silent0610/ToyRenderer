@@ -1,5 +1,4 @@
 // === Constants ===
-#define SDF_RESOLUTION 64
 #define MAX_CUBES 512
 #define WORLD_SIZE 2.0f
 // === Solid Node Structure ===

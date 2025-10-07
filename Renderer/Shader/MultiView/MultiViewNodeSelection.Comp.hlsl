@@ -3,10 +3,10 @@
 // 只收集SOLID节点，不做包含检查
 
 // === Constants ===
-static const uint GRID_SIZE =32;  // Base grid size for Level 0 (32x32x32作为level0输入)
+
 #define EMPTY 0
-#define MIXED 1
-#define SOLID 2
+#define MIXED 2
+#define SOLID 1
 #define MAX_CANDIDATE_NODES 1000  // 候选节点缓冲区容量
 
 // === Data Structures ===
@@ -22,25 +22,27 @@ RWStructuredBuffer<uint> candidateCountBuffer : register(u0);        // Candidat
 RWStructuredBuffer<SolidNode> candidateNodesBuffer : register(u1);   // Candidate nodes buffer
 
 // Mipmap octree textures (read-only)
-Texture3D<uint2> mipmapTexture0 : register(t2); // Level 0: 64x64x64
-Texture3D<uint2> mipmapTexture1 : register(t3); // Level 1: 32x32x32
-Texture3D<uint2> mipmapTexture2 : register(t4); // Level 2: 16x16x16
-Texture3D<uint2> mipmapTexture3 : register(t5); // Level 3: 8x8x8
-
+Texture3D<uint2> mipmapTexture0 : register(t2); // Level 0: 128
+Texture3D<uint2> mipmapTexture1 : register(t3); // Level 1: 64
+Texture3D<uint2> mipmapTexture2 : register(t4); // Level 2: 32
+Texture3D<uint2> mipmapTexture3 : register(t5); // Level 3: 16
+Texture3D<uint2> mipmapTexture4 : register(t6); // Level 3: 8
+Texture3D<uint2> mipmapTexture5 : register(t7); // Level 3: 4
 // Push constants structure
-struct PushConstants {
-    uint currentLevel;  // Current level being processed (3,2,1 only)
+struct PushConstantDesc {
+    uint BaseSize;
+    uint CurrentLevel;  // Current level being processed (3,2,1 only)
 };
 
 // Push constant declaration
 [[vk::push_constant]]
-PushConstants pushConstants;
+PushConstantDesc PushConstant;
 
 // === Utility Functions ===
 
 // Calculate world space center from grid coordinates and level
 float3 CalculateWorldCenter(uint3 coord, uint level) {
-    float levelSize = float(GRID_SIZE >> level); // Size of grid at this level
+    float levelSize = float(PushConstant.BaseSize >> level); // Size of grid at this level
 
     // Convert grid coordinates to normalized [-1, 1] space
     float3 normalizedCoord = (float3(coord) + 0.5f) / levelSize * 2.0f - 1.0f;
@@ -49,7 +51,7 @@ float3 CalculateWorldCenter(uint3 coord, uint level) {
 
 // Calculate cube edge length in world space
 float CalculateCubeSize(uint level) {
-    float levelSize = float(GRID_SIZE >> level); // Size of grid at this level
+    float levelSize = float(PushConstant.BaseSize >> level); // Size of grid at this level
     return 2.0f / levelSize;              // Size of each cube in world space
 }
 
@@ -67,19 +69,24 @@ SolidNode CreateNode(uint3 coord, uint level) {
 
 // Read mipmap texture based on current level
 uint2 ReadCurrentLevelTexture(uint3 coord) {
-    switch(pushConstants.currentLevel) {
+    switch(PushConstant.CurrentLevel) {
+        case 0: return mipmapTexture0.Load(int4(coord, 0));
         case 1: return mipmapTexture1.Load(int4(coord, 0));
         case 2: return mipmapTexture2.Load(int4(coord, 0));
         case 3: return mipmapTexture3.Load(int4(coord, 0));
+        case 4: return mipmapTexture4.Load(int4(coord, 0));
+        case 5: return mipmapTexture5.Load(int4(coord, 0));
         default: return EMPTY;
     }
 }
 uint ReadPrevLevelTexture(uint3 coord) {
-    switch(pushConstants.currentLevel) {
+    switch(PushConstant.CurrentLevel) {
+        case 0: return mipmapTexture1.Load(int4(coord, 0)).y;
         case 1: return mipmapTexture2.Load(int4(coord, 0)).y;
         case 2: return mipmapTexture3.Load(int4(coord, 0)).y;
-        case 3: return 0;
-        default: return EMPTY;
+        case 3: return mipmapTexture4.Load(int4(coord, 0)).y;
+        case 4: return mipmapTexture5.Load(int4(coord, 0)).y;
+        default: return 0;
     }
 }
 uint RandomInt(uint3 coord) {
@@ -99,7 +106,7 @@ void main(uint3 id : SV_DispatchThreadID) {
     uint3 coord = id;
 
     // Step 1: Boundary check
-    uint levelSize = GRID_SIZE >> pushConstants.currentLevel;
+    uint levelSize = PushConstant.BaseSize >> PushConstant.CurrentLevel;
     if(any(coord >= levelSize)) return;
 
     // Step 2: Read current position node value
@@ -122,7 +129,7 @@ void main(uint3 id : SV_DispatchThreadID) {
         return;
     }
     // Step 3: Create candidate node
-    SolidNode candidate = CreateNode(coord, pushConstants.currentLevel);
+    SolidNode candidate = CreateNode(coord, PushConstant.CurrentLevel);
     candidate.center.y *= -1.0; // Invert Y to match world coordinate system
     candidate.center.z *= -1.0; // Invert Z to match world coordinate system
     // Step 4: Add to candidate buffer (simple append with atomic counter)

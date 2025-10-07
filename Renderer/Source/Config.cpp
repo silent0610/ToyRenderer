@@ -2,7 +2,9 @@ module;
 #include "nlohmann/json.hpp"
 #include "glm/glm.hpp"
 #include <fstream>
+
 module ConfigMod;
+import Logger;
 using Json = nlohmann::json;
 Config::Config(std::string configPath)
 {
@@ -28,6 +30,14 @@ Config::Config(std::string configPath)
         const auto& sdfConfig{config["SdfConfig"]};
 		Sdf.WorldSize = sdfConfig.value("WorldSize", 2.0f); // 默认值
         Sdf.Resolution = sdfConfig.value("Resolution", 64);
+        if (Sdf.Resolution < 8)
+        {
+            Log::Error("SDF Resolution must be at least 8");
+            throw std::runtime_error("SDF Resolution must be at least 8");
+        }
+        Sdf.AnalyticalUsedPointNum = sdfConfig.value("AnalyticalUsedPointNum", 512);
+        Sdf.MultiViewDepthResolution = sdfConfig.value("MultiViewDepthResolution", 128);
+        Sdf.MultiViewUsedCameraNum = sdfConfig.value("MultiViewUsedCameraNum", 10);
         Sdf.SdfMode = sdfConfig.value("SdfMode", 1);
         Sdf.MeshToSdfMode = sdfConfig.value("MeshToSdfMode", 1);
         Sdf.MeshToSdfIteration = sdfConfig.value("MeshToSdfIteration", 10);

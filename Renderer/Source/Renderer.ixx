@@ -246,7 +246,7 @@ private:
 	std::vector<VkFramebuffer> m_finalFramebuffers;
 	VkRenderPass m_finalPass;
 	SmallScene scene;
-	Config* m_config;
+	Config* config_;
 	std::vector<VkFence> m_waitFences;
 	float m_timer;
 	float m_timerSpeed = 0.25f;
@@ -924,8 +924,9 @@ private:
 		}
 	};
 
-	struct CSMPass
+	class CSMPass
 	{
+    public:
 		VkRenderPass renderPass{ nullptr };
 		VkPipelineLayout pipelineLayout{ nullptr };
 		VkPipeline pipeline{ nullptr };
@@ -1087,7 +1088,7 @@ private:
 	} m_unifiedGPUPipeline;
 
 	// Analytical 的节点选择
-	struct SolidNodeSelection
+	struct AnalyticalSolidNodeSelection
 	{
 		// Solid node data structure
 		struct SolidNode
@@ -1139,23 +1140,24 @@ private:
 			solidNodeBuffer.Destroy();
 			counterBuffer.Destroy();
 		}
-	} m_solidNodeSelection;
+	} analyticalNodeSelection_;
 
-	// 阶段三 (版本B)：自适应相机位置筛选 (Multi-Pass Adaptive Selection)
-	struct SolidNodeSelectionB
+	// 用于MultiView的相机位置筛选
+	struct MultiViewSolidNodeSelection
 	{
 		// 复用版本A的节点结构体
-		using SolidNode = SolidNodeSelection::SolidNode;
+		using SolidNode = AnalyticalSolidNodeSelection::SolidNode;
 
-		// 临时保持原有字段以便向后兼容
+		
 		Buffer selectedNodesBuffer; // 最终选中的节点 (最多10个)
 		Buffer selectedCountBuffer; // 最终节点计数
-		VkPipeline pipeline = VK_NULL_HANDLE;
-		VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-		VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-		VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
 
 		// 新添加的多pass字段
+		struct  CollectionPushConstantDesc
+		{
+            uint32_t BaseSize{};
+            uint32_t CurrentLevel{};
+        } CollectionPushConstant;
 		Buffer candidateNodesBuffer; // 候选节点缓冲区 (最多1000个)
 		Buffer candidateCountBuffer; // 候选节点计数
 		VkPipeline collectionPipeline = VK_NULL_HANDLE;
@@ -1170,70 +1172,11 @@ private:
 		VkDescriptorSet finalSelectionDescriptorSet = VK_NULL_HANDLE;
 
 		// 参数
-		static constexpr uint32_t MAX_SELECTED_NODES = 10;	  // 最终节点限制
-		static constexpr uint32_t MAX_CANDIDATE_NODES = 1000; // 候选节点容量
+        static constexpr uint32_t MAX_CANDIDATE_NODES{50}; // 候选节点容量
 		uint32_t actualNodeCount = 0;						  // 实际选中的节点数量
 
-		void cleanup(VkDevice device)
-		{
-			// 清理原有管线
-			if (pipeline != VK_NULL_HANDLE)
-			{
-				vkDestroyPipeline(device, pipeline, nullptr);
-				pipeline = VK_NULL_HANDLE;
-			}
-			if (pipelineLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-				pipelineLayout = VK_NULL_HANDLE;
-			}
-			if (descriptorSetLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
-				descriptorSetLayout = VK_NULL_HANDLE;
-			}
-
-			// 清理收集管线
-			if (collectionPipeline != VK_NULL_HANDLE)
-			{
-				vkDestroyPipeline(device, collectionPipeline, nullptr);
-				collectionPipeline = VK_NULL_HANDLE;
-			}
-			if (collectionPipelineLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyPipelineLayout(device, collectionPipelineLayout, nullptr);
-				collectionPipelineLayout = VK_NULL_HANDLE;
-			}
-			if (collectionDescriptorSetLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyDescriptorSetLayout(device, collectionDescriptorSetLayout, nullptr);
-				collectionDescriptorSetLayout = VK_NULL_HANDLE;
-			}
-
-			// 清理最终选择管线
-			if (finalSelectionPipeline != VK_NULL_HANDLE)
-			{
-				vkDestroyPipeline(device, finalSelectionPipeline, nullptr);
-				finalSelectionPipeline = VK_NULL_HANDLE;
-			}
-			if (finalSelectionPipelineLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyPipelineLayout(device, finalSelectionPipelineLayout, nullptr);
-				finalSelectionPipelineLayout = VK_NULL_HANDLE;
-			}
-			if (finalSelectionDescriptorSetLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyDescriptorSetLayout(device, finalSelectionDescriptorSetLayout, nullptr);
-				finalSelectionDescriptorSetLayout = VK_NULL_HANDLE;
-			}
-
-			// 清理缓冲区
-			candidateNodesBuffer.Destroy();
-			candidateCountBuffer.Destroy();
-			selectedNodesBuffer.Destroy();
-			selectedCountBuffer.Destroy();
-		}
-	} m_solidNodeSelectionB;
+		void cleanup(VkDevice device);
+	} multiViewNodeSelection_;
 
 	// 版本控制：选择使用阶段三的哪个版本
 	bool m_useSolidNodeSelectionB = false; // false: 使用版本A, true: 使用版本B
@@ -1242,7 +1185,7 @@ private:
 	struct AnalyticalSDFGeneration
 	{
 		// GPU资源
-        Texture sdfTexture{}; // 64x64x64 SDF输出纹理
+        Texture sdfTexture{}; //最终输出
 		VkPipeline pipeline = VK_NULL_HANDLE;
 		VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 		VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
@@ -1274,7 +1217,7 @@ private:
 
 	Texture* GetAnalyticalSdfTexture()
 	{
-        m_analyticalSDFGeneration.sdfTexture.dimZ = m_config->Sdf.Resolution;
+        m_analyticalSDFGeneration.sdfTexture.dimZ = config_->Sdf.Resolution;
 		return &m_analyticalSDFGeneration.sdfTexture;
     }
     Texture* GetMultiViewDepthSdfTexture()
@@ -1282,125 +1225,11 @@ private:
         // return m_multiViewDepthSDF4C.sdfFusionPass.finalSDFTexture
         Texture* sdfTex{new Texture};
         sdfTex->image = m_multiViewDepthSDF4C.sdfFusionPass.finalSDFTexture;
-        sdfTex->dimZ = m_multiViewDepthSDF4C.sdfFusionPass.SDF_RESOLUTION;
+        sdfTex->dimZ = config_->Sdf.Resolution;
         return sdfTex;
     }
 	// 阶段四 (版本B): 多视角深度渲染与融合 (Multi-View Depth SDF)
-	struct MultiViewDepthSDF
-	{
-		// 深度渲染Pass - Graphics渲染
-		struct DepthRenderingPass
-		{
-			std::vector<CubeMap> depthCubeMaps; // 每个相机位置的深度立方体贴图
-			Buffer indirectDrawBuffer;			// vkCmdDrawIndexedIndirect命令缓冲区
-			Buffer cameraMatricesBuffer;		// 相机视图矩阵缓冲区
-			VkPipeline pipeline = VK_NULL_HANDLE;
-			VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-			VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-			VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-			VkRenderPass renderPass = VK_NULL_HANDLE;
-			VkFramebuffer frameBuffer = VK_NULL_HANDLE; // 统一的多层framebuffer (Pure Vertex Shader Solution)
-			FramebufferAttachment depthAttachment;		// 深度缓冲区
 
-			static constexpr int CUBEMAP_SIZE = 64; // 立方体贴图分辨率 (降低到64)
-		} depthPass;
-
-		// SDF融合Pass - Compute计算
-		struct SDFFusionPass
-		{
-			Texture sdfTexture; // 256³ 输出SDF纹理 (VK_FORMAT_R16_SFLOAT)
-			VkPipeline pipeline = VK_NULL_HANDLE;
-			VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-			VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-			VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-			VkSampler depthCubeSampler = VK_NULL_HANDLE; // 深度立方体贴图采样器
-
-			static constexpr uint32_t SDF_RESOLUTION = 256; // 256³ SDF分辨率
-		} fusionPass;
-
-		// 控制参数
-		uint32_t activeCameraCount = 0;				// 当前活跃的相机数量
-		static constexpr uint32_t MAX_CAMERAS = 10; // 最大相机数量(来自Stage3B)
-
-		void cleanup(VkDevice device)
-		{
-			// 清理深度渲染Pass
-			if (depthPass.pipeline != VK_NULL_HANDLE)
-			{
-				vkDestroyPipeline(device, depthPass.pipeline, nullptr);
-				depthPass.pipeline = VK_NULL_HANDLE;
-			}
-			if (depthPass.pipelineLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyPipelineLayout(device, depthPass.pipelineLayout, nullptr);
-				depthPass.pipelineLayout = VK_NULL_HANDLE;
-			}
-			if (depthPass.descriptorSetLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyDescriptorSetLayout(device, depthPass.descriptorSetLayout, nullptr);
-				depthPass.descriptorSetLayout = VK_NULL_HANDLE;
-			}
-			if (depthPass.renderPass != VK_NULL_HANDLE)
-			{
-				vkDestroyRenderPass(device, depthPass.renderPass, nullptr);
-				depthPass.renderPass = VK_NULL_HANDLE;
-			}
-
-			// 清理framebuffer (Pure Vertex Shader Solution)
-			if (depthPass.frameBuffer != VK_NULL_HANDLE)
-			{
-				vkDestroyFramebuffer(device, depthPass.frameBuffer, nullptr);
-				depthPass.frameBuffer = VK_NULL_HANDLE;
-			}
-
-			// 清理cubemaps
-			for (auto& cubeMap : depthPass.depthCubeMaps)
-			{
-				cubeMap.Tex.Destroy();
-				for (auto& view : cubeMap.FaceViews)
-				{
-					if (view != VK_NULL_HANDLE)
-					{
-						vkDestroyImageView(device, view, nullptr);
-						view = VK_NULL_HANDLE;
-					}
-				}
-				// 清理framebuffer视图
-				if (cubeMap.framebufferView != VK_NULL_HANDLE)
-				{
-					vkDestroyImageView(device, cubeMap.framebufferView, nullptr);
-					cubeMap.framebufferView = VK_NULL_HANDLE;
-				}
-			}
-
-			depthPass.indirectDrawBuffer.Destroy();
-			depthPass.cameraMatricesBuffer.Destroy();
-			depthPass.depthAttachment.Destroy();
-
-			// 清理SDF融合Pass
-			if (fusionPass.pipeline != VK_NULL_HANDLE)
-			{
-				vkDestroyPipeline(device, fusionPass.pipeline, nullptr);
-				fusionPass.pipeline = VK_NULL_HANDLE;
-			}
-			if (fusionPass.pipelineLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyPipelineLayout(device, fusionPass.pipelineLayout, nullptr);
-				fusionPass.pipelineLayout = VK_NULL_HANDLE;
-			}
-			if (fusionPass.descriptorSetLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyDescriptorSetLayout(device, fusionPass.descriptorSetLayout, nullptr);
-				fusionPass.descriptorSetLayout = VK_NULL_HANDLE;
-			}
-			if (fusionPass.depthCubeSampler != VK_NULL_HANDLE)
-			{
-				vkDestroySampler(device, fusionPass.depthCubeSampler, nullptr);
-				fusionPass.depthCubeSampler = VK_NULL_HANDLE;
-			}
-			fusionPass.sdfTexture.Destroy();
-		}
-	} m_multiViewDepthSDF;
 
 	void CreateFinalSDFSampler();
 
@@ -1424,51 +1253,11 @@ private:
 		Buffer activeCameraCountBuffer_GPU; // 活跃相机数量 (VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
 		Buffer indirectDrawBuffer_GPU;		// 间接绘制命令 (VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
 
-		void cleanup(VkDevice device)
-		{
-			// 清理相机矩阵准备管线
-			if (cameraMatrixPipeline != VK_NULL_HANDLE)
-			{
-				vkDestroyPipeline(device, cameraMatrixPipeline, nullptr);
-				cameraMatrixPipeline = VK_NULL_HANDLE;
-			}
-			if (cameraMatrixPipelineLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyPipelineLayout(device, cameraMatrixPipelineLayout, nullptr);
-				cameraMatrixPipelineLayout = VK_NULL_HANDLE;
-			}
-			if (cameraMatrixDescriptorLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyDescriptorSetLayout(device, cameraMatrixDescriptorLayout, nullptr);
-				cameraMatrixDescriptorLayout = VK_NULL_HANDLE;
-			}
-
-			// 清理间接命令生成管线
-			if (indirectCommandPipeline != VK_NULL_HANDLE)
-			{
-				vkDestroyPipeline(device, indirectCommandPipeline, nullptr);
-				indirectCommandPipeline = VK_NULL_HANDLE;
-			}
-			if (indirectCommandPipelineLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyPipelineLayout(device, indirectCommandPipelineLayout, nullptr);
-				indirectCommandPipelineLayout = VK_NULL_HANDLE;
-			}
-			if (indirectCommandDescriptorLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyDescriptorSetLayout(device, indirectCommandDescriptorLayout, nullptr);
-				indirectCommandDescriptorLayout = VK_NULL_HANDLE;
-			}
-
-			// 清理缓冲区
-			cameraMatricesBuffer_GPU.Destroy();
-			activeCameraCountBuffer_GPU.Destroy();
-			indirectDrawBuffer_GPU.Destroy();
-		}
+		void cleanup(VkDevice device);
+	
 	} m_gpuDataPreparation;
 
-	// ==================== 新的多视角深度SDF方案 (版本4C) ====================
-	// 基于用户提供的详细设计文档，支持多子部件模型和完整的GPU驱动架构
+	// 保存 multiview 的 dataprepare之后
 	struct MultiViewDepthSDF4C
 	{
 
@@ -1552,7 +1341,6 @@ private:
 			VkImageView depthAttachmentView = VK_NULL_HANDLE;
 			VkDeviceMemory depthAttachmentMemory = VK_NULL_HANDLE;
 
-			static constexpr uint32_t CUBEMAP_SIZE = 64;				   // 立方体贴图分辨率 (降低到64)
 			static constexpr VkFormat DEPTH_FORMAT = VK_FORMAT_R32_SFLOAT; // 32位浮点深度格式
 		} depthRendering;
 
@@ -1585,188 +1373,43 @@ private:
 				glm::vec2 _padding;			// 16-byte alignment
 			} pushConstants;
 
-			static constexpr uint32_t SDF_RESOLUTION = 64; // 64³ SDF分辨率 (降低到64)
 		} sdfFusionPass;
 
-		// 全局控制参数
-		static constexpr uint32_t MAX_CAMERAS = 10; // 最大相机数量
 
 		// 清理函数
-		void cleanup(VkDevice device)
-		{
-			// 清理模型静态数据
-			staticData.modelVertexBuffer.Destroy();
-			staticData.modelIndexBuffer.Destroy();
-			staticData.modelPartsBuffer.Destroy();
-			staticData.modelMatricesBuffer.Destroy();
-
-			// 清理GPU数据准备阶段
-			if (gpuPreparation.cameraMatrixPipeline != VK_NULL_HANDLE)
-			{
-				vkDestroyPipeline(device, gpuPreparation.cameraMatrixPipeline, nullptr);
-				gpuPreparation.cameraMatrixPipeline = VK_NULL_HANDLE;
-			}
-			if (gpuPreparation.cameraMatrixPipelineLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyPipelineLayout(device, gpuPreparation.cameraMatrixPipelineLayout, nullptr);
-				gpuPreparation.cameraMatrixPipelineLayout = VK_NULL_HANDLE;
-			}
-			if (gpuPreparation.cameraMatrixDescriptorLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyDescriptorSetLayout(device, gpuPreparation.cameraMatrixDescriptorLayout, nullptr);
-				gpuPreparation.cameraMatrixDescriptorLayout = VK_NULL_HANDLE;
-			}
-			if (gpuPreparation.indirectCommandPipeline != VK_NULL_HANDLE)
-			{
-				vkDestroyPipeline(device, gpuPreparation.indirectCommandPipeline, nullptr);
-				gpuPreparation.indirectCommandPipeline = VK_NULL_HANDLE;
-			}
-			if (gpuPreparation.indirectCommandPipelineLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyPipelineLayout(device, gpuPreparation.indirectCommandPipelineLayout, nullptr);
-				gpuPreparation.indirectCommandPipelineLayout = VK_NULL_HANDLE;
-			}
-			if (gpuPreparation.indirectCommandDescriptorLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyDescriptorSetLayout(device, gpuPreparation.indirectCommandDescriptorLayout, nullptr);
-				gpuPreparation.indirectCommandDescriptorLayout = VK_NULL_HANDLE;
-			}
-			gpuPreparation.cameraMatricesBuffer.Destroy();
-			gpuPreparation.indirectCommandsBuffer.Destroy();
-			gpuPreparation.activeCameraCountBuffer.Destroy();
-
-			// 清理深度渲染阶段
-			if (depthRendering.pipeline != VK_NULL_HANDLE)
-			{
-				vkDestroyPipeline(device, depthRendering.pipeline, nullptr);
-				depthRendering.pipeline = VK_NULL_HANDLE;
-			}
-			if (depthRendering.pipelineLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyPipelineLayout(device, depthRendering.pipelineLayout, nullptr);
-				depthRendering.pipelineLayout = VK_NULL_HANDLE;
-			}
-			if (depthRendering.descriptorSetLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyDescriptorSetLayout(device, depthRendering.descriptorSetLayout, nullptr);
-				depthRendering.descriptorSetLayout = VK_NULL_HANDLE;
-			}
-			if (depthRendering.renderPass != VK_NULL_HANDLE)
-			{
-				vkDestroyRenderPass(device, depthRendering.renderPass, nullptr);
-				depthRendering.renderPass = VK_NULL_HANDLE;
-			}
-			if (depthRendering.framebuffer != VK_NULL_HANDLE)
-			{
-				vkDestroyFramebuffer(device, depthRendering.framebuffer, nullptr);
-				depthRendering.framebuffer = VK_NULL_HANDLE;
-			}
-			if (depthRendering.depthCubemapArrayView != VK_NULL_HANDLE)
-			{
-				vkDestroyImageView(device, depthRendering.depthCubemapArrayView, nullptr);
-				depthRendering.depthCubemapArrayView = VK_NULL_HANDLE;
-			}
-			if (depthRendering.depthCubemapSamplingView != VK_NULL_HANDLE)
-			{
-				vkDestroyImageView(device, depthRendering.depthCubemapSamplingView, nullptr);
-				depthRendering.depthCubemapSamplingView = VK_NULL_HANDLE;
-			}
-			if (depthRendering.depthCubemapArray != VK_NULL_HANDLE)
-			{
-				vkDestroyImage(device, depthRendering.depthCubemapArray, nullptr);
-				depthRendering.depthCubemapArray = VK_NULL_HANDLE;
-			}
-			if (depthRendering.depthCubemapMemory != VK_NULL_HANDLE)
-			{
-				vkFreeMemory(device, depthRendering.depthCubemapMemory, nullptr);
-				depthRendering.depthCubemapMemory = VK_NULL_HANDLE;
-			}
-			if (depthRendering.depthAttachmentView != VK_NULL_HANDLE)
-			{
-				vkDestroyImageView(device, depthRendering.depthAttachmentView, nullptr);
-				depthRendering.depthAttachmentView = VK_NULL_HANDLE;
-			}
-			if (depthRendering.depthAttachment != VK_NULL_HANDLE)
-			{
-				vkDestroyImage(device, depthRendering.depthAttachment, nullptr);
-				depthRendering.depthAttachment = VK_NULL_HANDLE;
-			}
-			if (depthRendering.depthAttachmentMemory != VK_NULL_HANDLE)
-			{
-				vkFreeMemory(device, depthRendering.depthAttachmentMemory, nullptr);
-				depthRendering.depthAttachmentMemory = VK_NULL_HANDLE;
-			}
-
-			// 清理SDF融合阶段
-			if (sdfFusionPass.computePipeline != VK_NULL_HANDLE)
-			{
-				vkDestroyPipeline(device, sdfFusionPass.computePipeline, nullptr);
-				sdfFusionPass.computePipeline = VK_NULL_HANDLE;
-			}
-			if (sdfFusionPass.pipelineLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyPipelineLayout(device, sdfFusionPass.pipelineLayout, nullptr);
-				sdfFusionPass.pipelineLayout = VK_NULL_HANDLE;
-			}
-			if (sdfFusionPass.descriptorSetLayout != VK_NULL_HANDLE)
-			{
-				vkDestroyDescriptorSetLayout(device, sdfFusionPass.descriptorSetLayout, nullptr);
-				sdfFusionPass.descriptorSetLayout = VK_NULL_HANDLE;
-			}
-			if (sdfFusionPass.depthCubemapSampler != VK_NULL_HANDLE)
-			{
-				vkDestroySampler(device, sdfFusionPass.depthCubemapSampler, nullptr);
-				sdfFusionPass.depthCubemapSampler = VK_NULL_HANDLE;
-			}
-			if (sdfFusionPass.depthCubemapArrayView != VK_NULL_HANDLE)
-			{
-				vkDestroyImageView(device, sdfFusionPass.depthCubemapArrayView, nullptr);
-				sdfFusionPass.depthCubemapArrayView = VK_NULL_HANDLE;
-			}
-			if (sdfFusionPass.finalSDFView != VK_NULL_HANDLE)
-			{
-				vkDestroyImageView(device, sdfFusionPass.finalSDFView, nullptr);
-				sdfFusionPass.finalSDFView = VK_NULL_HANDLE;
-			}
-			if (sdfFusionPass.finalSDFTexture != VK_NULL_HANDLE)
-			{
-				vkDestroyImage(device, sdfFusionPass.finalSDFTexture, nullptr);
-				sdfFusionPass.finalSDFTexture = VK_NULL_HANDLE;
-			}
-			if (sdfFusionPass.finalSDFMemory != VK_NULL_HANDLE)
-			{
-				vkFreeMemory(device, sdfFusionPass.finalSDFMemory, nullptr);
-				sdfFusionPass.finalSDFMemory = VK_NULL_HANDLE;
-			}
-		}
+        void cleanup(VkDevice device);
+		
 	} m_multiViewDepthSDF4C;
 
 	// Vulkan GPU到CPU读取finalVoxelStateTexture的完整实现示例
 	bool ReadFinalVoxelStateTextureToCPU_Staging();
-	void TestVoxelOctreeFromVoxelData();
+
 	// 统一GPU管线方法 - 分离资源管理
 	void InitializeUnifiedGPUPipelineResources(); // 初始化资源
 	void RecordUnifiedGPUPipelineCommands();	  // 预录制命令
 	void SubmitUnifiedGPUPipeline();			  // 在渲染循环中提交
-	void ExecuteUnifiedGPUPipeline();			  // 旧方法，待重构
+
 
 	void ExecuteVoxelizationMarkPass(VkCommandBuffer cmd);
 	void ExecuteVoxelizationFillPass(VkCommandBuffer cmd);
 
 	// 阶段三和阶段四的具体执行方法
-	void InitializeSolidNodeSelectionResources();			  // 初始化节点筛选资源
+
+	/// <summary>
+	/// 创建Analytical 节点选择所需的资源
+	/// </summary>
+	void InitializeAnalyticalNodeSelectionResource();			  // 初始化节点筛选资源
 	void InitializeAnalyticalSDFGenerationResources();		  // 初始化SDF生成资源
 	void UpdateSolidNodeSelectionDescriptorSet();			  // 更新节点筛选描述符集
-	void ExecuteSolidNodeSelection(VkCommandBuffer cmd);	  // 执行节点筛选
+	void ExecuteAnalyticalNodeSelection(VkCommandBuffer cmd);	  // 执行节点筛选
 	void ExecuteAnalyticalSDFGeneration(VkCommandBuffer cmd); // 执行SDF生成
 	void ValidateSolidNodeSelectionResults();				  // 验证节点筛选结果（调试用）
 
 	// 阶段三版本B的相关函数
-	void InitializeSolidNodeSelectionBResources();		  // 初始化版本B资源
-	void UpdateSolidNodeSelectionBDescriptorSet();		  // 更新版本B描述符集
+	void InitializeMultiviewNodeSelectionResource();		  // 初始化版本B资源
+	void UpdateMultiviewNodeSelectionDescriptorSet();		  // 更新版本B描述符集
 	void UpdateAnalyticalSDFGenerationDescriptorSet();	  // 动态更新阶段四使用的节点选择版本
-	void ExecuteSolidNodeSelectionB(VkCommandBuffer cmd); // 执行版本B节点筛选
-	void ValidateSolidNodeSelectionBResults();			  // 验证版本B结果（调试用）
+	void ExecuteMultiViewNodeSelection(VkCommandBuffer cmd); // 执行版本B节点筛选
 	void SetSolidNodeSelectionVersion(bool useVersionB);  // 切换版本A/B
 
 	// 阶段四版本B的相关函数 (Multi-View Depth SDF)
@@ -1789,9 +1432,9 @@ private:
 	void CreateMultiViewDepthPipeline();					  // 创建多视角深度渲染管线
 	void ExecuteMultiViewDepthRendering(VkCommandBuffer cmd); // 执行多视角深度渲染
 	void InitializeSDFFusion4C();							  // 初始化SDF融合阶段
-	void UpdateMultiViewDepthSDFDescriptorSets();			  // 更新描述符集
+
 	void ExecuteSDFFusion(VkCommandBuffer cmd);				  // 执行SDF融合
-	void ValidateMultiViewDepthSDFResults();				  // 验证结果（调试用）
+
 
 	// GPU驱动数据准备相关函数
 	void InitializeGPUDataPreparation();				 // 初始化GPU数据准备资源
@@ -1815,232 +1458,26 @@ private:
 		float padding;
 	};
 
-	// Stage 4B 辅助函数
-	void PrepareCameraMatricesFromStage3B(); // 从阶段3B准备相机矩阵
-	void PrepareIndirectDrawCommands();		 // 准备间接绘制命令
+
 	VkBuffer GetModelVertexBuffer();		 // 获取模型顶点缓冲区
 	VkBuffer GetModelIndexBuffer();			 // 获取模型索引缓冲区
 	uint32_t GetModelIndexCount();			 // 获取模型索引数量
 	uint32_t GetModelVertexCount();			 // 获取模型顶点数量
 
-	// Voxel Visualization System
-	struct VoxelVisualization
-	{
-		// Visualization modes
-		enum class Mode
-		{
-			SLICE_XY,	 // XY平面切片
-			SLICE_XZ,	 // XZ平面切片
-			SLICE_YZ,	 // YZ平面切片
-			POINT_CLOUD, // 点云渲染
-			CUBE_RENDER	 // 立方体渲染
-		} currentMode{ Mode::SLICE_XY };
 
-		// Slice visualization
-		struct SliceView
-		{
-			uint32_t sliceIndex{ 128 };				// 当前切片索引 (0-255)
-			float sliceDepth{ 0.5f };					// 切片深度 (0.0-1.0)
-			glm::vec3 sliceColor{ 1.0f, 0.0f, 0.0f }; // 切片高亮颜色
-		} sliceView;
-
-		// Point cloud visualization
-		struct PointCloudView
-		{
-			float pointSize{ 2.0f };					// 点的大小
-			float density{ 0.1f };					// 点的密度 (0.0-1.0)
-			glm::vec3 pointColor{ 0.0f, 1.0f, 0.0f }; // 点的颜色
-		} pointCloudView;
-
-		// Cube rendering
-		struct CubeView
-		{
-			float cubeSize{ 1.0f };				   // 立方体大小
-			float opacity{ 0.8f };				   // 透明度
-			glm::vec3 cubeColor{ 0.0f, 0.0f, 1.0f }; // 立方体颜色
-		} cubeView;
-
-		// Camera controls for 3D view
-		struct Camera
-		{
-			glm::vec3 position{ 0.0f, 0.0f, 5.0f };
-			glm::vec3 target{ 0.0f, 0.0f, 0.0f };
-			glm::vec3 up{ 0.0f, 1.0f, 0.0f };
-			float fov{ 45.0f };
-			float nearPlane{ 0.1f };
-			float farPlane{ 100.0f };
-		} camera;
-
-		// Rendering resources
-		VkPipeline slicePipeline{ VK_NULL_HANDLE };
-		VkPipeline pointCloudPipeline{ VK_NULL_HANDLE };
-		VkPipeline cubePipeline{ VK_NULL_HANDLE };
-		VkPipelineLayout slicePipelineLayout{ VK_NULL_HANDLE };
-		VkPipelineLayout pointCloudPipelineLayout{ VK_NULL_HANDLE };
-		VkPipelineLayout cubePipelineLayout{ VK_NULL_HANDLE };
-		VkDescriptorSetLayout descriptorSetLayout{ VK_NULL_HANDLE };
-		VkDescriptorSet descriptorSet{ VK_NULL_HANDLE };
-		VkRenderPass renderPass{ VK_NULL_HANDLE };
-		VkFramebuffer framebuffer{ VK_NULL_HANDLE };
-
-		// Uniform buffer for visualization
-		Buffer uniformBuffer;
-		struct UniformData
-		{
-			glm::mat4 viewProjection;
-			glm::mat4 model;
-			glm::vec3 cameraPos;
-			glm::vec3 sliceColor;
-			glm::vec3 pointColor;
-			glm::vec3 cubeColor;
-			glm::uvec3 gridSize;
-			uint32_t sliceIndex;
-			float sliceDepth;
-			float pointSize;
-			float density;
-			float cubeSize;
-			float opacity;
-		} uniformData;
-
-		// Vertex buffer for full-screen quad (slice rendering)
-		Buffer quadVertexBuffer;
-		Buffer quadIndexBuffer;
-
-		// Vertex buffer for point cloud
-		Buffer pointCloudBuffer;
-		uint32_t pointCount{ 0 };
-
-		// Vertex buffer for cubes
-		Buffer cubeVertexBuffer;
-		Buffer cubeIndexBuffer;
-		uint32_t cubeCount{ 0 };
-
-		bool initialized{ false };
-	};
-	VoxelVisualization m_voxelVisualization;
-
-	// Voxel Point Cloud Rendering
-	struct VoxelPointCloud
-	{
-		// Compute pipeline for extracting voxel points
-		VkPipeline computePipeline{ VK_NULL_HANDLE };
-		VkPipelineLayout computePipelineLayout{ VK_NULL_HANDLE };
-		VkDescriptorSetLayout computeDescriptorSetLayout{ VK_NULL_HANDLE };
-		VkDescriptorSet computeDescriptorSet{ VK_NULL_HANDLE };
-
-		// Graphics pipeline for rendering points
-		VkPipeline graphicsPipeline{ VK_NULL_HANDLE };
-		VkPipelineLayout graphicsPipelineLayout{ VK_NULL_HANDLE };
-		VkDescriptorSetLayout graphicsDescriptorSetLayout{ VK_NULL_HANDLE };
-		VkDescriptorSet graphicsDescriptorSet{ VK_NULL_HANDLE };
-
-		// Buffers
-		Buffer voxelPointsBuffer; // Storage buffer for extracted voxel points
-		Buffer uniformBuffer;	  // Uniform buffer for rendering constants
-
-		// Uniform data
-		struct UniformData
-		{
-			glm::mat4 viewProjection;
-			glm::mat4 model;
-			float pointSize;
-			float densityScale;
-			float threshold;
-		} uniformData;
-
-		// Compute constants
-		struct ComputeConstants
-		{
-			glm::uvec3 gridSize;
-			float threshold;
-			uint32_t maxPoints;
-		} computeConstants;
-
-		uint32_t pointCount{ 0 };
-		bool initialized{ false };
-	};
-	VoxelPointCloud m_voxelPointCloud;
-
-	struct GpuOctreePass
-	{
-		static const uint32_t OCTREE_RESOLUTION = 128;
-		uint32_t queueFamilyIndex{ 0 };
-		VkQueue queue{ nullptr };
-		VkCommandPool commandPool{ nullptr };
-		VkCommandBuffer commandBuffer{ nullptr };
-		VkSemaphore semaphore{ nullptr };
-
-		Buffer primitiveMortonBuffer;
-		Buffer octreeNodeBuffer;
-
-		struct
-		{
-			VkPipeline mortonGen{ VK_NULL_HANDLE };
-			VkPipeline radixSort{ VK_NULL_HANDLE };
-			VkPipeline buildHierarchy{ VK_NULL_HANDLE };
-		} pipelines;
-
-		struct
-		{
-			VkPipelineLayout mortonGen{ VK_NULL_HANDLE };
-			VkPipelineLayout radixSort{ VK_NULL_HANDLE };
-			VkPipelineLayout buildHierarchy{ VK_NULL_HANDLE };
-		} pipelineLayouts;
-
-		struct
-		{
-			VkDescriptorSet mortonGen{ VK_NULL_HANDLE };
-			VkDescriptorSet radixSort{ VK_NULL_HANDLE };
-			VkDescriptorSet buildHierarchy{ VK_NULL_HANDLE };
-		} descriptorSets;
-
-		struct
-		{
-			VkDescriptorSetLayout mortonGen{ VK_NULL_HANDLE };
-			VkDescriptorSetLayout radixSort{ VK_NULL_HANDLE };
-			VkDescriptorSetLayout buildHierarchy{ VK_NULL_HANDLE };
-		} descriptorSetLayouts;
-
-	} m_gpuOctreePass;
-
-	void SetupGpuOctreePass();
-	void BuildGpuOctreeCommandBuffer();
-	void DestroyGpuOctreePass();
 
 	// Voxelization Pass functions
 	void SetupVoxelizationPass();
 	void InitVoxelizationTextures();
 	void InitVoxelizationDescriptors();
 	void InitVoxelizationPipelines();
-	void VoxelizationPass(VkCommandBuffer cmd);
 	void VoxelizationMarkPass(VkCommandBuffer cmd);
 	void VoxelizationFillPass(VkCommandBuffer cmd);
 	void ExecuteVoxelizationWithSync();
 	void UpdateVoxelizationConstants();
 	void BuildVoxelizationCommandBuffer();
 
-	// Voxel Point Cloud Rendering functions
-	void SetupVoxelPointCloud();
-	void InitVoxelPointCloudResources();
-	void InitVoxelPointCloudPipelines();
-	void RenderVoxelPointCloud(VkCommandBuffer cmd);
-	void UpdateVoxelPointCloudUniforms();
-	void ExtractVoxelPoints();
 
-	// Voxel Visualization functions
-	void SetupVoxelVisualization();
-	void InitVoxelVisualizationResources();
-	void InitVoxelVisualizationPipelines();
-	void RenderVoxelVisualization(VkCommandBuffer cmd);
-	void UpdateVoxelVisualizationUniforms();
-	void GeneratePointCloudFromVoxels();
-	void GenerateCubesFromVoxels();
-	void CleanupVoxelVisualization();
-	void SaveVoxelSlices();
-
-	// Voxel Visualization UI controls
-	void VoxelVisualizationUI();
-	void HandleVoxelVisualizationInput();
 
 	// Test function for voxelization
 	void TestVoxelization();
@@ -2050,7 +1487,6 @@ private:
 
 	// Voxelization debug flag
 	bool m_voxelizationDebugEnabled{ false };
-    glm::mat4 CalculateModelToStandardTransform(const vkglTF::Model& model);
  private:
 	void InitializeMeshToSdfOperator();
 	MeshToSdf* meshToSdfOperator_{};

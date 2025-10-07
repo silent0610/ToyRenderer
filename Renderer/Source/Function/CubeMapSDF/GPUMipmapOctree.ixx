@@ -1,7 +1,7 @@
 module;
 
 #include "vulkan/vulkan.h"
-
+#include <stdint.h>
 export module GPUMipmapOctreeMod;
 
 import std;
@@ -53,7 +53,7 @@ export struct NodeSelectionConfig
 export class GPUMipmapOctree
 {
 public:
-    GPUMipmapOctree(OldVulkanDevice *device, uint32_t baseSize = 64);
+    GPUMipmapOctree(OldVulkanDevice* device, uint32_t mode, uint32_t baseSize = 64);
     ~GPUMipmapOctree();
     void SetVoxelTexture(VkImageView view);
     // Build mipmap octree from 3D binary texture
@@ -74,9 +74,12 @@ public:
 
     // Getters
     uint32_t GetBaseSize() const { return m_baseSize; }
-    uint32_t GetMaxLevel() const { return m_maxLevel; }
     VkImageView GetMipLevelView(uint32_t level) const;
     VkSampler GetSampler() const { return m_sampler; }
+    /// <summary>
+    /// 获取4x4x4等级的level
+    /// </summary>
+    /// <returns></returns>
     uint32_t GetMaxLevel();
 
 private:
@@ -108,7 +111,7 @@ private:
     // Internal methods
     void CreateMipLevels();
     void CreateUniformBuffer();
-    void CreateComputePipeline();
+    void CreateComputePipeline(uint32_t mode);
     void CreateDescriptorSets();
     void UpdateDescriptorSets(Texture *inputTexture);
 

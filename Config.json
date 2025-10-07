@@ -32,8 +32,8 @@
     },
     "SdfConfig": {
         "WorldSize": 2.0,
-        "Resolution": 64,
-        "SdfMode": 0,
+        "Resolution": 8,
+        "SdfMode": 1,
         "AnalyticalSampledLevel": 3,
         "MeshToSdfMode": 1,
         "MeshToSdfIteration": 10,

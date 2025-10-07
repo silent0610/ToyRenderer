@@ -547,8 +547,13 @@ namespace Init
         return computePipelineCreateInfo;
     }
 
+    /// @brief 
+    /// @param stageFlags 
+    /// @param size 大小
+    /// @param offset 偏移
+    /// @return 
     export inline VkPushConstantRange pushConstantRange(
-        VkShaderStageFlags stageFlags,
+        VkShaderStageFlags stageFlags, 
         uint32_t size,
         uint32_t offset)
     {

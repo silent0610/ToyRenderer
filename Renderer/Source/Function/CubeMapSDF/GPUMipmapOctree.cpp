@@ -7,8 +7,8 @@ module GPUMipmapOctreeMod;
 
 import std;
 import ToolMod;
-
-GPUMipmapOctree::GPUMipmapOctree(OldVulkanDevice *device, uint32_t baseSize)
+import Logger;
+GPUMipmapOctree::GPUMipmapOctree(OldVulkanDevice* device, uint32_t mode,uint32_t baseSize)
 	: m_device(device), m_baseSize(baseSize), m_maxLevel(0), m_sampler(VK_NULL_HANDLE), m_uniformBuffer(VK_NULL_HANDLE), m_uniformBufferMemory(VK_NULL_HANDLE), m_uniformBufferMapped(nullptr), m_buildPipeline(VK_NULL_HANDLE), m_pipelineLayout(VK_NULL_HANDLE), m_descriptorSetLayout(VK_NULL_HANDLE), m_descriptorPool(VK_NULL_HANDLE)
 {
 	// Calculate number of mip levels
@@ -22,7 +22,7 @@ GPUMipmapOctree::GPUMipmapOctree(OldVulkanDevice *device, uint32_t baseSize)
 	CreateMipLevels();		 // This creates textures and sampler
 	CreateUniformBuffer();	 // Create uniform buffer for LevelInfo
 	CreateDescriptorSets();	 // Create descriptor set layout first
-	CreateComputePipeline(); // Then create pipeline using the layout
+	CreateComputePipeline(mode); // Then create pipeline using the layout
 }
 
 GPUMipmapOctree::~GPUMipmapOctree()
@@ -206,17 +206,25 @@ void GPUMipmapOctree::CreateUniformBuffer()
 	}
 }
 
-void GPUMipmapOctree::CreateComputePipeline()
+void GPUMipmapOctree::CreateComputePipeline(uint32_t mode)
 {
-
+    std::string shaderPath = Tool::GetShadersPath();
 	// Load compute shader
-	std::string shaderPath = Tool::GetShadersPath() + "BuildMipmapOctree.Comp.spv";
+    if (mode == 1)
+    {
+        shaderPath = shaderPath + "MipmapOctree/BuildMipmapOctreeComplexity.Comp.spv";
+    }
+    else if (mode == 0)
+    {
+        shaderPath = shaderPath + "MipmapOctree/BuildMipmapOctree.Comp.spv";
+    }
 
 	// Read shader file
 	std::ifstream file(shaderPath, std::ios::ate | std::ios::binary);
 	if (!file.is_open())
 	{
-		std::cout << "Warning: BuildMipmapOctree.Comp.spv not found, pipeline creation skipped" << std::endl;
+        Log::Error(std::format("cant open shader file {}", shaderPath));
+        throw std::runtime_error("cant open shader file");
 		return;
 	}
 
@@ -1335,6 +1343,7 @@ VkImageView GPUMipmapOctree::GetMipLevelView(uint32_t level) const
 
 	return m_mipLevels[level-1].view;
 }
+
 uint32_t GPUMipmapOctree::GetMaxLevel()
 {
     return m_maxLevel;

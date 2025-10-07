@@ -3,8 +3,8 @@
 
 // Node states
 #define NODE_EMPTY 0
-#define NODE_MIXED 1
-#define NODE_SOLID 2
+#define NODE_MIXED 2
+#define NODE_SOLID 1
 
 // Use standard HLSL register binding (consistent with other shaders)
 struct LevelInfo {
@@ -27,6 +27,17 @@ uint3 DecodeChildOffset(uint childIndex) {
         (childIndex & 4) ? 1 : 0);   // z offset);
 }
 
+uint CalculateValue(uint countA, uint countB, uint countC)
+{
+    float pA = float(countA) /8.0f;
+    float pB = float(countB) /8.0f;
+    float pC = float(countC) /8.0f;
+
+    float mean = 1/3;
+    float variance = (pow(pA-mean,2.0f)+pow(pB-mean,2.0f)+pow(pC-mean,2.0f))/3.0f;
+    variance = variance *9.0f /2.0f;
+    return (1.0f - variance)*255;
+}
 
 [numthreads(8, 8, 8)]
 void main(uint3 id : SV_DispatchThreadID) {
@@ -93,6 +104,7 @@ void main(uint3 id : SV_DispatchThreadID) {
         // Mixed case: some children solid, some empty/mixed -> parent is mixed
         parentState = NODE_MIXED;
     }
+    uint complexity = CalculateValue(solidCount,emptyCount,mixedCount);
     // Write result to output texture (ensure only 8-bit values)
-    OutputLevel[outputPos] = uint2(parentState,0.0f) ;
+    OutputLevel[outputPos] = uint2(parentState,complexity) ;
 }

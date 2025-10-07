@@ -14,14 +14,14 @@ import BruteForceSdf;
 
 const float PI = 3.1415929;
 
-Renderer::Renderer(Config* config) : m_config(config)
+Renderer::Renderer(Config* config) : config_(config)
 {
     m_neededFeatures.validation = config->enableValidation;
     m_camera.type = Camera::CameraType::firstperson;
     m_camera.flipY = true;
     m_camera.setPosition(config->camera.pos);
     m_camera.setRotation(glm::vec3(0.0f));
-    m_camera.setPerspective(m_config->camera.fov, (float)m_width / (float)m_height, config->camera.znear, config->camera.zfar);
+    m_camera.setPerspective(config_->camera.fov, (float)m_width / (float)m_height, config->camera.znear, config->camera.zfar);
     m_camera.setMovementSpeed(config->camera.movementSpeed);
 }
 
@@ -233,22 +233,26 @@ void Renderer::InitVulkan()
     BuildCommandBuffers();
     BuildDeferredCommandBuffer();
 
-    // 1. 初始化GPUMipmapOctree（限制到第4层，4x4x4分辨率）
-    if (!m_gpuMipmapOctree)
+
     {
-        m_gpuMipmapOctree = std::make_unique<GPUMipmapOctree>(m_vulkanDevice, m_config->Sdf.Resolution);
+        
+        if (!m_gpuMipmapOctree)
+        {
+            m_gpuMipmapOctree = std::make_unique<GPUMipmapOctree>(m_vulkanDevice, config_->Sdf.SdfMode,config_->Sdf.Resolution);
+        }
+        // SetupGpuOctreePass();
+        SetupVoxelizationPass();
+        BuildVoxelizationCommandBuffer();
+
+        // 初始化统一GPU管线资源和预录制命令
+        InitializeUnifiedGPUPipelineResources();
+        RecordUnifiedGPUPipelineCommands();
+        // OffscreenWork();
+
+        // MeshToSdf
+        InitializeMeshToSdfOperator();
     }
-    // SetupGpuOctreePass();
-    SetupVoxelizationPass();
-    BuildVoxelizationCommandBuffer();
 
-    // 初始化统一GPU管线资源和预录制命令
-    InitializeUnifiedGPUPipelineResources();
-    RecordUnifiedGPUPipelineCommands();
-    // OffscreenWork();
-
-    // MeshToSdf
-    InitializeMeshToSdfOperator();
 
 }
 void Renderer::TestBruteSdfAndSave()
@@ -258,9 +262,9 @@ void Renderer::TestBruteSdfAndSave()
 
     // 更新参数
     sdfParams.signedDistance = false;
-    sdfParams.voxelResolution = glm::vec3(m_config->Sdf.Resolution, m_config->Sdf.Resolution, m_config->Sdf.Resolution);
-    sdfParams.origin = glm::vec3(-m_config->Sdf.WorldSize / 2.0f, -m_config->Sdf.WorldSize / 2.0f, -m_config->Sdf.WorldSize / 2.0f);
-    sdfParams.cellSize = m_config->Sdf.WorldSize / static_cast<float>(m_config->Sdf.Resolution);
+    sdfParams.voxelResolution = glm::vec3(config_->Sdf.Resolution, config_->Sdf.Resolution, config_->Sdf.Resolution);
+    sdfParams.origin = glm::vec3(-config_->Sdf.WorldSize / 2.0f, -config_->Sdf.WorldSize / 2.0f, -config_->Sdf.WorldSize / 2.0f);
+    sdfParams.cellSize = config_->Sdf.WorldSize / static_cast<float>(config_->Sdf.Resolution);
     sdfGenerator.Initialize(sdfParams);
     sdfGenerator.SetModel(&m_glTFModel);
     const int totalVoxels = sdfParams.voxelResolution.x * sdfParams.voxelResolution.y * sdfParams.voxelResolution.z;
@@ -277,13 +281,13 @@ void Renderer::InitializeMeshToSdfOperator()
     meshToSdfOperator_->Initialize(m_vulkanDevice, m_queues.graphicsQueue, m_descriptorPool, &m_glTFModel);
     MeshToSdf::SdfParam sdfParams{};
     
-    sdfParams.distanceMode = static_cast<MeshToSdf::DistanceMode>(m_config->Sdf.MeshToSdfDistanceMode);
-    sdfParams.FloodFillQuality = static_cast<MeshToSdf::FloodFillQuality>(m_config->Sdf.MeshToSdfQuality);
-    sdfParams.floodMode = static_cast<MeshToSdf::FloodMode>(m_config->Sdf.MeshToSdfMode);
-    sdfParams.floodIterations = static_cast<int>(m_config->Sdf.MeshToSdfIteration);
+    sdfParams.distanceMode = static_cast<MeshToSdf::DistanceMode>(config_->Sdf.MeshToSdfDistanceMode);
+    sdfParams.FloodFillQuality = static_cast<MeshToSdf::FloodFillQuality>(config_->Sdf.MeshToSdfQuality);
+    sdfParams.floodMode = static_cast<MeshToSdf::FloodMode>(config_->Sdf.MeshToSdfMode);
+    sdfParams.floodIterations = static_cast<int>(config_->Sdf.MeshToSdfIteration);
     sdfParams.offset = 0.0f;
-    sdfParams.size = m_config->Sdf.WorldSize;
-    sdfParams.voxelResolution = static_cast<int>(m_config->Sdf.Resolution);
+    sdfParams.size = config_->Sdf.WorldSize;
+    sdfParams.voxelResolution = static_cast<int>(config_->Sdf.Resolution);
     meshToSdfOperator_->SetSdfParams(sdfParams);
 
     meshToSdfCommandBuffer_ = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, false);
@@ -305,21 +309,6 @@ void Renderer::InitUI()
     m_UI.PreparePipeline(nullptr, m_finalPass, m_swapChain.colorFormat, m_depthFormat);
 }
 
-void Renderer::SetupGpuOctreePass()
-{
-    uint32_t numTriangles = m_glTFModel.indices.count / 3;
-
-    // Create buffer for Morton codes and primitive indices
-    m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &m_gpuOctreePass.primitiveMortonBuffer,
-                                 numTriangles * sizeof(uint64_t) * 2 // Morton code (64-bit) + primitive index (32-bit), padded
-    );
-
-    // Create buffer for the octree nodes
-    // The size is an estimate, may need adjustment. (numTriangles * 2) is a safe upper bound.
-    m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &m_gpuOctreePass.octreeNodeBuffer,
-                                 numTriangles * 2 * sizeof(uint32_t) * 4 // Example node size
-    );
-}
 
 void ::Renderer::CreateCommandBuffers()
 {
@@ -1327,6 +1316,21 @@ void Renderer::DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMe
         func(instance, debugMessenger, pAllocator);
     }
 }
+void Renderer::ExportSDFDataForVisualization()
+{
+    if (config_->Sdf.SdfMode == 0)
+    {
+        ExportSDFDataForVisualization(GetAnalyticalSdfTexture(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      Tool::GetAssetsPath() + "Sdf/" + "AnalyticalSdf.raw");
+    }
+    else if (config_->Sdf.SdfMode == 1)
+    {
+        Texture* tex{GetMultiViewDepthSdfTexture()};
+        ExportSDFDataForVisualization(tex, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, Tool::GetAssetsPath() + "Sdf/" + "MultiViewSdf.raw");
+        delete tex;
+    }
+
+}
 void Renderer::KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
@@ -1351,10 +1355,7 @@ void Renderer::KeyCallback(GLFWwindow* window, int key, int scancode, int action
             break;
         case GLFW_KEY_E: { // 按E键导出SDF数据用于Python可视化
             printf("Exporting SDF data for visualization...\n");
-            Texture* tex{app->GetMultiViewDepthSdfTexture()};
-            app->ExportSDFDataForVisualization(tex, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, Tool::GetAssetsPath() + "Sdf/" + "MultiViewSdf.raw");
-            delete tex;
-            // app->ExportSDFDataForVisualization(app->GetAnalyticalSdfTexture(), Tool::GetAssetsPath()+"Sdf/"+"AnalyticalSdf.raw");
+            app->ExportSDFDataForVisualization();
             break;
         }
         case GLFW_KEY_M: // 按E键导出SDF数据用于Python可视化
@@ -2008,11 +2009,6 @@ void Renderer::DrawFrame()
     // currentBuffer = (currentBuffer + 1) % m_swapChain.images.size();
 }
 
-void Renderer::DestroyGpuOctreePass()
-{
-    m_gpuOctreePass.primitiveMortonBuffer.Destroy();
-    m_gpuOctreePass.octreeNodeBuffer.Destroy();
-}
 
 void Renderer::SetupVoxelizationPass()
 {
@@ -2029,9 +2025,9 @@ void Renderer::InitVoxelizationTextures()
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_3D;
-    imageInfo.extent.width = m_config->Sdf.Resolution;
-    imageInfo.extent.height = m_config->Sdf.Resolution;
-    imageInfo.extent.depth = m_config->Sdf.Resolution;
+    imageInfo.extent.width = config_->Sdf.Resolution;
+    imageInfo.extent.height = config_->Sdf.Resolution;
+    imageInfo.extent.depth = config_->Sdf.Resolution;
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.format = VK_FORMAT_R32_SINT;
@@ -2419,7 +2415,7 @@ void Renderer::UpdateVoxelizationConstants()
     m_voxelizationPass.constants.view = glm::mat4(1.0f);
 
     m_voxelizationPass.constants.projection = glm::ortho(-1.0f, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f);
-    m_voxelizationPass.constants.voxelGridSize = glm::uvec3(m_config->Sdf.Resolution);
+    m_voxelizationPass.constants.voxelGridSize = glm::uvec3(config_->Sdf.Resolution);
 
     // 拷贝到GPU缓冲
     void* data;
@@ -2482,7 +2478,7 @@ void Renderer::VoxelizationMarkPass(VkCommandBuffer cmd)
     // === 新增：开始动态渲染 ===
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    renderingInfo.renderArea = {{0, 0}, {m_config->Sdf.Resolution, m_config->Sdf.Resolution}};
+    renderingInfo.renderArea = {{0, 0}, {config_->Sdf.Resolution, config_->Sdf.Resolution}};
     renderingInfo.layerCount = 1;
     renderingInfo.colorAttachmentCount = 0; // 无颜色附件
     renderingInfo.pColorAttachments = nullptr;
@@ -2493,15 +2489,15 @@ void Renderer::VoxelizationMarkPass(VkCommandBuffer cmd)
 
     // === 设置视口和裁剪 ===
     VkViewport viewport = {};
-    viewport.width = static_cast<float>(m_config->Sdf.Resolution);
-    viewport.height = static_cast<float>(m_config->Sdf.Resolution);
+    viewport.width = static_cast<float>(config_->Sdf.Resolution);
+    viewport.height = static_cast<float>(config_->Sdf.Resolution);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
     VkRect2D scissor = {};
     scissor.offset = {0, 0};
-    scissor.extent = {m_config->Sdf.Resolution, m_config->Sdf.Resolution};
+    scissor.extent = {config_->Sdf.Resolution, config_->Sdf.Resolution};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     // === 绑定管线和描述符集 ===
@@ -2571,15 +2567,15 @@ void Renderer::VoxelizationFillPass(VkCommandBuffer cmd)
     // Dispatch compute shader
     uint32_t groupSizeX = 8;
     uint32_t groupSizeY = 8;
-    uint32_t dispatchX = (m_config->Sdf.Resolution + groupSizeX - 1) / groupSizeX;
-    uint32_t dispatchY = (m_config->Sdf.Resolution + groupSizeY - 1) / groupSizeY;
+    uint32_t dispatchX = (config_->Sdf.Resolution + groupSizeX - 1) / groupSizeX;
+    uint32_t dispatchY = (config_->Sdf.Resolution + groupSizeY - 1) / groupSizeY;
     vkCmdDispatch(cmd, dispatchX, dispatchY, 1);
 
     EndDebugLabel(cmd);
 }
 void Renderer::SaveVoxelTextureWithValidation(const std::string& filename)
 {
-    const uint32_t gridSize = m_config->Sdf.Resolution;
+    const uint32_t gridSize = config_->Sdf.Resolution;
     const VkDeviceSize imageSize = gridSize * gridSize * gridSize * 4; // RGBA
 
     printf("Starting voxel texture save: %dx%dx%d (%llu bytes)\n", gridSize, gridSize, gridSize, imageSize);
@@ -2911,10 +2907,9 @@ void Renderer::Cleanup()
 {
     // 清理统一GPU管线资源
     m_unifiedGPUPipeline.cleanup(m_device);
-    m_solidNodeSelection.cleanup(m_device);
-    // m_solidNodeSelectionB.cleanup(m_device);
+    analyticalNodeSelection_.cleanup(m_device);
+    // multiViewNodeSelection_.cleanup(m_device);
     m_analyticalSDFGeneration.cleanup(m_device);
-    m_multiViewDepthSDF.cleanup(m_device);
     m_gpuDataPreparation.cleanup(m_device);
     m_multiViewDepthSDF4C.cleanup(m_device); // 新的多视角深度SDF方案清理
 
@@ -2978,7 +2973,7 @@ void Renderer::Cleanup()
     vkDestroyRenderPass(m_device, m_voxelizationPass.renderPass, nullptr);
 
     m_glTFModel.Destroy();
-    DestroyGpuOctreePass();
+
     if (m_neededFeatures.validation)
     {
         DestroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
@@ -3077,7 +3072,7 @@ void Renderer::LoadAssets()
 {
     uint32_t glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors;
     /*LoadglTFFile(Tool::GetAssetsPath() + "Models/FlightHelmet/glTF/FlightHelmet.gltf");*/
-    m_glTFModel.loadFromFile(Tool::GetAssetsPath() + m_config->modelPath, m_vulkanDevice, m_queues.graphicsQueue, glTFLoadingFlags);
+    m_glTFModel.loadFromFile(Tool::GetAssetsPath() + config_->modelPath, m_vulkanDevice, m_queues.graphicsQueue, glTFLoadingFlags);
     auto tStart = std::chrono::high_resolution_clock::now();
     // m_meshOctree = std::make_unique<MeshOctree>(m_glTFModel, 0.1f, 5);
     auto tEnd = std::chrono::high_resolution_clock::now();
@@ -7530,12 +7525,12 @@ void Renderer::CreateBuffersHBAO()
     // GenerateNoiseTextureHBAO();
 
     // Init
-    m_HBAOPass.ConstBufferData.Radius = m_config->HBAO.Radius;
-    m_HBAOPass.ConstBufferData.Radius2 = m_config->HBAO.Radius * m_config->HBAO.Radius;
+    m_HBAOPass.ConstBufferData.Radius = config_->HBAO.Radius;
+    m_HBAOPass.ConstBufferData.Radius2 = config_->HBAO.Radius * config_->HBAO.Radius;
     m_HBAOPass.ConstBufferData.NegInvR2 = -1.0f / m_HBAOPass.ConstBufferData.Radius2;
     m_HBAOPass.ConstBufferData.Scale = float(m_height) / float(m_blueNoise.height);
-    m_HBAOPass.ConstBufferData.NumDirections = m_config->HBAO.DirNum;
-    m_HBAOPass.ConstBufferData.NumSteps = m_config->HBAO.StepNum;
+    m_HBAOPass.ConstBufferData.NumDirections = config_->HBAO.DirNum;
+    m_HBAOPass.ConstBufferData.NumSteps = config_->HBAO.StepNum;
     m_HBAOPass.ConstBufferData.MaxRadiusPixels = 100.0f;
     m_HBAOPass.ConstBufferData.TanBias = glm::tan(glm::radians(30.0f));
     m_HBAOPass.ConstBufferData.Strength = 1.9f;
@@ -7951,7 +7946,7 @@ void Renderer::UpdateCBufferCBF()
 }
 bool Renderer::ReadFinalVoxelStateTextureToCPU_Staging()
 {
-    const uint32_t gridSize = m_config->Sdf.Resolution;
+    const uint32_t gridSize = config_->Sdf.Resolution;
     const VkDeviceSize imageSize = gridSize * gridSize * gridSize * sizeof(uint8_t);
 
     voxelData_.resize(imageSize);
@@ -8040,9 +8035,6 @@ void Renderer::InitializeUnifiedGPUPipelineResources()
 {
     if (m_unifiedGPUPipeline.resourcesInitialized)
         return;
-
-
-
     // 2. 创建专用command pool和command buffer
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -8074,77 +8066,65 @@ void Renderer::InitializeUnifiedGPUPipelineResources()
     // 初始化阶段三和阶段四的资源
     printf("About to initialize Solid Node Selection resources...\n");
     fflush(stdout);
-    InitializeSolidNodeSelectionResources();
+    InitializeAnalyticalNodeSelectionResource(); // analytical 的描述符集等
 
     printf("About to initialize Solid Node Selection B resources...\n");
     fflush(stdout);
-    InitializeSolidNodeSelectionBResources();
+    InitializeMultiviewNodeSelectionResource(); // multi-view depth SDF 的描述符集等
 
-    // 初始化阶段四版本B：多视角深度SDF (旧版本，已禁用)
-    // printf("Initializing Multi-View Depth SDF resources...\n");
-    // fflush(stdout);
-    // InitializeMultiViewDepthSDFResources();
 
     // 初始化阶段四版本C：新的多视角深度SDF方案
     printf("Initializing MultiViewDepthSDF4C resources...\n");
     fflush(stdout);
     InitializeMultiViewDepthSDF4CResources();
 
-    // 已被新的InitializeGPUDataPreparation4C()取代
-    // printf("Initializing GPU Data Preparation resources...\n");
-    // fflush(stdout);
-    // InitializeGPUDataPreparation();
-
     // 现在可以安全地更新SolidNodeSelection的descriptor set，因为：
     // 1. GPUMipmapOctree已经创建，mipmap纹理已经存在
     // 2. SolidNodeSelection的descriptor set已经创建
-    printf("Updating SolidNodeSelection descriptor set with mipmap textures...\n");
+    printf("Updating AnalyticalSolidNodeSelection descriptor set with mipmap textures...\n");
     fflush(stdout);
     UpdateSolidNodeSelectionDescriptorSet();
 
-    printf("Updating SolidNodeSelection B descriptor set with mipmap textures...\n");
+    printf("Updating AnalyticalSolidNodeSelection B descriptor set with mipmap textures...\n");
     fflush(stdout);
-    UpdateSolidNodeSelectionBDescriptorSet();
+    UpdateMultiviewNodeSelectionDescriptorSet();
 
     printf("About to initialize Analytical SDF Generation resources...\n");
     fflush(stdout);
     InitializeAnalyticalSDFGenerationResources();
 
-    // 更新多视角深度SDF描述符集 (旧版本已禁用)
-    // printf("Updating Multi-View Depth SDF descriptor sets...\n");
-    // fflush(stdout);
-    // UpdateMultiViewDepthSDFDescriptorSets();
 
     printf("All stage 3 and 4 resources initialized successfully\n");
     fflush(stdout);
 }
 
-/// @brief 初始化阶段三：实体节点筛选资源
-void Renderer::InitializeSolidNodeSelectionResources()
+void Renderer::InitializeAnalyticalNodeSelectionResource()
 {
     // 创建Solid Node Buffer (存储筛选出的节点) - 需要HOST_VISIBLE以便CPU读取用于调试
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        &m_solidNodeSelection.solidNodeBuffer, sizeof(SolidNodeSelection::SolidNode) * SolidNodeSelection::MAX_SOLID_NODES));
+        &analyticalNodeSelection_.solidNodeBuffer, sizeof(AnalyticalSolidNodeSelection::SolidNode) * AnalyticalSolidNodeSelection::MAX_SOLID_NODES));
 
     // 创建Counter Buffer (原子计数器) - 需要HOST_VISIBLE以便CPU清零
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                                   &m_solidNodeSelection.counterBuffer, sizeof(uint32_t)));
+                                                   &analyticalNodeSelection_.counterBuffer, sizeof(uint32_t)));
 
     // 初始化计数器为0
     uint32_t zero = 0;
-    m_solidNodeSelection.counterBuffer.Map();
-    memcpy(m_solidNodeSelection.counterBuffer.mapped, &zero, sizeof(uint32_t));
-    m_solidNodeSelection.counterBuffer.Unmap();
+    analyticalNodeSelection_.counterBuffer.Map();
+    memcpy(analyticalNodeSelection_.counterBuffer.mapped, &zero, sizeof(uint32_t));
+    analyticalNodeSelection_.counterBuffer.Unmap();
 
     // 创建描述符集布局
+    // 这里需要注意, 128的输入应该只有6层, 256就应该有7层, 目前是硬编码, 后续可以改进
+    // 对于analytical, 4x4x4是允许被使用的, 但是multiview 最多应该使用8x8x8, 4x4x4仅作为复杂度计算
     std::vector<VkDescriptorSetLayoutBinding> bindings = {
         // Binding 0: Counter buffer (atomic counter)
         {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         // Binding 1: Solid node buffer (output)
         {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        // Binding 2-6: Mipmap octree texture array (input) - 5个mipmap层级 (level 0-4)
+        // Binding 2-7: Mipmap octree texture array 
         {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 0: basesize 128
         {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 1: 64
         {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 2: 32
@@ -8157,24 +8137,24 @@ void Renderer::InitializeSolidNodeSelectionResources()
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
     layoutInfo.pBindings = bindings.data();
-    Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_solidNodeSelection.descriptorSetLayout));
+    Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &analyticalNodeSelection_.descriptorSetLayout));
 
     // 创建管线布局 (支持Push Constants)
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(SolidNodeSelection::SolidNodeSelectionPushConstant); // modelCenter + halfSizeWithMargin = 16字节
+    pushConstantRange.size = sizeof(AnalyticalSolidNodeSelection::SolidNodeSelectionPushConstant); // modelCenter + halfSizeWithMargin = 16字节
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &m_solidNodeSelection.descriptorSetLayout;
+    pipelineLayoutInfo.pSetLayouts = &analyticalNodeSelection_.descriptorSetLayout;
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-    Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_solidNodeSelection.pipelineLayout));
+    Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &analyticalNodeSelection_.pipelineLayout));
 
     // 加载Compute Shader
-    std::string shaderPath = Tool::GetShadersPath() + "SolidNodeSelection.Comp.spv";
+    std::string shaderPath = Tool::GetShadersPath() + "Analytical/AnalyticalNodeSelection.Comp.spv";
     VkShaderModule shaderModule = Tool::LoadShader(shaderPath.c_str(), m_device);
 
     // 创建Compute Pipeline
@@ -8184,9 +8164,9 @@ void Renderer::InitializeSolidNodeSelectionResources()
     computePipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
     computePipelineInfo.stage.module = shaderModule;
     computePipelineInfo.stage.pName = "main";
-    computePipelineInfo.layout = m_solidNodeSelection.pipelineLayout;
+    computePipelineInfo.layout = analyticalNodeSelection_.pipelineLayout;
 
-    Tool::CheckResult(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &computePipelineInfo, nullptr, &m_solidNodeSelection.pipeline));
+    Tool::CheckResult(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &computePipelineInfo, nullptr, &analyticalNodeSelection_.pipeline));
 
     // 清理shader module
     vkDestroyShaderModule(m_device, shaderModule, nullptr);
@@ -8211,22 +8191,22 @@ void Renderer::InitializeSolidNodeSelectionResources()
     descriptorAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     descriptorAllocInfo.descriptorPool = descriptorPool;
     descriptorAllocInfo.descriptorSetCount = 1;
-    descriptorAllocInfo.pSetLayouts = &m_solidNodeSelection.descriptorSetLayout;
+    descriptorAllocInfo.pSetLayouts = &analyticalNodeSelection_.descriptorSetLayout;
 
-    Tool::CheckResult(vkAllocateDescriptorSets(m_device, &descriptorAllocInfo, &m_solidNodeSelection.descriptorSet));
+    Tool::CheckResult(vkAllocateDescriptorSets(m_device, &descriptorAllocInfo, &analyticalNodeSelection_.descriptorSet));
 
     // 绑定资源到描述符集
     std::vector<VkWriteDescriptorSet> descriptorWrites;
 
     // Binding 0: Counter buffer
     VkDescriptorBufferInfo counterBufferInfo{};
-    counterBufferInfo.buffer = m_solidNodeSelection.counterBuffer.buffer;
+    counterBufferInfo.buffer = analyticalNodeSelection_.counterBuffer.buffer;
     counterBufferInfo.offset = 0;
     counterBufferInfo.range = sizeof(uint32_t);
 
     VkWriteDescriptorSet counterWrite{};
     counterWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    counterWrite.dstSet = m_solidNodeSelection.descriptorSet;
+    counterWrite.dstSet = analyticalNodeSelection_.descriptorSet;
     counterWrite.dstBinding = 0;
     counterWrite.dstArrayElement = 0;
     counterWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -8236,13 +8216,13 @@ void Renderer::InitializeSolidNodeSelectionResources()
 
     // Binding 1: Solid node buffer
     VkDescriptorBufferInfo solidNodeBufferInfo{};
-    solidNodeBufferInfo.buffer = m_solidNodeSelection.solidNodeBuffer.buffer;
+    solidNodeBufferInfo.buffer = analyticalNodeSelection_.solidNodeBuffer.buffer;
     solidNodeBufferInfo.offset = 0;
-    solidNodeBufferInfo.range = sizeof(SolidNodeSelection::SolidNode) * SolidNodeSelection::MAX_SOLID_NODES;
+    solidNodeBufferInfo.range = sizeof(AnalyticalSolidNodeSelection::SolidNode) * AnalyticalSolidNodeSelection::MAX_SOLID_NODES;
 
     VkWriteDescriptorSet solidNodeWrite{};
     solidNodeWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    solidNodeWrite.dstSet = m_solidNodeSelection.descriptorSet;
+    solidNodeWrite.dstSet = analyticalNodeSelection_.descriptorSet;
     solidNodeWrite.dstBinding = 1;
     solidNodeWrite.dstArrayElement = 0;
     solidNodeWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -8260,159 +8240,43 @@ void Renderer::InitializeSolidNodeSelectionResources()
 }
 
 /// @brief 初始化阶段三版本B：自适应相机位置筛选资源
-void Renderer::InitializeSolidNodeSelectionBResources()
+void Renderer::InitializeMultiviewNodeSelectionResource()
 {
     // === Pass 1-3: 创建候选节点缓冲区 ===
 
     // 候选节点缓冲区 (最多1000个候选节点)
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        &m_solidNodeSelectionB.candidateNodesBuffer, sizeof(SolidNodeSelectionB::SolidNode) * SolidNodeSelectionB::MAX_CANDIDATE_NODES));
+        &multiViewNodeSelection_.candidateNodesBuffer, sizeof(MultiViewSolidNodeSelection::SolidNode) * MultiViewSolidNodeSelection::MAX_CANDIDATE_NODES));
 
     // 候选节点计数缓冲区
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                                   &m_solidNodeSelectionB.candidateCountBuffer, sizeof(uint32_t)));
+                                                   &multiViewNodeSelection_.candidateCountBuffer, sizeof(uint32_t)));
 
     // === Pass 4: 创建最终选择缓冲区 ===
 
     // 最终选中节点缓冲区 (最多10个)
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        &m_solidNodeSelectionB.selectedNodesBuffer, sizeof(SolidNodeSelectionB::SolidNode) * SolidNodeSelectionB::MAX_SELECTED_NODES));
+        &multiViewNodeSelection_.selectedNodesBuffer, sizeof(MultiViewSolidNodeSelection::SolidNode) * config_->Sdf.MultiViewUsedCameraNum));
 
     // 最终节点计数缓冲区
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                                   &m_solidNodeSelectionB.selectedCountBuffer, sizeof(uint32_t)));
+                                                   &multiViewNodeSelection_.selectedCountBuffer, sizeof(uint32_t)));
 
     // 初始化所有计数器为0
     uint32_t zero = 0;
-    m_solidNodeSelectionB.candidateCountBuffer.Map();
-    memcpy(m_solidNodeSelectionB.candidateCountBuffer.mapped, &zero, sizeof(uint32_t));
-    m_solidNodeSelectionB.candidateCountBuffer.Unmap();
+    multiViewNodeSelection_.candidateCountBuffer.Map();
+    memcpy(multiViewNodeSelection_.candidateCountBuffer.mapped, &zero, sizeof(uint32_t));
+    multiViewNodeSelection_.candidateCountBuffer.Unmap();
 
-    m_solidNodeSelectionB.selectedCountBuffer.Map();
-    memcpy(m_solidNodeSelectionB.selectedCountBuffer.mapped, &zero, sizeof(uint32_t));
-    m_solidNodeSelectionB.selectedCountBuffer.Unmap();
+    multiViewNodeSelection_.selectedCountBuffer.Map();
+    memcpy(multiViewNodeSelection_.selectedCountBuffer.mapped, &zero, sizeof(uint32_t));
+    multiViewNodeSelection_.selectedCountBuffer.Unmap();
 
-    // 创建描述符集布局 (与版本A类似但简化)
-    std::vector<VkDescriptorSetLayoutBinding> bindings = {
-        // Binding 0: Selected count buffer (RW)
-        {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        // Binding 1: Selected nodes buffer (RW)
-        {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        // Binding 2-5: Mipmap octree textures (input) - 只用4个层级 (level 0-3)
-        {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 0: 32x32x32
-        {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 1: 16x16x16
-        {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 2: 8x8x8
-        {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}  // Level 3: 4x4x4
-    };
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-    Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_solidNodeSelectionB.descriptorSetLayout));
-
-    // 创建管线布局 - 添加push constants支持
-    VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-    pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(uint32_t); // currentLevel
-
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &m_solidNodeSelectionB.descriptorSetLayout;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-    Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_solidNodeSelectionB.pipelineLayout));
-
-    // 加载Compute Shader
-    //std::string shaderPath = Tool::GetShadersPath() + "SolidNodeSelectionB.Comp.spv";
-    //VkShaderModule shaderModule = Tool::LoadShader(shaderPath.c_str(), m_device);
-
-    // 创建Compute Pipeline
-    //VkComputePipelineCreateInfo computePipelineInfo{};
-    //computePipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    //computePipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    //computePipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    //computePipelineInfo.stage.module = shaderModule;
-    //computePipelineInfo.stage.pName = "main";
-    //computePipelineInfo.layout = m_solidNodeSelectionB.pipelineLayout;
-
-    // Tool::CheckResult(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &computePipelineInfo, nullptr, &m_solidNodeSelectionB.pipeline));
-
-    // 清理shader module
-    //vkDestroyShaderModule(m_device, shaderModule, nullptr);
-
-    // 创建描述符池
-    std::vector<VkDescriptorPoolSize> poolSizes = {
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2},        // selectedCount + selectedNodes buffers
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4} // 4 mipmap textures (level 0-3)
-    };
-
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-    poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = 1;
-
-    VkDescriptorPool descriptorPool;
-    Tool::CheckResult(vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &descriptorPool));
-
-    // 分配描述符集
-    VkDescriptorSetAllocateInfo descriptorAllocInfo{};
-    descriptorAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    descriptorAllocInfo.descriptorPool = descriptorPool;
-    descriptorAllocInfo.descriptorSetCount = 1;
-    descriptorAllocInfo.pSetLayouts = &m_solidNodeSelectionB.descriptorSetLayout;
-
-    Tool::CheckResult(vkAllocateDescriptorSets(m_device, &descriptorAllocInfo, &m_solidNodeSelectionB.descriptorSet));
-
-    // 绑定buffer资源到描述符集
-    std::vector<VkWriteDescriptorSet> descriptorWrites;
-
-    // Binding 0: Selected count buffer
-    VkDescriptorBufferInfo selectedCountBufferInfo{};
-    selectedCountBufferInfo.buffer = m_solidNodeSelectionB.selectedCountBuffer.buffer;
-    selectedCountBufferInfo.offset = 0;
-    selectedCountBufferInfo.range = sizeof(uint32_t);
-
-    VkWriteDescriptorSet selectedCountWrite{};
-    selectedCountWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    selectedCountWrite.dstSet = m_solidNodeSelectionB.descriptorSet;
-    selectedCountWrite.dstBinding = 0;
-    selectedCountWrite.dstArrayElement = 0;
-    selectedCountWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    selectedCountWrite.descriptorCount = 1;
-    selectedCountWrite.pBufferInfo = &selectedCountBufferInfo;
-    descriptorWrites.push_back(selectedCountWrite);
-
-    // Binding 1: Selected nodes buffer
-    VkDescriptorBufferInfo selectedNodesBufferInfo{};
-    selectedNodesBufferInfo.buffer = m_solidNodeSelectionB.selectedNodesBuffer.buffer;
-    selectedNodesBufferInfo.offset = 0;
-    selectedNodesBufferInfo.range = sizeof(SolidNodeSelectionB::SolidNode) * SolidNodeSelectionB::MAX_SELECTED_NODES;
-
-    VkWriteDescriptorSet selectedNodesWrite{};
-    selectedNodesWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    selectedNodesWrite.dstSet = m_solidNodeSelectionB.descriptorSet;
-    selectedNodesWrite.dstBinding = 1;
-    selectedNodesWrite.dstArrayElement = 0;
-    selectedNodesWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    selectedNodesWrite.descriptorCount = 1;
-    selectedNodesWrite.pBufferInfo = &selectedNodesBufferInfo;
-    descriptorWrites.push_back(selectedNodesWrite);
-
-    // NOTE: Bindings 2-5: Mipmap textures will be bound dynamically in UpdateSolidNodeSelectionBDescriptorSet()
-    // This is because GPUMipmapOctree textures are created after BuildFromVoxelTexture() is called
-
-    // 更新描述符集 (只更新buffer部分,纹理部分稍后更新)
-    vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
-
-    // === 创建收集管线 (Pass 1-3: SolidNodeCollectionB) ===
+    // === 创建收集管线 (Pass 1-3:) ===
 
     // 创建收集阶段的描述符集布局
     std::vector<VkDescriptorSetLayoutBinding> collectionBindings = {
@@ -8424,25 +8288,35 @@ void Renderer::InitializeSolidNodeSelectionBResources()
         {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}};
+        {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+        {6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+        {7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}
+    };
 
+ 
     VkDescriptorSetLayoutCreateInfo collectionLayoutInfo{};
     collectionLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     collectionLayoutInfo.bindingCount = static_cast<uint32_t>(collectionBindings.size());
     collectionLayoutInfo.pBindings = collectionBindings.data();
-    Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &collectionLayoutInfo, nullptr, &m_solidNodeSelectionB.collectionDescriptorSetLayout));
+    Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &collectionLayoutInfo, nullptr, &multiViewNodeSelection_.collectionDescriptorSetLayout));
+
+    struct {
+        uint32_t BaseSize;
+        uint32_t CurrentLevel;
+    }pushConst;
+    VkPushConstantRange pushConstantRange{Init::pushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, sizeof(pushConst), 0)};
 
     // 创建收集管线布局
     VkPipelineLayoutCreateInfo collectionPipelineLayoutInfo{};
     collectionPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     collectionPipelineLayoutInfo.setLayoutCount = 1;
-    collectionPipelineLayoutInfo.pSetLayouts = &m_solidNodeSelectionB.collectionDescriptorSetLayout;
+    collectionPipelineLayoutInfo.pSetLayouts = &multiViewNodeSelection_.collectionDescriptorSetLayout;
     collectionPipelineLayoutInfo.pushConstantRangeCount = 1;
     collectionPipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-    Tool::CheckResult(vkCreatePipelineLayout(m_device, &collectionPipelineLayoutInfo, nullptr, &m_solidNodeSelectionB.collectionPipelineLayout));
+    Tool::CheckResult(vkCreatePipelineLayout(m_device, &collectionPipelineLayoutInfo, nullptr, &multiViewNodeSelection_.collectionPipelineLayout));
 
     // 创建收集管线
-    std::string collectionShaderPath = Tool::GetShadersPath() + "SolidNodeCollectionB.Comp.spv";
+    std::string collectionShaderPath = Tool::GetShadersPath() + "MultiView/MultiViewNodeSelection.Comp.spv";
     VkShaderModule collectionShaderModule = Tool::LoadShader(collectionShaderPath.c_str(), m_device);
 
     VkComputePipelineCreateInfo collectionComputePipelineInfo{};
@@ -8451,70 +8325,42 @@ void Renderer::InitializeSolidNodeSelectionBResources()
     collectionComputePipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
     collectionComputePipelineInfo.stage.module = collectionShaderModule;
     collectionComputePipelineInfo.stage.pName = "main";
-    collectionComputePipelineInfo.layout = m_solidNodeSelectionB.collectionPipelineLayout;
+    collectionComputePipelineInfo.layout = multiViewNodeSelection_.collectionPipelineLayout;
 
     Tool::CheckResult(
-        vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &collectionComputePipelineInfo, nullptr, &m_solidNodeSelectionB.collectionPipeline));
+        vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &collectionComputePipelineInfo, nullptr, &multiViewNodeSelection_.collectionPipeline));
     vkDestroyShaderModule(m_device, collectionShaderModule, nullptr);
 
-    // === 创建收集阶段的描述符集 ===
-
-    // 创建收集阶段的描述符池
-    std::vector<VkDescriptorPoolSize> collectionPoolSizes = {
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2},        // candidateCount + candidateNodes buffers
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4} // 4 mipmap textures
-    };
-
-    VkDescriptorPoolCreateInfo collectionPoolInfo{};
-    collectionPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    collectionPoolInfo.poolSizeCount = static_cast<uint32_t>(collectionPoolSizes.size());
-    collectionPoolInfo.pPoolSizes = collectionPoolSizes.data();
-    collectionPoolInfo.maxSets = 1;
-
-    VkDescriptorPool collectionDescriptorPool;
-    Tool::CheckResult(vkCreateDescriptorPool(m_device, &collectionPoolInfo, nullptr, &collectionDescriptorPool));
 
     // 分配收集阶段的描述符集
-    VkDescriptorSetAllocateInfo collectionAllocInfo{};
-    collectionAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    collectionAllocInfo.descriptorPool = collectionDescriptorPool;
-    collectionAllocInfo.descriptorSetCount = 1;
-    collectionAllocInfo.pSetLayouts = &m_solidNodeSelectionB.collectionDescriptorSetLayout;
-    Tool::CheckResult(vkAllocateDescriptorSets(m_device, &collectionAllocInfo, &m_solidNodeSelectionB.collectionDescriptorSet));
+    VkDescriptorSetAllocateInfo collectionAllocInfo{
+        Init::descriptorSetAllocateInfo(m_descriptorPool, &multiViewNodeSelection_.collectionDescriptorSetLayout, 1)};
+    Tool::CheckResult(vkAllocateDescriptorSets(m_device, &collectionAllocInfo, &multiViewNodeSelection_.collectionDescriptorSet));
 
     // 绑定收集阶段的缓冲区
     std::vector<VkWriteDescriptorSet> collectionDescriptorWrites;
 
     // Binding 0: Candidate count buffer
-    VkDescriptorBufferInfo candidateCountBufferInfo{};
-    candidateCountBufferInfo.buffer = m_solidNodeSelectionB.candidateCountBuffer.buffer;
-    candidateCountBufferInfo.offset = 0;
-    candidateCountBufferInfo.range = sizeof(uint32_t);
 
     VkWriteDescriptorSet candidateCountWrite{};
     candidateCountWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    candidateCountWrite.dstSet = m_solidNodeSelectionB.collectionDescriptorSet;
+    candidateCountWrite.dstSet = multiViewNodeSelection_.collectionDescriptorSet;
     candidateCountWrite.dstBinding = 0;
     candidateCountWrite.dstArrayElement = 0;
     candidateCountWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     candidateCountWrite.descriptorCount = 1;
-    candidateCountWrite.pBufferInfo = &candidateCountBufferInfo;
+    candidateCountWrite.pBufferInfo = &multiViewNodeSelection_.candidateCountBuffer.descriptor;
     collectionDescriptorWrites.push_back(candidateCountWrite);
 
     // Binding 1: Candidate nodes buffer
-    VkDescriptorBufferInfo candidateNodesBufferInfo{};
-    candidateNodesBufferInfo.buffer = m_solidNodeSelectionB.candidateNodesBuffer.buffer;
-    candidateNodesBufferInfo.offset = 0;
-    candidateNodesBufferInfo.range = sizeof(SolidNodeSelectionB::SolidNode) * SolidNodeSelectionB::MAX_CANDIDATE_NODES;
-
     VkWriteDescriptorSet candidateNodesWrite{};
     candidateNodesWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    candidateNodesWrite.dstSet = m_solidNodeSelectionB.collectionDescriptorSet;
+    candidateNodesWrite.dstSet = multiViewNodeSelection_.collectionDescriptorSet;
     candidateNodesWrite.dstBinding = 1;
     candidateNodesWrite.dstArrayElement = 0;
     candidateNodesWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     candidateNodesWrite.descriptorCount = 1;
-    candidateNodesWrite.pBufferInfo = &candidateNodesBufferInfo;
+    candidateNodesWrite.pBufferInfo = &multiViewNodeSelection_.candidateNodesBuffer.descriptor;
     collectionDescriptorWrites.push_back(candidateNodesWrite);
 
     // 更新收集阶段描述符集（纹理绑定稍后在UpdateSolidNodeSelectionBDescriptorSet中处理）
@@ -8562,26 +8408,26 @@ void Renderer::InitializeSolidNodeSelectionBResources()
     finalSelectionLayoutInfo.bindingCount = static_cast<uint32_t>(finalSelectionBindings.size());
     finalSelectionLayoutInfo.pBindings = finalSelectionBindings.data();
     Tool::CheckResult(
-        vkCreateDescriptorSetLayout(m_device, &finalSelectionLayoutInfo, nullptr, &m_solidNodeSelectionB.finalSelectionDescriptorSetLayout));
+        vkCreateDescriptorSetLayout(m_device, &finalSelectionLayoutInfo, nullptr, &multiViewNodeSelection_.finalSelectionDescriptorSetLayout));
 
     // 创建最终选择管线布局
     VkPipelineLayoutCreateInfo finalSelectionPipelineLayoutInfo{};
     finalSelectionPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     finalSelectionPipelineLayoutInfo.setLayoutCount = 1;
-    finalSelectionPipelineLayoutInfo.pSetLayouts = &m_solidNodeSelectionB.finalSelectionDescriptorSetLayout;
+    finalSelectionPipelineLayoutInfo.pSetLayouts = &multiViewNodeSelection_.finalSelectionDescriptorSetLayout;
     Tool::CheckResult(
-        vkCreatePipelineLayout(m_device, &finalSelectionPipelineLayoutInfo, nullptr, &m_solidNodeSelectionB.finalSelectionPipelineLayout));
+        vkCreatePipelineLayout(m_device, &finalSelectionPipelineLayoutInfo, nullptr, &multiViewNodeSelection_.finalSelectionPipelineLayout));
 
     // 分配最终选择管线描述符集
     VkDescriptorSetAllocateInfo finalSelectionAllocInfo{};
     finalSelectionAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     finalSelectionAllocInfo.descriptorPool = m_descriptorPool;
     finalSelectionAllocInfo.descriptorSetCount = 1;
-    finalSelectionAllocInfo.pSetLayouts = &m_solidNodeSelectionB.finalSelectionDescriptorSetLayout;
-    Tool::CheckResult(vkAllocateDescriptorSets(m_device, &finalSelectionAllocInfo, &m_solidNodeSelectionB.finalSelectionDescriptorSet));
+    finalSelectionAllocInfo.pSetLayouts = &multiViewNodeSelection_.finalSelectionDescriptorSetLayout;
+    Tool::CheckResult(vkAllocateDescriptorSets(m_device, &finalSelectionAllocInfo, &multiViewNodeSelection_.finalSelectionDescriptorSet));
 
     // 创建最终选择管线
-    std::string finalSelectionShaderPath = Tool::GetShadersPath() + "SolidNodeSelectionB_Final.Comp.spv";
+    std::string finalSelectionShaderPath = Tool::GetShadersPath() + "MultiView/MultiViewNodeSelectionFinal.Comp.spv";
     VkShaderModule finalSelectionShaderModule = Tool::LoadShader(finalSelectionShaderPath.c_str(), m_device);
 
     VkPipelineShaderStageCreateInfo finalSelectionShaderStageInfo{};
@@ -8592,78 +8438,59 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 
     VkComputePipelineCreateInfo finalSelectionComputePipelineInfo{};
     finalSelectionComputePipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-    finalSelectionComputePipelineInfo.layout = m_solidNodeSelectionB.finalSelectionPipelineLayout;
+    finalSelectionComputePipelineInfo.layout = multiViewNodeSelection_.finalSelectionPipelineLayout;
     finalSelectionComputePipelineInfo.stage = finalSelectionShaderStageInfo;
 
     Tool::CheckResult(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &finalSelectionComputePipelineInfo, nullptr,
-                                               &m_solidNodeSelectionB.finalSelectionPipeline));
+                                               &multiViewNodeSelection_.finalSelectionPipeline));
     vkDestroyShaderModule(m_device, finalSelectionShaderModule, nullptr);
 
     // 绑定最终选择描述符集
     std::vector<VkWriteDescriptorSet> finalSelectionDescriptorWrites;
 
     // Binding 0: candidateCountBuffer (read-only)
-    VkDescriptorBufferInfo candidateCountFinalBufferInfo{};
-    candidateCountFinalBufferInfo.buffer = m_solidNodeSelectionB.candidateCountBuffer.buffer;
-    candidateCountFinalBufferInfo.offset = 0;
-    candidateCountFinalBufferInfo.range = sizeof(uint32_t);
 
     VkWriteDescriptorSet candidateCountFinalWrite{};
     candidateCountFinalWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    candidateCountFinalWrite.dstSet = m_solidNodeSelectionB.finalSelectionDescriptorSet;
+    candidateCountFinalWrite.dstSet = multiViewNodeSelection_.finalSelectionDescriptorSet;
     candidateCountFinalWrite.dstBinding = 0;
     candidateCountFinalWrite.dstArrayElement = 0;
     candidateCountFinalWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     candidateCountFinalWrite.descriptorCount = 1;
-    candidateCountFinalWrite.pBufferInfo = &candidateCountFinalBufferInfo;
+    candidateCountFinalWrite.pBufferInfo = &multiViewNodeSelection_.candidateCountBuffer.descriptor;
     finalSelectionDescriptorWrites.push_back(candidateCountFinalWrite);
 
     // Binding 1: candidateNodesBuffer (read-only)
-    VkDescriptorBufferInfo candidateNodesFinalBufferInfo{};
-    candidateNodesFinalBufferInfo.buffer = m_solidNodeSelectionB.candidateNodesBuffer.buffer;
-    candidateNodesFinalBufferInfo.offset = 0;
-    candidateNodesFinalBufferInfo.range = sizeof(SolidNodeSelectionB::SolidNode) * SolidNodeSelectionB::MAX_CANDIDATE_NODES;
-
     VkWriteDescriptorSet candidateNodesFinalWrite{};
     candidateNodesFinalWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    candidateNodesFinalWrite.dstSet = m_solidNodeSelectionB.finalSelectionDescriptorSet;
+    candidateNodesFinalWrite.dstSet = multiViewNodeSelection_.finalSelectionDescriptorSet;
     candidateNodesFinalWrite.dstBinding = 1;
     candidateNodesFinalWrite.dstArrayElement = 0;
     candidateNodesFinalWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     candidateNodesFinalWrite.descriptorCount = 1;
-    candidateNodesFinalWrite.pBufferInfo = &candidateNodesFinalBufferInfo;
+    candidateNodesFinalWrite.pBufferInfo = &multiViewNodeSelection_.candidateNodesBuffer.descriptor;
     finalSelectionDescriptorWrites.push_back(candidateNodesFinalWrite);
 
     // Binding 2: finalCountBuffer (selectedCountBuffer重用)
-    VkDescriptorBufferInfo finalCountBufferInfo{};
-    finalCountBufferInfo.buffer = m_solidNodeSelectionB.selectedCountBuffer.buffer;
-    finalCountBufferInfo.offset = 0;
-    finalCountBufferInfo.range = sizeof(uint32_t);
-
     VkWriteDescriptorSet finalCountWrite{};
     finalCountWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    finalCountWrite.dstSet = m_solidNodeSelectionB.finalSelectionDescriptorSet;
+    finalCountWrite.dstSet = multiViewNodeSelection_.finalSelectionDescriptorSet;
     finalCountWrite.dstBinding = 2;
     finalCountWrite.dstArrayElement = 0;
     finalCountWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     finalCountWrite.descriptorCount = 1;
-    finalCountWrite.pBufferInfo = &finalCountBufferInfo;
+    finalCountWrite.pBufferInfo = &multiViewNodeSelection_.selectedCountBuffer.descriptor;
     finalSelectionDescriptorWrites.push_back(finalCountWrite);
 
     // Binding 3: finalNodesBuffer (selectedNodesBuffer重用)
-    VkDescriptorBufferInfo finalNodesBufferInfo{};
-    finalNodesBufferInfo.buffer = m_solidNodeSelectionB.selectedNodesBuffer.buffer;
-    finalNodesBufferInfo.offset = 0;
-    finalNodesBufferInfo.range = sizeof(SolidNodeSelectionB::SolidNode) * SolidNodeSelectionB::MAX_SELECTED_NODES;
-
     VkWriteDescriptorSet finalNodesWrite{};
     finalNodesWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    finalNodesWrite.dstSet = m_solidNodeSelectionB.finalSelectionDescriptorSet;
+    finalNodesWrite.dstSet = multiViewNodeSelection_.finalSelectionDescriptorSet;
     finalNodesWrite.dstBinding = 3;
     finalNodesWrite.dstArrayElement = 0;
     finalNodesWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     finalNodesWrite.descriptorCount = 1;
-    finalNodesWrite.pBufferInfo = &finalNodesBufferInfo;
+    finalNodesWrite.pBufferInfo = &multiViewNodeSelection_.selectedNodesBuffer.descriptor;
     finalSelectionDescriptorWrites.push_back(finalNodesWrite);
 
     // 更新最终选择描述符集
@@ -8673,7 +8500,7 @@ void Renderer::InitializeSolidNodeSelectionBResources()
 }
 
 // Update descriptor set with mipmap textures for Solid Node Selection B
-void Renderer::UpdateSolidNodeSelectionBDescriptorSet()
+void Renderer::UpdateMultiviewNodeSelectionDescriptorSet()
 {
     std::vector<VkWriteDescriptorSet> descriptorWrites;
     std::vector<VkDescriptorImageInfo> imageInfos;
@@ -8684,7 +8511,7 @@ void Renderer::UpdateSolidNodeSelectionBDescriptorSet()
     descriptorWrites.reserve(maxUsedLevel);
 
     // 收集所有mipmap纹理的image info
-    for (uint32_t level = 0; level < maxUsedLevel; ++level)
+    for (uint32_t level = 0; level <= maxUsedLevel; ++level)
     {
         VkImageView mipmapView = m_gpuMipmapOctree->GetMipLevelView(level);
         if (mipmapView == VK_NULL_HANDLE)
@@ -8692,7 +8519,6 @@ void Renderer::UpdateSolidNodeSelectionBDescriptorSet()
             printf("WARNING: Mip level %u view is null\n", level);
             return;
         }
-
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
         imageInfo.imageView = mipmapView;
@@ -8700,32 +8526,15 @@ void Renderer::UpdateSolidNodeSelectionBDescriptorSet()
         imageInfos.push_back(imageInfo);
     }
 
-    // 创建descriptor writes，引用稳定的imageInfos
-    for (uint32_t level = 0; level < maxUsedLevel; ++level)
-    {
-        VkWriteDescriptorSet descriptorWrite{};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = m_solidNodeSelectionB.descriptorSet;
-        descriptorWrite.dstBinding = 2 + level; // Bindings 2-5 (Level 0-3)
-        descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; // 匹配layout中的类型
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pImageInfo = &imageInfos[level];
-        descriptorWrites.push_back(descriptorWrite);
-    }
-
-    // Update descriptor set with mipmap textures
-    vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
-
     // === 同时更新收集管线的描述符集纹理绑定 ===
     std::vector<VkWriteDescriptorSet> collectionDescriptorWrites;
 
     // 创建收集管线的descriptor writes，引用同样的imageInfos
-    for (uint32_t level = 0; level < maxUsedLevel; ++level)
+    for (uint32_t level = 0; level <= maxUsedLevel; ++level)
     {
         VkWriteDescriptorSet collectionWrite{};
         collectionWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        collectionWrite.dstSet = m_solidNodeSelectionB.collectionDescriptorSet;
+        collectionWrite.dstSet = multiViewNodeSelection_.collectionDescriptorSet;
         collectionWrite.dstBinding = 2 + level; // Bindings 2-5 (Level 0-3) in collection shader
         collectionWrite.dstArrayElement = 0;
         collectionWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -8740,8 +8549,8 @@ void Renderer::UpdateSolidNodeSelectionBDescriptorSet()
     printf("Solid Node Selection B descriptor sets updated with mipmap textures (both original and collection pipelines)\n");
 }
 
-// Execute Solid Node Selection B - Single dispatch per level (3->2->1->0)
-void Renderer::ExecuteSolidNodeSelectionB(VkCommandBuffer commandBuffer)
+// Execute Node Selection 
+void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
 {
     // === Multi-Pass执行架构 ===
     // Pass 1-3: 收集候选节点（level 3→2→1）
@@ -8750,28 +8559,32 @@ void Renderer::ExecuteSolidNodeSelectionB(VkCommandBuffer commandBuffer)
     // === Phase 1: 清零所有计数器 ===
 
     // 清零候选节点计数器
-    vkCmdFillBuffer(commandBuffer, m_solidNodeSelectionB.candidateCountBuffer.buffer, 0, sizeof(uint32_t), 0);
+    vkCmdFillBuffer(commandBuffer, multiViewNodeSelection_.candidateCountBuffer.buffer, 0, sizeof(uint32_t), 0);
 
     // 清零最终节点计数器
-    vkCmdFillBuffer(commandBuffer, m_solidNodeSelectionB.selectedCountBuffer.buffer, 0, VK_WHOLE_SIZE, 0);
+    vkCmdFillBuffer(commandBuffer, multiViewNodeSelection_.selectedCountBuffer.buffer, 0, VK_WHOLE_SIZE, 0);
 
     // === Phase 2: Pass 1-3 候选节点收集 (Level 3→2→1) ===
 
     // 绑定收集管线
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_solidNodeSelectionB.collectionPipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_solidNodeSelectionB.collectionPipelineLayout, 0, 1,
-                            &m_solidNodeSelectionB.collectionDescriptorSet, 0, nullptr);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.collectionPipeline);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.collectionPipelineLayout, 0, 1,
+                            &multiViewNodeSelection_.collectionDescriptorSet, 0, nullptr);
 
-    // 执行Level 3, 2, 1（跳过Level 0，因为它太细了）
-    for (int32_t level = 3; level >= 1; --level)
+
+
+    multiViewNodeSelection_.CollectionPushConstant.BaseSize = config_->Sdf.Resolution;
+    // 执行Level max,... 0
+    // 应当从8x8x8开始选择, 直到base, 所以需要动态计算开始level.
+    // 理想的base范围为[8,128]
+    for (int32_t level = m_gpuMipmapOctree->GetMaxLevel()-1; level >= 0; --level)
     {
         // 设置当前level
-        uint32_t currentLevel = static_cast<uint32_t>(level);
-        vkCmdPushConstants(commandBuffer, m_solidNodeSelectionB.collectionPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t),
-                           &currentLevel);
+        multiViewNodeSelection_.CollectionPushConstant.CurrentLevel = static_cast<uint32_t>(level);
+        vkCmdPushConstants(commandBuffer, multiViewNodeSelection_.collectionPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(MultiViewSolidNodeSelection::CollectionPushConstantDesc), &multiViewNodeSelection_.CollectionPushConstant);
 
         // 计算dispatch尺寸（使用GRID_SIZE=32作为基础）
-        uint32_t gridSize = 32 >> level;         // Level 3: 4, Level 2: 8, Level 1: 16
+        uint32_t gridSize = config_->Sdf.Resolution >> static_cast<uint32_t>(level); // Level 3: 4, Level 2: 8, Level 1: 16
         uint32_t dispatchX = (gridSize + 3) / 4; // 4x4x4 workgroup
         uint32_t dispatchY = (gridSize + 3) / 4;
         uint32_t dispatchZ = (gridSize + 3) / 4;
@@ -8792,7 +8605,7 @@ void Renderer::ExecuteSolidNodeSelectionB(VkCommandBuffer commandBuffer)
             bufferBarriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT; // 下一个shader会读写它
             bufferBarriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             bufferBarriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            bufferBarriers[0].buffer = m_solidNodeSelectionB.candidateCountBuffer.buffer;
+            bufferBarriers[0].buffer = multiViewNodeSelection_.candidateCountBuffer.buffer;
             bufferBarriers[0].offset = 0;
             bufferBarriers[0].size = VK_WHOLE_SIZE;
 
@@ -8806,7 +8619,7 @@ void Renderer::ExecuteSolidNodeSelectionB(VkCommandBuffer commandBuffer)
             bufferBarriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             // 注意: 这里需要填入您的 candidateNodesBuffer 的 VkBuffer 句柄
             // 根据您代码的其他部分，它应该在 m_solidNodeSelectionB 结构体中
-            bufferBarriers[1].buffer = m_solidNodeSelectionB.candidateNodesBuffer.buffer;
+            bufferBarriers[1].buffer = multiViewNodeSelection_.candidateNodesBuffer.buffer;
             bufferBarriers[1].offset = 0;
             bufferBarriers[1].size = VK_WHOLE_SIZE;
 
@@ -8833,9 +8646,9 @@ void Renderer::ExecuteSolidNodeSelectionB(VkCommandBuffer commandBuffer)
     // === Phase 3: Pass 4 最终选择（包含检查）===
 
     // 绑定最终选择管线
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_solidNodeSelectionB.finalSelectionPipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_solidNodeSelectionB.finalSelectionPipelineLayout, 0, 1,
-                            &m_solidNodeSelectionB.finalSelectionDescriptorSet, 0, nullptr);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.finalSelectionPipeline);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.finalSelectionPipelineLayout, 0, 1,
+                            &multiViewNodeSelection_.finalSelectionDescriptorSet, 0, nullptr);
 
     // === 优化：动态读取候选节点数量来精确计算dispatch尺寸 ===
 
@@ -8851,81 +8664,58 @@ void Renderer::ExecuteSolidNodeSelectionB(VkCommandBuffer commandBuffer)
     // 需要提交命令缓冲区并等待，以便读取候选节点数量
     // 为了优化，我们可以使用间接dispatch或保守估计
     // 这里先使用保守但更合理的估计：基于level数量
-    uint32_t estimatedCandidates = 64 + 32 + 16;                  // Level 3: 4³=64, Level 2: 8³=512太多，保守估计
+    uint32_t estimatedCandidates = multiViewNodeSelection_.MAX_CANDIDATE_NODES;       // Level 3: 4³=64, Level 2: 8³=512太多，保守估计
     uint32_t optimizedDispatch = (estimatedCandidates + 63) / 64; // 约2个workgroup而不是16个
 
-    printf("Optimized final selection dispatch: %u workgroups (estimated %u candidates)\n", optimizedDispatch, estimatedCandidates);
+    //printf("Optimized final selection dispatch: %u workgroups (estimated %u candidates)\n", optimizedDispatch, estimatedCandidates);
 
     vkCmdDispatch(commandBuffer, optimizedDispatch, 1, 1);
 
-    printf("Solid Node Selection B executed (multi-pass: 3 collection passes + 1 final selection pass)\n");
+    //printf("Solid Node Selection B executed (multi-pass: 3 collection passes + 1 final selection pass)\n");
 }
-
-// Validate and debug Solid Node Selection B results
-void Renderer::ValidateSolidNodeSelectionBResults()
+void Renderer::MultiViewSolidNodeSelection::cleanup(VkDevice device)
 {
-    // Read back selected count
-    VkMemoryMapFlags mapFlags = 0;
-    void* selectedCountData;
-    Tool::CheckResult(vkMapMemory(m_device, m_solidNodeSelectionB.selectedCountBuffer.memory, 0, sizeof(uint32_t), mapFlags, &selectedCountData));
-    uint32_t selectedCount;
-    memcpy(&selectedCount, selectedCountData, sizeof(uint32_t));
-    vkUnmapMemory(m_device, m_solidNodeSelectionB.selectedCountBuffer.memory);
 
-    m_solidNodeSelectionB.actualNodeCount = selectedCount;
-    printf("Solid Node Selection B Results:\n");
-    printf("  Selected Count: %u (max: %u)\n", selectedCount, SolidNodeSelectionB::MAX_SELECTED_NODES);
 
-    if (selectedCount == 0)
+    // 清理收集管线
+    if (collectionPipeline != VK_NULL_HANDLE)
     {
-        printf("  WARNING: No nodes selected!\n");
-        return;
+        vkDestroyPipeline(device, collectionPipeline, nullptr);
+        collectionPipeline = VK_NULL_HANDLE;
+    }
+    if (collectionPipelineLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineLayout(device, collectionPipelineLayout, nullptr);
+        collectionPipelineLayout = VK_NULL_HANDLE;
+    }
+    if (collectionDescriptorSetLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorSetLayout(device, collectionDescriptorSetLayout, nullptr);
+        collectionDescriptorSetLayout = VK_NULL_HANDLE;
     }
 
-    if (selectedCount > SolidNodeSelectionB::MAX_SELECTED_NODES)
+    // 清理最终选择管线
+    if (finalSelectionPipeline != VK_NULL_HANDLE)
     {
-        printf("  WARNING: Selected count exceeds maximum! Count will be clamped.\n");
-        selectedCount = SolidNodeSelectionB::MAX_SELECTED_NODES;
+        vkDestroyPipeline(device, finalSelectionPipeline, nullptr);
+        finalSelectionPipeline = VK_NULL_HANDLE;
+    }
+    if (finalSelectionPipelineLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineLayout(device, finalSelectionPipelineLayout, nullptr);
+        finalSelectionPipelineLayout = VK_NULL_HANDLE;
+    }
+    if (finalSelectionDescriptorSetLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorSetLayout(device, finalSelectionDescriptorSetLayout, nullptr);
+        finalSelectionDescriptorSetLayout = VK_NULL_HANDLE;
     }
 
-    // Read back selected nodes
-    void* selectedNodesData;
-    size_t selectedNodesSize = sizeof(SolidNodeSelectionB::SolidNode) * selectedCount;
-    Tool::CheckResult(vkMapMemory(m_device, m_solidNodeSelectionB.selectedNodesBuffer.memory, 0, selectedNodesSize, mapFlags, &selectedNodesData));
-
-    SolidNodeSelectionB::SolidNode* nodes = static_cast<SolidNodeSelectionB::SolidNode*>(selectedNodesData);
-
-    printf("  Selected Nodes (showing first %u):\n", std::min(selectedCount, 10u));
-    for (uint32_t i = 0; i < std::min(selectedCount, 10u); ++i)
-    {
-        const auto& node = nodes[i];
-        printf("    [%u] Level:%u Center:(%.3f,%.3f,%.3f) Size:%.3f\n", i, node.level, node.center[0], node.center[1], node.center[2], node.size);
-    }
-
-    // Validate level priority (higher levels should come first)
-    bool levelPriorityValid = true;
-    for (uint32_t i = 1; i < selectedCount; ++i)
-    {
-        if (nodes[i].level > nodes[i - 1].level)
-        {
-            levelPriorityValid = false;
-            break;
-        }
-    }
-    printf("  Level Priority Order: %s\n", levelPriorityValid ? "VALID" : "INVALID");
-
-    // Count nodes per level
-    uint32_t levelCounts[4] = {0, 0, 0, 0};
-    for (uint32_t i = 0; i < selectedCount; ++i)
-    {
-        if (nodes[i].level < 4)
-        {
-            levelCounts[nodes[i].level]++;
-        }
-    }
-    printf("  Node Distribution: L3:%u, L2:%u, L1:%u, L0:%u\n", levelCounts[3], levelCounts[2], levelCounts[1], levelCounts[0]);
-
-    vkUnmapMemory(m_device, m_solidNodeSelectionB.selectedNodesBuffer.memory);
+    // 清理缓冲区
+    candidateNodesBuffer.Destroy();
+    candidateCountBuffer.Destroy();
+    selectedNodesBuffer.Destroy();
+    selectedCountBuffer.Destroy();
 }
 
 /// @brief 初始化阶段四版本B：多视角深度SDF资源
@@ -8958,7 +8748,7 @@ void Renderer::InitializeGPUDataPreparation()
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, // GPU-only
                                                    &m_gpuDataPreparation.cameraMatricesBuffer_GPU,
-                                                   sizeof(CameraMatrix) * MultiViewDepthSDF::MAX_CAMERAS));
+                                                   sizeof(CameraMatrix) * config_->Sdf.MultiViewUsedCameraNum));
 
     // 活跃相机数量缓冲区
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -8969,7 +8759,7 @@ void Renderer::InitializeGPUDataPreparation()
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, // GPU-only
                                                    &m_gpuDataPreparation.indirectDrawBuffer_GPU,
-                                                   sizeof(VkDrawIndexedIndirectCommand) * MultiViewDepthSDF::MAX_CAMERAS));
+                                                   sizeof(VkDrawIndexedIndirectCommand) * config_->Sdf.MultiViewUsedCameraNum));
 
     // === 创建相机矩阵准备管线 ===
     CreateCameraMatrixPreparationPipeline();
@@ -9010,13 +8800,13 @@ void Renderer::BindGPUDataPreparationDescriptors()
     VkDescriptorBufferInfo selectedNodesBufferInfo{};
     if (m_useSolidNodeSelectionB)
     {
-        selectedNodesBufferInfo.buffer = m_solidNodeSelectionB.selectedNodesBuffer.buffer;
-        selectedNodesBufferInfo.range = sizeof(SolidNodeSelectionB::SolidNode) * SolidNodeSelectionB::MAX_SELECTED_NODES;
+        selectedNodesBufferInfo.buffer = multiViewNodeSelection_.selectedNodesBuffer.buffer;
+        selectedNodesBufferInfo.range = sizeof(MultiViewSolidNodeSelection::SolidNode) * config_->Sdf.MultiViewUsedCameraNum;
     }
     else
     {
-        selectedNodesBufferInfo.buffer = m_solidNodeSelection.solidNodeBuffer.buffer;
-        selectedNodesBufferInfo.range = sizeof(SolidNodeSelection::SolidNode) * SolidNodeSelection::MAX_SOLID_NODES;
+        selectedNodesBufferInfo.buffer = analyticalNodeSelection_.solidNodeBuffer.buffer;
+        selectedNodesBufferInfo.range = sizeof(AnalyticalSolidNodeSelection::SolidNode) * AnalyticalSolidNodeSelection::MAX_SOLID_NODES;
     }
     selectedNodesBufferInfo.offset = 0;
 
@@ -9123,11 +8913,11 @@ void Renderer::ExecuteGPUDataPreparation(VkCommandBuffer cmd)
     // 推送参数：相机数限制 + 坐标变换参数 (与voxelization一致)
     struct CameraMatrixPushConstants
     {
-        uint32_t maxCameraCount = MultiViewDepthSDF4C::MAX_CAMERAS; // 最大相机数限制 (10)
+        uint32_t maxCameraCount{}; // 最大相机数限制 (10)
         glm::vec3 modelCenter;                                      // 模型中心，与voxelization一致
         float halfSizeWithMargin;                                   // 包含边距的半尺寸，与voxelization一致
     } cameraPC;
-
+    cameraPC.maxCameraCount = config_->Sdf.MultiViewUsedCameraNum;
     cameraPC.modelCenter = glm::vec3(0.0f);
     cameraPC.halfSizeWithMargin = 1.0f;
 
@@ -9189,9 +8979,9 @@ void Renderer::InitializeAnalyticalSDFGenerationResources()
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_3D;
-    imageInfo.extent.width = m_config->Sdf.Resolution;
-    imageInfo.extent.height = m_config->Sdf.Resolution;
-    imageInfo.extent.depth = m_config->Sdf.Resolution;
+    imageInfo.extent.width = config_->Sdf.Resolution;
+    imageInfo.extent.height = config_->Sdf.Resolution;
+    imageInfo.extent.depth = config_->Sdf.Resolution;
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.format = VK_FORMAT_R32_SFLOAT;
@@ -9241,8 +9031,8 @@ void Renderer::InitializeAnalyticalSDFGenerationResources()
     // 设置基本属性
     m_analyticalSDFGeneration.sdfTexture.device = m_vulkanDevice;
     m_analyticalSDFGeneration.sdfTexture.format = VK_FORMAT_R16_SFLOAT;
-    m_analyticalSDFGeneration.sdfTexture.width = m_config->Sdf.Resolution;
-    m_analyticalSDFGeneration.sdfTexture.height = m_config->Sdf.Resolution;
+    m_analyticalSDFGeneration.sdfTexture.width = config_->Sdf.Resolution;
+    m_analyticalSDFGeneration.sdfTexture.height = config_->Sdf.Resolution;
     m_analyticalSDFGeneration.sdfTexture.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
     // 注意：图像布局转换将在执行时处理
@@ -9272,7 +9062,7 @@ void Renderer::InitializeAnalyticalSDFGenerationResources()
     Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_analyticalSDFGeneration.pipelineLayout));
 
     // 加载Compute Shader
-    std::string shaderPath = Tool::GetShadersPath() + "AnalyticalSDF.Comp.spv";
+    std::string shaderPath = Tool::GetShadersPath() + "Analytical/AnalyticalSDF.Comp.spv";
     VkShaderModule shaderModule = Tool::LoadShader(shaderPath.c_str(), m_device);
 
     // 创建Compute Pipeline
@@ -9318,7 +9108,7 @@ void Renderer::InitializeAnalyticalSDFGenerationResources()
 
     // Binding 0: Counter buffer (从SolidNodeSelection获取计数)
     VkDescriptorBufferInfo counterBufferInfo{};
-    counterBufferInfo.buffer = m_solidNodeSelection.counterBuffer.buffer; // 共享counter buffer
+    counterBufferInfo.buffer = analyticalNodeSelection_.counterBuffer.buffer; // 共享counter buffer
     counterBufferInfo.offset = 0;
     counterBufferInfo.range = sizeof(uint32_t);
 
@@ -9334,9 +9124,9 @@ void Renderer::InitializeAnalyticalSDFGenerationResources()
 
     // Binding 1: Solid node buffer (从SolidNodeSelection获取节点数据)
     VkDescriptorBufferInfo solidNodeBufferInfo{};
-    solidNodeBufferInfo.buffer = m_solidNodeSelection.solidNodeBuffer.buffer; // 共享solid node buffer
+    solidNodeBufferInfo.buffer = analyticalNodeSelection_.solidNodeBuffer.buffer; // 共享solid node buffer
     solidNodeBufferInfo.offset = 0;
-    solidNodeBufferInfo.range = sizeof(SolidNodeSelection::SolidNode) * SolidNodeSelection::MAX_SOLID_NODES;
+    solidNodeBufferInfo.range = sizeof(AnalyticalSolidNodeSelection::SolidNode) * AnalyticalSolidNodeSelection::MAX_SOLID_NODES;
 
     VkWriteDescriptorSet solidNodeWrite{};
     solidNodeWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -9379,12 +9169,12 @@ void Renderer::UpdateAnalyticalSDFGenerationDescriptorSet()
     VkDescriptorBufferInfo counterBufferInfo{};
     if (m_useSolidNodeSelectionB)
     {
-        counterBufferInfo.buffer = m_solidNodeSelectionB.selectedCountBuffer.buffer;
+        counterBufferInfo.buffer = multiViewNodeSelection_.selectedCountBuffer.buffer;
         counterBufferInfo.range = sizeof(uint32_t);
     }
     else
     {
-        counterBufferInfo.buffer = m_solidNodeSelection.counterBuffer.buffer;
+        counterBufferInfo.buffer = analyticalNodeSelection_.counterBuffer.buffer;
         counterBufferInfo.range = sizeof(uint32_t);
     }
     counterBufferInfo.offset = 0;
@@ -9403,13 +9193,13 @@ void Renderer::UpdateAnalyticalSDFGenerationDescriptorSet()
     VkDescriptorBufferInfo solidNodeBufferInfo{};
     if (m_useSolidNodeSelectionB)
     {
-        solidNodeBufferInfo.buffer = m_solidNodeSelectionB.selectedNodesBuffer.buffer;
-        solidNodeBufferInfo.range = sizeof(SolidNodeSelectionB::SolidNode) * SolidNodeSelectionB::MAX_SELECTED_NODES;
+        solidNodeBufferInfo.buffer = multiViewNodeSelection_.selectedNodesBuffer.buffer;
+        solidNodeBufferInfo.range = sizeof(MultiViewSolidNodeSelection::SolidNode) * config_->Sdf.MultiViewUsedCameraNum;
     }
     else
     {
-        solidNodeBufferInfo.buffer = m_solidNodeSelection.solidNodeBuffer.buffer;
-        solidNodeBufferInfo.range = sizeof(SolidNodeSelection::SolidNode) * SolidNodeSelection::MAX_SOLID_NODES;
+        solidNodeBufferInfo.buffer = analyticalNodeSelection_.solidNodeBuffer.buffer;
+        solidNodeBufferInfo.range = sizeof(AnalyticalSolidNodeSelection::SolidNode) * AnalyticalSolidNodeSelection::MAX_SOLID_NODES;
     }
     solidNodeBufferInfo.offset = 0;
 
@@ -9472,7 +9262,7 @@ void Renderer::UpdateSolidNodeSelectionDescriptorSet()
         return;
     }
 
-    // 准备mipmap纹理的descriptor信息 (Bindings 2-6: 5个mipmap层级)
+    // 准备mipmap纹理的descriptor信息 
     const uint32_t maxUsedLevel = m_gpuMipmapOctree->GetMaxLevel(); // Use levels 0, 1, 2, 3, 4 (5 levels total)
     std::vector<VkWriteDescriptorSet> descriptorWrites;
     std::vector<VkDescriptorImageInfo> imageInfos;
@@ -9487,7 +9277,7 @@ void Renderer::UpdateSolidNodeSelectionDescriptorSet()
     // 为每个mipmap层级创建image info - 限制到level 0-4 (64x64x64 到 4x4x4)
 
     // 先收集所有imageInfo
-    for (uint32_t level = 0; level < maxUsedLevel; ++level)
+    for (uint32_t level = 0; level <= maxUsedLevel; ++level)
     {
         VkImageView mipmapView = m_gpuMipmapOctree->GetMipLevelView(level);
         if (mipmapView == VK_NULL_HANDLE)
@@ -9504,11 +9294,11 @@ void Renderer::UpdateSolidNodeSelectionDescriptorSet()
     }
 
     // 然后创建descriptorWrites，引用稳定的imageInfos
-    for (uint32_t level = 0; level < maxUsedLevel; ++level)
+    for (uint32_t level = 0; level <= maxUsedLevel; ++level)
     {
         VkWriteDescriptorSet descriptorWrite{};
         descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = m_solidNodeSelection.descriptorSet;
+        descriptorWrite.dstSet = analyticalNodeSelection_.descriptorSet;
         descriptorWrite.dstBinding = 2 + level; // Bindings 2-6
         descriptorWrite.dstArrayElement = 0;
         descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -9520,17 +9310,17 @@ void Renderer::UpdateSolidNodeSelectionDescriptorSet()
     // 更新descriptor set
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 
-    printf("SolidNodeSelection: Mipmap textures bound to descriptor set (levels 0-%d)\n", maxUsedLevel - 1);
+    printf("AnalyticalSolidNodeSelection: Mipmap textures bound to descriptor set (levels 0-%d)\n", maxUsedLevel);
 }
 
-void Renderer::ExecuteSolidNodeSelection(VkCommandBuffer cmd)
+void Renderer::ExecuteAnalyticalNodeSelection(VkCommandBuffer cmd)
 {
     // NOTE: UpdateSolidNodeSelectionDescriptorSet is now called during initialization
     // in InitializeUnifiedGPUPipelineResources(), so descriptor set is ready to use
 
     // 重置计数器
     uint32_t zero = 0;
-    vkCmdFillBuffer(cmd, m_solidNodeSelection.counterBuffer.buffer, 0, sizeof(uint32_t), 0);
+    vkCmdFillBuffer(cmd, analyticalNodeSelection_.counterBuffer.buffer, 0, sizeof(uint32_t), 0);
 
     // 内存屏障：确保计数器重置完成
     VkMemoryBarrier barrier{};
@@ -9540,19 +9330,19 @@ void Renderer::ExecuteSolidNodeSelection(VkCommandBuffer cmd)
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
 
     // 绑定管线和描述符集
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_solidNodeSelection.pipeline);
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_solidNodeSelection.pipelineLayout, 0, 1, &m_solidNodeSelection.descriptorSet, 0,
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, analyticalNodeSelection_.pipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, analyticalNodeSelection_.pipelineLayout, 0, 1, &analyticalNodeSelection_.descriptorSet, 0,
                             nullptr);
 
-    SolidNodeSelection::SolidNodeSelectionPushConstant pushConstants;
-    pushConstants.SampledLevel = m_config->Sdf.AnalyticalSampledLevel;
-    pushConstants.BaseSize = m_config->Sdf.Resolution; // 64
+    AnalyticalSolidNodeSelection::SolidNodeSelectionPushConstant pushConstants;
+    pushConstants.SampledLevel = config_->Sdf.AnalyticalSampledLevel;
+    pushConstants.BaseSize = config_->Sdf.Resolution; // 64
     pushConstants.modelCenter = glm::vec3(0.0f, 0.0f, 0.0f);
     pushConstants.halfSizeWithMargin = 1.0f;
 
-    vkCmdPushConstants(cmd, m_solidNodeSelection.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pushConstants), &pushConstants);
+    vkCmdPushConstants(cmd, analyticalNodeSelection_.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pushConstants), &pushConstants);
 
-    uint32_t levelSize = m_config->Sdf.Resolution >> m_config->Sdf.AnalyticalSampledLevel;
+    uint32_t levelSize = config_->Sdf.Resolution >> config_->Sdf.AnalyticalSampledLevel;
     uint32_t groupSize = 4;
     uint32_t groupCountX = (levelSize + groupSize - 1) / groupSize;
     uint32_t groupCountY = (levelSize + groupSize - 1) / groupSize;
@@ -9569,7 +9359,7 @@ void Renderer::ExecuteVoxelizationMarkPass(VkCommandBuffer cmd)
     // === 开始Dynamic Rendering ===
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    renderingInfo.renderArea = {{0, 0}, {m_config->Sdf.Resolution, m_config->Sdf.Resolution}};
+    renderingInfo.renderArea = {{0, 0}, {config_->Sdf.Resolution, config_->Sdf.Resolution}};
     renderingInfo.layerCount = 1;
     renderingInfo.colorAttachmentCount = 0;
     renderingInfo.pColorAttachments = nullptr;
@@ -9582,15 +9372,15 @@ void Renderer::ExecuteVoxelizationMarkPass(VkCommandBuffer cmd)
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width =static_cast<float>(m_config->Sdf.Resolution);
-    viewport.height = static_cast<float>(m_config->Sdf.Resolution);
+    viewport.width =static_cast<float>(config_->Sdf.Resolution);
+    viewport.height = static_cast<float>(config_->Sdf.Resolution);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
     VkRect2D scissor = {};
     scissor.offset = {0, 0};
-    scissor.extent = {m_config->Sdf.Resolution, m_config->Sdf.Resolution};
+    scissor.extent = {config_->Sdf.Resolution, config_->Sdf.Resolution};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     // === 绑定管线和描述符集 ===
@@ -9615,7 +9405,7 @@ void Renderer::ExecuteVoxelizationFillPass(VkCommandBuffer cmd)
 
     // === 执行Compute Shader ===
     // 方案要求：64x64个线程，每个线程沿Z轴扫描VoxelCounterTexture
-    uint32_t groupSize = (m_config->Sdf.Resolution + 7) / 8; // 8x8 线程组 (XY平面)
+    uint32_t groupSize = (config_->Sdf.Resolution + 7) / 8; // 8x8 线程组 (XY平面)
     vkCmdDispatch(cmd, groupSize, groupSize, 1);                // Z轴扫描，因此Z维度为1
 }
 
@@ -9634,7 +9424,7 @@ void Renderer::RecordUnifiedGPUPipelineCommands()
     }
 
 
-    SetSolidNodeSelectionVersion(m_config->Sdf.SdfMode == 1?true:false);
+    SetSolidNodeSelectionVersion(config_->Sdf.SdfMode == 1?true:false);
 
     // 在录制命令之前，根据版本选择更新阶段四的descriptor set
     UpdateAnalyticalSDFGenerationDescriptorSet();
@@ -9692,13 +9482,13 @@ void Renderer::RecordUnifiedGPUPipelineCommands()
     if (m_useSolidNodeSelectionB)
     {
         BeginDebugLabel(cmd, "Solid Node Selection B (Adaptive)", 0.0f, 1.0f, 0.5f, 1.0f);
-        ExecuteSolidNodeSelectionB(cmd);
+        ExecuteMultiViewNodeSelection(cmd);
         EndDebugLabel(cmd);
     }
     else
     {
         BeginDebugLabel(cmd, "Solid Node Selection A (Legacy)", 0.0f, 1.0f, 1.0f, 1.0f);
-        ExecuteSolidNodeSelection(cmd);
+        ExecuteAnalyticalNodeSelection(cmd);
         EndDebugLabel(cmd);
     }
 
@@ -9749,10 +9539,10 @@ void Renderer::RecordUnifiedGPUPipelineCommands()
     Tool::CheckResult(vkEndCommandBuffer(cmd));
 
     m_unifiedGPUPipeline.commandsRecorded = true;
-    printf("Unified GPU Pipeline commands pre-recorded\n");
+    //printf("Unified GPU Pipeline commands pre-recorded\n");
 }
 
-/// @brief 在主渲染循环中提交统一GPU管线 - 每帧调用，高效提交
+/// @brief 在主渲染循环中提交统一GPU管线
 void Renderer::SubmitUnifiedGPUPipeline()
 {
     if (!m_unifiedGPUPipeline.resourcesInitialized || !m_unifiedGPUPipeline.commandsRecorded)
@@ -9761,8 +9551,6 @@ void Renderer::SubmitUnifiedGPUPipeline()
         return;
     }
 
-    // // Fence用于时间统计，不阻塞管线执行，但需要重置
-    // Tool::CheckResult(vkResetFences(m_device, 1, &m_unifiedGPUPipeline.executionFence));
 
     // 更新体素化常量（每帧可能变化的数据）
     UpdateVoxelizationConstants();
@@ -9790,10 +9578,10 @@ void Renderer::SubmitUnifiedGPUPipeline()
 void Renderer::ValidateSolidNodeSelectionResults()
 {
     // 读取counterBuffer中的节点计数
-    m_solidNodeSelection.counterBuffer.Map();
-    uint32_t* counterData = static_cast<uint32_t*>(m_solidNodeSelection.counterBuffer.mapped);
+    analyticalNodeSelection_.counterBuffer.Map();
+    uint32_t* counterData = static_cast<uint32_t*>(analyticalNodeSelection_.counterBuffer.mapped);
     uint32_t selectedNodeCount = counterData[0];
-    m_solidNodeSelection.counterBuffer.Unmap();
+    analyticalNodeSelection_.counterBuffer.Unmap();
 
     // 静态计数器，只在第一次验证时输出详细信息
     static int validationCount = 0;
@@ -9809,9 +9597,9 @@ void Renderer::ValidateSolidNodeSelectionResults()
         else
         {
             // 读取solidNodeBuffer来检查节点分布
-            m_solidNodeSelection.solidNodeBuffer.Map();
-            const SolidNodeSelection::SolidNode* nodes =
-                static_cast<const SolidNodeSelection::SolidNode*>(m_solidNodeSelection.solidNodeBuffer.mapped);
+            analyticalNodeSelection_.solidNodeBuffer.Map();
+            const AnalyticalSolidNodeSelection::SolidNode* nodes =
+                static_cast<const AnalyticalSolidNodeSelection::SolidNode*>(analyticalNodeSelection_.solidNodeBuffer.mapped);
 
             // Show first 20 selected nodes and count by level
             printf("First 64 selected nodes:\n");
@@ -9837,7 +9625,7 @@ void Renderer::ValidateSolidNodeSelectionResults()
             }
             printf("Z distribution in first 20: Negative=%u, Positive=%u\n", negativeZ, positiveZ);
 
-            m_solidNodeSelection.solidNodeBuffer.Unmap();
+            analyticalNodeSelection_.solidNodeBuffer.Unmap();
         }
         printf("==============================\n");
     }
@@ -9867,216 +9655,20 @@ void Renderer::ExecuteAnalyticalSDFGeneration(VkCommandBuffer cmd)
     // 绑定管线和描述符集
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_analyticalSDFGeneration.pipeline);
     vkCmdPushConstants(cmd, m_analyticalSDFGeneration.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
-                            sizeof(uint32_t), &m_config->Sdf.Resolution);
+                            sizeof(uint32_t), &config_->Sdf.Resolution);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_analyticalSDFGeneration.pipelineLayout, 0, 1,
                             &m_analyticalSDFGeneration.descriptorSet, 0, nullptr);
 
     // 分发compute工作：64x64x64的线程网格，每个线程计算一个SDF体素
     // Shader使用4x4x4的工作组
-    uint32_t groupCountX = (m_config->Sdf.Resolution + 3) / 4;                // 16 groups
-    uint32_t groupCountY = (m_config->Sdf.Resolution + 3) / 4;                // 16 groups
-    uint32_t groupCountZ = (m_config->Sdf.Resolution + 3) / 4;                // 16 groups
+    uint32_t groupCountX = (config_->Sdf.Resolution + 3) / 4;                // 16 groups
+    uint32_t groupCountY = (config_->Sdf.Resolution + 3) / 4;                // 16 groups
+    uint32_t groupCountZ = (config_->Sdf.Resolution + 3) / 4;                // 16 groups
     vkCmdDispatch(cmd, groupCountX, groupCountY, groupCountZ);
 
     printf("  Analytical SDF Generation: Dispatched %dx%dx%d compute groups (262144 total threads)\n", groupCountX, groupCountY, groupCountZ);
 }
 
-/// @brief 更新多视角深度SDF描述符集
-void Renderer::UpdateMultiViewDepthSDFDescriptorSets()
-{
-    // Allocate descriptor sets first
-    VkDescriptorSetAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = m_descriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &m_multiViewDepthSDF.depthPass.descriptorSetLayout;
-
-    Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_multiViewDepthSDF.depthPass.descriptorSet));
-
-    allocInfo.pSetLayouts = &m_multiViewDepthSDF.fusionPass.descriptorSetLayout;
-    Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_multiViewDepthSDF.fusionPass.descriptorSet));
-
-    // === 更新深度渲染Pass描述符集 ===
-    // 使用GPU准备的相机矩阵数据而不是CPU可见的缓冲区
-    VkDescriptorBufferInfo cameraBufferInfo = {};
-    cameraBufferInfo.buffer = m_gpuDataPreparation.cameraMatricesBuffer_GPU.buffer; // 使用GPU-only缓冲区
-    cameraBufferInfo.offset = 0;
-    cameraBufferInfo.range = VK_WHOLE_SIZE;
-
-    VkWriteDescriptorSet write = {};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = m_multiViewDepthSDF.depthPass.descriptorSet;
-    write.dstBinding = 0;
-    write.dstArrayElement = 0;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; // 改为storage buffer因为GPU缓冲区
-    write.descriptorCount = 1;
-    write.pBufferInfo = &cameraBufferInfo;
-
-    vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
-
-    // 更新SDF融合Pass描述符集 (GPU驱动架构总是更新)
-    {
-        std::vector<VkWriteDescriptorSet> fusionWrites;
-
-        // SDF texture (storage) - binding 0
-        VkDescriptorImageInfo sdfImageInfo = {};
-        sdfImageInfo.imageView = m_multiViewDepthSDF.fusionPass.sdfTexture.view;
-        sdfImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-        VkWriteDescriptorSet sdfWrite = {};
-        sdfWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        sdfWrite.dstSet = m_multiViewDepthSDF.fusionPass.descriptorSet;
-        sdfWrite.dstBinding = 0;
-        sdfWrite.dstArrayElement = 0;
-        sdfWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        sdfWrite.descriptorCount = 1;
-        sdfWrite.pImageInfo = &sdfImageInfo;
-        fusionWrites.push_back(sdfWrite);
-
-        // Unified depth cubemap array (sampled) - binding 1
-        VkDescriptorImageInfo cubemapArrayInfo = {};
-        cubemapArrayInfo.sampler = m_multiViewDepthSDF.fusionPass.depthCubeSampler;
-        cubemapArrayInfo.imageView = m_multiViewDepthSDF.depthPass.depthCubeMaps[0].Tex.view; // 统一的立方体贴图数组视图
-        cubemapArrayInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-        VkWriteDescriptorSet cubemapWrite = {};
-        cubemapWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        cubemapWrite.dstSet = m_multiViewDepthSDF.fusionPass.descriptorSet;
-        cubemapWrite.dstBinding = 1;
-        cubemapWrite.dstArrayElement = 0;
-        cubemapWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        cubemapWrite.descriptorCount = 1; // 只有一个立方体贴图数组
-        cubemapWrite.pImageInfo = &cubemapArrayInfo;
-        fusionWrites.push_back(cubemapWrite);
-
-        // Camera buffer (uniform) - binding 2
-        VkWriteDescriptorSet fusionCameraWrite = {};
-        fusionCameraWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        fusionCameraWrite.dstSet = m_multiViewDepthSDF.fusionPass.descriptorSet;
-        fusionCameraWrite.dstBinding = 2;
-        fusionCameraWrite.dstArrayElement = 0;
-        fusionCameraWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; // 匹配GPU相机矩阵缓冲区
-        fusionCameraWrite.descriptorCount = 1;
-        fusionCameraWrite.pBufferInfo = &cameraBufferInfo;
-        fusionWrites.push_back(fusionCameraWrite);
-
-        vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(fusionWrites.size()), fusionWrites.data(), 0, nullptr);
-    }
-
-    printf("Multi-View Depth SDF descriptor sets updated\n");
-}
-
-/// @brief 验证多视角深度SDF结果（调试用）
-void Renderer::ValidateMultiViewDepthSDFResults()
-{
-    printf("Validating Multi-View Depth SDF Results...\n");
-    printf("Active cameras: %u\n", m_multiViewDepthSDF4C.gpuPreparation.activeCameraCount);
-    printf("SDF texture format: VK_FORMAT_R16_SFLOAT\n");
-    printf("SDF resolution: %ux%ux%u\n", MultiViewDepthSDF::SDFFusionPass::SDF_RESOLUTION, MultiViewDepthSDF::SDFFusionPass::SDF_RESOLUTION,
-           MultiViewDepthSDF::SDFFusionPass::SDF_RESOLUTION);
-}
-
-/// @brief 从阶段3B结果准备相机矩阵
-void Renderer::PrepareCameraMatricesFromStage3B()
-{
-    // 默认启用固定数量的相机，不依赖于actualNodeCount
-    m_multiViewDepthSDF4C.gpuPreparation.activeCameraCount = std::min(static_cast<uint32_t>(10), m_multiViewDepthSDF4C.MAX_CAMERAS); // 使用10个相机
-
-    // Map camera matrices buffer
-    void* mappedData;
-    Tool::CheckResult(vkMapMemory(m_device, m_multiViewDepthSDF4C.gpuPreparation.cameraMatricesBuffer.memory, 0, VK_WHOLE_SIZE, 0, &mappedData));
-
-    struct CameraBufferData
-    {
-        CameraMatrix cameras[MultiViewDepthSDF::MAX_CAMERAS];
-        uint32_t activeCameraCount;
-        uint32_t padding[3];
-    }* cameraData = (CameraBufferData*)mappedData;
-
-    // Read selected nodes from appropriate stage
-    SolidNodeSelection::SolidNode* selectedNodes = nullptr;
-    void* nodeData = nullptr;
-
-    if (m_useSolidNodeSelectionB)
-    {
-        // Map SolidNodeSelectionB buffer
-        Tool::CheckResult(vkMapMemory(m_device, m_solidNodeSelectionB.selectedNodesBuffer.memory, 0, VK_WHOLE_SIZE, 0, &nodeData));
-        selectedNodes = (SolidNodeSelection::SolidNode*)nodeData;
-    }
-    else
-    {
-        // Map SolidNodeSelection buffer
-        Tool::CheckResult(vkMapMemory(m_device, m_solidNodeSelection.solidNodeBuffer.memory, 0, VK_WHOLE_SIZE, 0, &nodeData));
-        selectedNodes = (SolidNodeSelection::SolidNode*)nodeData;
-    }
-
-    // Convert selected nodes to camera matrices
-    for (uint32_t i = 0; i < m_multiViewDepthSDF4C.gpuPreparation.activeCameraCount; i++)
-    {
-        const auto& node = selectedNodes[i];
-
-        // Convert node center to world position (node.center is already in world coordinates)
-        glm::vec3 worldPos = node.center;
-
-        // Store camera position
-        cameraData->cameras[i].cameraPosition = worldPos;
-
-        // === 修复：使用identity view matrix，让geometry shader处理cubemap面变换 ===
-        // 因为geometry shader会为每个面创建正确的view matrix
-        cameraData->cameras[i].viewMatrix = glm::mat4(1.0f); // Identity matrix
-    }
-
-    cameraData->activeCameraCount = m_multiViewDepthSDF4C.gpuPreparation.activeCameraCount;
-
-    // Unmap buffers
-    vkUnmapMemory(m_device, m_multiViewDepthSDF4C.gpuPreparation.cameraMatricesBuffer.memory);
-
-    if (nodeData)
-    {
-        if (m_useSolidNodeSelectionB)
-        {
-            vkUnmapMemory(m_device, m_solidNodeSelectionB.selectedNodesBuffer.memory);
-        }
-        else
-        {
-            vkUnmapMemory(m_device, m_solidNodeSelection.solidNodeBuffer.memory);
-        }
-    }
-
-    // Prepare indirect draw commands after setting up camera data
-    PrepareIndirectDrawCommands();
-}
-
-/// @brief 准备间接绘制命令
-void Renderer::PrepareIndirectDrawCommands()
-{
-    // Map indirect draw buffer
-    void* mappedData;
-    Tool::CheckResult(vkMapMemory(m_device, m_multiViewDepthSDF4C.gpuPreparation.indirectCommandsBuffer.memory, 0, VK_WHOLE_SIZE, 0, &mappedData));
-
-    VkDrawIndexedIndirectCommand* drawCommands = (VkDrawIndexedIndirectCommand*)mappedData;
-
-    // Prepare draw command for ONLY the first model part
-    // Only the first part will be rendered by all cameras via multiview + instancing
-    uint32_t totalParts = 1; // Only use first part
-    printf("Preparing %u indirect draw command for first model part only\n", totalParts);
-
-    if (m_multiViewDepthSDF4C.staticData.totalPartCount > 0)
-    {
-        auto& partInfo = m_multiViewDepthSDF4C.staticData.partInfos[0]; // Use only first part
-
-        drawCommands[0].indexCount = partInfo.indexCount;     // First part's index count
-        drawCommands[0].instanceCount = 60;                   // One instance per camera
-        drawCommands[0].firstIndex = partInfo.firstIndex;     // First part's starting index
-        drawCommands[0].vertexOffset = partInfo.vertexOffset; // First part's vertex offset
-        drawCommands[0].firstInstance = 0;
-
-        printf("Draw command 0: indexCount=%u, firstIndex=%u, vertexOffset=%d, instanceCount=%u\n", drawCommands[0].indexCount,
-               drawCommands[0].firstIndex, drawCommands[0].vertexOffset, drawCommands[0].instanceCount);
-    }
-
-    vkUnmapMemory(m_device, m_multiViewDepthSDF4C.gpuPreparation.indirectCommandsBuffer.memory);
-}
 
 /// @brief 获取模型顶点缓冲区
 VkBuffer Renderer::GetModelVertexBuffer()
@@ -10252,14 +9844,14 @@ void Renderer::InitializeGPUDataPreparation4C()
     auto& gpuPrep = m_multiViewDepthSDF4C.gpuPreparation;
 
     // 创建相机矩阵缓冲区 (host-visible for CPU updates)
-    VkDeviceSize cameraBufferSize = sizeof(glm::vec4) * MultiViewDepthSDF4C::MAX_CAMERAS; // CameraMatrix{float4 cameraPosition;}
+    VkDeviceSize cameraBufferSize = sizeof(glm::vec4) * config_->Sdf.MultiViewUsedCameraNum; // CameraMatrix{float4 cameraPosition;}
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                                    &gpuPrep.cameraMatricesBuffer, cameraBufferSize));
 
     // 创建间接命令缓冲区 (for GPU generation of indirect commands)
     uint32_t maxParts = m_multiViewDepthSDF4C.staticData.totalPartCount;
-    uint32_t maxCameras = MultiViewDepthSDF4C::MAX_CAMERAS;
+    uint32_t maxCameras = config_->Sdf.MultiViewUsedCameraNum;
     uint32_t maxCommands = maxParts; // Now only one command per part
     VkDeviceSize indirectBufferSize = sizeof(VkDrawIndexedIndirectCommand) * maxCommands;
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -10366,7 +9958,7 @@ void Renderer::CreateCameraMatrixPreparationPipeline()
 
     // 绑定Stage 3B的选中节点缓冲区
     VkDescriptorBufferInfo selectedNodesBufferInfo{};
-    selectedNodesBufferInfo.buffer = m_solidNodeSelectionB.selectedNodesBuffer.buffer;
+    selectedNodesBufferInfo.buffer = multiViewNodeSelection_.selectedNodesBuffer.buffer;
     selectedNodesBufferInfo.offset = 0;
     selectedNodesBufferInfo.range = VK_WHOLE_SIZE;
 
@@ -10390,7 +9982,7 @@ void Renderer::CreateCameraMatrixPreparationPipeline()
 
     // 绑定阶段3的实际节点数量缓冲区 (selectedCountBuffer from Stage 3B)
     VkDescriptorBufferInfo actualNodeCountBufferInfo{};
-    actualNodeCountBufferInfo.buffer = m_solidNodeSelectionB.selectedCountBuffer.buffer;
+    actualNodeCountBufferInfo.buffer = multiViewNodeSelection_.selectedCountBuffer.buffer;
     actualNodeCountBufferInfo.offset = 0;
     actualNodeCountBufferInfo.range = VK_WHOLE_SIZE;
 
@@ -10491,7 +10083,7 @@ void Renderer::CreateDepthCubemapArray()
     uint32_t cameraCount = gpuPrep.activeCameraCount;
     if (cameraCount == 0)
     {
-        cameraCount = MultiViewDepthSDF4C::MAX_CAMERAS; // 使用最大值作为默认
+        cameraCount = config_->Sdf.MultiViewUsedCameraNum; // 使用最大值作为默认
     }
     uint32_t totalLayers = cameraCount * 6; // N个相机 × 6个面
 
@@ -10612,7 +10204,7 @@ void Renderer::CreateMultiViewDepthRenderPass()
     depthImageInfo.extent.height = 64; // DepthRenderingPass4C::CUBEMAP_SIZE
     depthImageInfo.extent.depth = 1;
     depthImageInfo.mipLevels = 1;
-    depthImageInfo.arrayLayers = MultiViewDepthSDF4C::MAX_CAMERAS * 6; // Match color attachment layers (60)
+    depthImageInfo.arrayLayers = config_->Sdf.MultiViewUsedCameraNum * 6; // Match color attachment layers (60)
     depthImageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     depthImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     depthImageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
@@ -10642,7 +10234,7 @@ void Renderer::CreateMultiViewDepthRenderPass()
     depthViewInfo.subresourceRange.baseMipLevel = 0;
     depthViewInfo.subresourceRange.levelCount = 1;
     depthViewInfo.subresourceRange.baseArrayLayer = 0;
-    depthViewInfo.subresourceRange.layerCount = MultiViewDepthSDF4C::MAX_CAMERAS * 6; // All 60 layers
+    depthViewInfo.subresourceRange.layerCount = config_->Sdf.MultiViewUsedCameraNum * 6; // All 60 layers
 
     Tool::CheckResult(vkCreateImageView(m_device, &depthViewInfo, nullptr, &depthPass.depthAttachmentView));
 
@@ -10656,11 +10248,11 @@ void Renderer::CreateMultiViewDepthRenderPass()
     framebufferInfo.pAttachments = attachmentViews;
     framebufferInfo.width = 64;                                    // DepthRenderingPass4C::CUBEMAP_SIZE (降低到64)
     framebufferInfo.height = 64;                                   // DepthRenderingPass4C::CUBEMAP_SIZE (降低到64)
-    framebufferInfo.layers = MultiViewDepthSDF4C::MAX_CAMERAS * 6; // All layers (10 cameras × 6 faces = 60)
+    framebufferInfo.layers = config_->Sdf.MultiViewUsedCameraNum * 6; // All layers (10 cameras × 6 faces = 60)
 
     Tool::CheckResult(vkCreateFramebuffer(m_device, &framebufferInfo, nullptr, &depthPass.framebuffer));
 
-    printf("Multi-layer depth render pass created successfully (no multiview, %u total layers)\n", MultiViewDepthSDF4C::MAX_CAMERAS * 6);
+    printf("Multi-layer depth render pass created successfully (no multiview, %u total layers)\n", config_->Sdf.MultiViewUsedCameraNum * 6);
 }
 
 /// @brief 创建多视角深度渲染管线
@@ -10694,10 +10286,6 @@ void Renderer::CreateMultiViewDepthPipeline()
     // printf("Model center: (%.3f, %.3f, %.3f)\n", m_glTFModel.dimensions.center.x, m_glTFModel.dimensions.center.y,
     // m_glTFModel.dimensions.center.z); printf("Model radius: %.3f\n", m_glTFModel.dimensions.radius); printf("==============================\n");
 
-    // Debug: Print selected camera positions for scale analysis
-    printf("=== SELECTED CAMERA POSITIONS ===\n");
-    // We'll add camera position output after GPU data preparation
-    printf("Camera positions will be shown after GPU preparation...\n");
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = Init::pipelineLayoutCreateInfo(&depthPass.descriptorSetLayout, 1);
     pipelineLayoutInfo.pushConstantRangeCount = 1;
@@ -10860,7 +10448,7 @@ void Renderer::ExecuteMultiViewDepthRendering(VkCommandBuffer cmd)
     preRenderBarrier.subresourceRange.levelCount = 1;
     preRenderBarrier.subresourceRange.baseArrayLayer = 0;
     // Use maximum cameras for consistent layer count
-    uint32_t layerCount = MultiViewDepthSDF4C::MAX_CAMERAS * 6;
+    uint32_t layerCount = config_->Sdf.MultiViewUsedCameraNum * 6;
     preRenderBarrier.subresourceRange.layerCount = layerCount;
     preRenderBarrier.srcAccessMask = 0;
     preRenderBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
@@ -10896,11 +10484,11 @@ void Renderer::ExecuteMultiViewDepthRendering(VkCommandBuffer cmd)
 
     // 4. Set up push constants with hardcoded maximum camera count
     // Use MAX_CAMERAS to ensure consistent behavior (no GPU readback)
-    uint32_t maxTotalCommands = staticData.totalPartCount * MultiViewDepthSDF4C::MAX_CAMERAS * 6;
+    uint32_t maxTotalCommands = staticData.totalPartCount * config_->Sdf.MultiViewUsedCameraNum * 6;
     depthPass.renderParams.ModelMatrix = m_glTFModel.GetModelToStandardTransform();
     depthPass.renderParams.projectionMatrix = glm::perspective(glm::radians(90.0f), 1.0f, 0.01f, 2.0f); // 降低远平面到50
     depthPass.renderParams.totalPartCount = 1;                                                          // Only use first part
-    depthPass.renderParams.activeCameraCount = MultiViewDepthSDF4C::MAX_CAMERAS;                        // Use max cameras (10)
+    depthPass.renderParams.activeCameraCount = config_->Sdf.MultiViewUsedCameraNum;                        // Use max cameras (10)
     depthPass.renderParams.totalDrawCommands = maxTotalCommands;
     depthPass.renderParams.baseInstanceID = 0; // 从0开始编码
 
@@ -10918,8 +10506,8 @@ void Renderer::ExecuteMultiViewDepthRendering(VkCommandBuffer cmd)
     // 6. End render pass
     vkCmdEndRenderPass(cmd);
 
-    printf("Multiview depth rendering executed: %u cameras × 6 faces × %u parts (hardcoded max)\n", MultiViewDepthSDF4C::MAX_CAMERAS,
-           staticData.totalPartCount);
+    //printf("Multiview depth rendering executed: %u cameras × 6 faces × %u parts (hardcoded max)\n", config_->Sdf.MultiViewUsedCameraNum,
+           //staticData.totalPartCount);
 }
 
 // ===== Stage 4C SDF Fusion Implementation =====
@@ -10931,8 +10519,8 @@ void Renderer::CreateFinalSDFTexture()
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_3D;
     imageInfo.format = VK_FORMAT_R32_SFLOAT; // Single-channel 32-bit float for SDF values
-    imageInfo.extent = {m_multiViewDepthSDF4C.sdfFusionPass.SDF_RESOLUTION, m_multiViewDepthSDF4C.sdfFusionPass.SDF_RESOLUTION,
-                        m_multiViewDepthSDF4C.sdfFusionPass.SDF_RESOLUTION};
+    imageInfo.extent = {config_->Sdf.Resolution, config_->Sdf.Resolution,
+                        config_->Sdf.Resolution};
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -10982,8 +10570,8 @@ void Renderer::CreateFinalSDFTexture()
         throw std::runtime_error("Failed to create SDF texture view!");
     }
 
-    printf("Final SDF texture created: %ux%ux%u R32_SFLOAT 3D storage texture\n", m_multiViewDepthSDF4C.sdfFusionPass.SDF_RESOLUTION,
-           m_multiViewDepthSDF4C.sdfFusionPass.SDF_RESOLUTION, m_multiViewDepthSDF4C.sdfFusionPass.SDF_RESOLUTION);
+    printf("Final SDF texture created: %ux%ux%u R32_SFLOAT 3D storage texture\n", config_->Sdf.Resolution,
+           config_->Sdf.Resolution, config_->Sdf.Resolution);
 }
 
 void Renderer::CreateDepthCubemapSampler()
@@ -11220,7 +10808,7 @@ void Renderer::InitializeSDFFusionPass()
     // Step 5: Initialize push constants
     // Note: SDF fusion should read actual camera count from GPU buffer, not from push constants
     // This is for compatibility, the actual count will come from cameraMatricesBuffer binding
-    m_multiViewDepthSDF4C.sdfFusionPass.pushConstants.activeCameraCount = MultiViewDepthSDF4C::MAX_CAMERAS;
+    m_multiViewDepthSDF4C.sdfFusionPass.pushConstants.activeCameraCount = config_->Sdf.MultiViewUsedCameraNum;
     m_multiViewDepthSDF4C.sdfFusionPass.pushConstants.maxDistance = 10.0f; // 10 units maximum SDF distance
 
     printf("SDF fusion pass initialized: %u cameras, %.1f max distance\n", m_multiViewDepthSDF4C.sdfFusionPass.pushConstants.activeCameraCount,
@@ -11262,7 +10850,7 @@ void Renderer::ExecuteSDFFusion(VkCommandBuffer cmd)
     // Step 4: Dispatch compute shader
     // SDF grid is 64³, compute shader uses 8×8×8 thread groups
     // Therefore we need (64/8)³ = 8³ work groups
-    const uint32_t workGroupsPerDim = m_multiViewDepthSDF4C.sdfFusionPass.SDF_RESOLUTION / 8; // 64 / 8 = 8
+    const uint32_t workGroupsPerDim = config_->Sdf.Resolution / 8; // 64 / 8 = 8
     vkCmdDispatch(cmd, workGroupsPerDim, workGroupsPerDim, workGroupsPerDim);
 
     // Step 5: Memory barrier for compute write completion
@@ -11293,8 +10881,8 @@ void Renderer::ExecuteSDFFusion(VkCommandBuffer cmd)
                          VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // For SDF AO Pass
                          0, 0, nullptr, 0, nullptr, 1, &sdfLayoutTransition);
 
-    printf("SDF fusion executed: %ux%ux%u voxels processed (32³ work groups)\n", m_multiViewDepthSDF4C.sdfFusionPass.SDF_RESOLUTION,
-           m_multiViewDepthSDF4C.sdfFusionPass.SDF_RESOLUTION, m_multiViewDepthSDF4C.sdfFusionPass.SDF_RESOLUTION);
+    printf("SDF fusion executed: %ux%ux%u voxels processed (32³ work groups)\n", config_->Sdf.Resolution,
+           config_->Sdf.Resolution, config_->Sdf.Resolution);
 }
 
 void Renderer::ExportSDFDataForVisualization(Texture* texture, VkImageLayout oldLayout, const std::string fileName)
@@ -11466,7 +11054,7 @@ void Renderer::UpdateCBufferSdfAO()
     sdfAOPass_.buffers.cBufferData.maxDistance = 0.5f;
     sdfAOPass_.buffers.cBufferData.falloffPower = 1.0f;
     sdfAOPass_.buffers.cBufferData.voxelSize = 1.0f;
-    sdfAOPass_.buffers.cBufferData.sdfTextureSize = m_multiViewDepthSDF4C.sdfFusionPass.SDF_RESOLUTION;
+    sdfAOPass_.buffers.cBufferData.sdfTextureSize = config_->Sdf.Resolution;
     sdfAOPass_.buffers.cBufferData.minBounds = glm::vec4(-2.5f, 2.5f, 2.5f, 1.0f);
     sdfAOPass_.buffers.cBufferData.maxBounds = glm::vec4(2.5f, -2.5f, -2.5f, 1.0f);
     sdfAOPass_.buffers.cBufferData.noiseScale = glm::vec2(1.0f, 1.0f);
@@ -11565,23 +11153,193 @@ MeshToSdf* Renderer::GetMeshToSdfOperator()
 {
     return meshToSdfOperator_;
 };
-glm::mat4 CalculateModelToStandardTransform(const vkglTF::Model& model)
+
+void Renderer::MultiViewDepthSDF4C::cleanup(VkDevice device)
 {
-    // 计算模型包围盒
-    glm::vec3 modelMin = model.actualDimensionsMin;
-    glm::vec3 modelMax = model.actualDimensionsMax;
-    glm::vec3 modelCenter = (modelMax + modelMin) * 0.5f;
-    glm::vec3 modelSize = modelMax - modelMin;
+    // 清理模型静态数据
+    staticData.modelVertexBuffer.Destroy();
+    staticData.modelIndexBuffer.Destroy();
+    staticData.modelPartsBuffer.Destroy();
+    staticData.modelMatricesBuffer.Destroy();
 
-    // 计算最大尺寸（保持比例）
-    float maxModelSize = glm::max(glm::max(modelSize.x, modelSize.y), modelSize.z);
-    float margin = maxModelSize * 0.1f; // 10% 边距
-    float totalSize = maxModelSize + margin;
+    // 清理GPU数据准备阶段
+    if (gpuPreparation.cameraMatrixPipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(device, gpuPreparation.cameraMatrixPipeline, nullptr);
+        gpuPreparation.cameraMatrixPipeline = VK_NULL_HANDLE;
+    }
+    if (gpuPreparation.cameraMatrixPipelineLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineLayout(device, gpuPreparation.cameraMatrixPipelineLayout, nullptr);
+        gpuPreparation.cameraMatrixPipelineLayout = VK_NULL_HANDLE;
+    }
+    if (gpuPreparation.cameraMatrixDescriptorLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorSetLayout(device, gpuPreparation.cameraMatrixDescriptorLayout, nullptr);
+        gpuPreparation.cameraMatrixDescriptorLayout = VK_NULL_HANDLE;
+    }
+    if (gpuPreparation.indirectCommandPipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(device, gpuPreparation.indirectCommandPipeline, nullptr);
+        gpuPreparation.indirectCommandPipeline = VK_NULL_HANDLE;
+    }
+    if (gpuPreparation.indirectCommandPipelineLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineLayout(device, gpuPreparation.indirectCommandPipelineLayout, nullptr);
+        gpuPreparation.indirectCommandPipelineLayout = VK_NULL_HANDLE;
+    }
+    if (gpuPreparation.indirectCommandDescriptorLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorSetLayout(device, gpuPreparation.indirectCommandDescriptorLayout, nullptr);
+        gpuPreparation.indirectCommandDescriptorLayout = VK_NULL_HANDLE;
+    }
+    gpuPreparation.cameraMatricesBuffer.Destroy();
+    gpuPreparation.indirectCommandsBuffer.Destroy();
+    gpuPreparation.activeCameraCountBuffer.Destroy();
 
-    // 构建变换矩阵：先移动到原点，再缩放到[-1,1]³
-    glm::mat4 transform = glm::mat4(1.0f);
-    transform = glm::translate(transform, -modelCenter);            // 第1步：移动到原点
-    transform = glm::scale(transform, glm::vec3(2.0f / totalSize)); // 第2步：缩放到[-1,1]³
+    // 清理深度渲染阶段
+    if (depthRendering.pipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(device, depthRendering.pipeline, nullptr);
+        depthRendering.pipeline = VK_NULL_HANDLE;
+    }
+    if (depthRendering.pipelineLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineLayout(device, depthRendering.pipelineLayout, nullptr);
+        depthRendering.pipelineLayout = VK_NULL_HANDLE;
+    }
+    if (depthRendering.descriptorSetLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorSetLayout(device, depthRendering.descriptorSetLayout, nullptr);
+        depthRendering.descriptorSetLayout = VK_NULL_HANDLE;
+    }
+    if (depthRendering.renderPass != VK_NULL_HANDLE)
+    {
+        vkDestroyRenderPass(device, depthRendering.renderPass, nullptr);
+        depthRendering.renderPass = VK_NULL_HANDLE;
+    }
+    if (depthRendering.framebuffer != VK_NULL_HANDLE)
+    {
+        vkDestroyFramebuffer(device, depthRendering.framebuffer, nullptr);
+        depthRendering.framebuffer = VK_NULL_HANDLE;
+    }
+    if (depthRendering.depthCubemapArrayView != VK_NULL_HANDLE)
+    {
+        vkDestroyImageView(device, depthRendering.depthCubemapArrayView, nullptr);
+        depthRendering.depthCubemapArrayView = VK_NULL_HANDLE;
+    }
+    if (depthRendering.depthCubemapSamplingView != VK_NULL_HANDLE)
+    {
+        vkDestroyImageView(device, depthRendering.depthCubemapSamplingView, nullptr);
+        depthRendering.depthCubemapSamplingView = VK_NULL_HANDLE;
+    }
+    if (depthRendering.depthCubemapArray != VK_NULL_HANDLE)
+    {
+        vkDestroyImage(device, depthRendering.depthCubemapArray, nullptr);
+        depthRendering.depthCubemapArray = VK_NULL_HANDLE;
+    }
+    if (depthRendering.depthCubemapMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device, depthRendering.depthCubemapMemory, nullptr);
+        depthRendering.depthCubemapMemory = VK_NULL_HANDLE;
+    }
+    if (depthRendering.depthAttachmentView != VK_NULL_HANDLE)
+    {
+        vkDestroyImageView(device, depthRendering.depthAttachmentView, nullptr);
+        depthRendering.depthAttachmentView = VK_NULL_HANDLE;
+    }
+    if (depthRendering.depthAttachment != VK_NULL_HANDLE)
+    {
+        vkDestroyImage(device, depthRendering.depthAttachment, nullptr);
+        depthRendering.depthAttachment = VK_NULL_HANDLE;
+    }
+    if (depthRendering.depthAttachmentMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device, depthRendering.depthAttachmentMemory, nullptr);
+        depthRendering.depthAttachmentMemory = VK_NULL_HANDLE;
+    }
 
-    return transform;
+    // 清理SDF融合阶段
+    if (sdfFusionPass.computePipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(device, sdfFusionPass.computePipeline, nullptr);
+        sdfFusionPass.computePipeline = VK_NULL_HANDLE;
+    }
+    if (sdfFusionPass.pipelineLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineLayout(device, sdfFusionPass.pipelineLayout, nullptr);
+        sdfFusionPass.pipelineLayout = VK_NULL_HANDLE;
+    }
+    if (sdfFusionPass.descriptorSetLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorSetLayout(device, sdfFusionPass.descriptorSetLayout, nullptr);
+        sdfFusionPass.descriptorSetLayout = VK_NULL_HANDLE;
+    }
+    if (sdfFusionPass.depthCubemapSampler != VK_NULL_HANDLE)
+    {
+        vkDestroySampler(device, sdfFusionPass.depthCubemapSampler, nullptr);
+        sdfFusionPass.depthCubemapSampler = VK_NULL_HANDLE;
+    }
+    if (sdfFusionPass.depthCubemapArrayView != VK_NULL_HANDLE)
+    {
+        vkDestroyImageView(device, sdfFusionPass.depthCubemapArrayView, nullptr);
+        sdfFusionPass.depthCubemapArrayView = VK_NULL_HANDLE;
+    }
+    if (sdfFusionPass.finalSDFView != VK_NULL_HANDLE)
+    {
+        vkDestroyImageView(device, sdfFusionPass.finalSDFView, nullptr);
+        sdfFusionPass.finalSDFView = VK_NULL_HANDLE;
+    }
+    if (sdfFusionPass.finalSDFTexture != VK_NULL_HANDLE)
+    {
+        vkDestroyImage(device, sdfFusionPass.finalSDFTexture, nullptr);
+        sdfFusionPass.finalSDFTexture = VK_NULL_HANDLE;
+    }
+    if (sdfFusionPass.finalSDFMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device, sdfFusionPass.finalSDFMemory, nullptr);
+        sdfFusionPass.finalSDFMemory = VK_NULL_HANDLE;
+    }
+}
+
+void Renderer::GPUDataPreparation::cleanup(VkDevice device)
+{
+    // 清理相机矩阵准备管线
+    if (cameraMatrixPipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(device, cameraMatrixPipeline, nullptr);
+        cameraMatrixPipeline = VK_NULL_HANDLE;
+    }
+    if (cameraMatrixPipelineLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineLayout(device, cameraMatrixPipelineLayout, nullptr);
+        cameraMatrixPipelineLayout = VK_NULL_HANDLE;
+    }
+    if (cameraMatrixDescriptorLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorSetLayout(device, cameraMatrixDescriptorLayout, nullptr);
+        cameraMatrixDescriptorLayout = VK_NULL_HANDLE;
+    }
+
+    // 清理间接命令生成管线
+    if (indirectCommandPipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(device, indirectCommandPipeline, nullptr);
+        indirectCommandPipeline = VK_NULL_HANDLE;
+    }
+    if (indirectCommandPipelineLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineLayout(device, indirectCommandPipelineLayout, nullptr);
+        indirectCommandPipelineLayout = VK_NULL_HANDLE;
+    }
+    if (indirectCommandDescriptorLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorSetLayout(device, indirectCommandDescriptorLayout, nullptr);
+        indirectCommandDescriptorLayout = VK_NULL_HANDLE;
+    }
+
+    // 清理缓冲区
+    cameraMatricesBuffer_GPU.Destroy();
+    activeCameraCountBuffer_GPU.Destroy();
+    indirectDrawBuffer_GPU.Destroy();
 }
