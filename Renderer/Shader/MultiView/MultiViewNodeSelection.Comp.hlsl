@@ -1,5 +1,4 @@
-// SolidNodeCollectionB.Comp.hlsl
-// Pass 1-3: 收集候选节点（按level降序：3→2→1）
+// MultviewNodeSelection.comp.hlsl
 // 只收集SOLID节点，不做包含检查
 
 // === Constants ===
@@ -28,6 +27,8 @@ Texture3D<uint2> mipmapTexture2 : register(t4); // Level 2: 32
 Texture3D<uint2> mipmapTexture3 : register(t5); // Level 3: 16
 Texture3D<uint2> mipmapTexture4 : register(t6); // Level 3: 8
 Texture3D<uint2> mipmapTexture5 : register(t7); // Level 3: 4
+
+RWStructuredBuffer<uint> LevelCountBuffer : register(u8);
 // Push constants structure
 struct PushConstantDesc {
     uint BaseSize;
@@ -109,6 +110,10 @@ void main(uint3 id : SV_DispatchThreadID) {
     uint levelSize = PushConstant.BaseSize >> PushConstant.CurrentLevel;
     if(any(coord >= levelSize)) return;
 
+    if(candidateCountBuffer[0]>=MAX_CANDIDATE_NODES)
+    {
+        return;
+    }
     // Step 2: Read current position node value
     uint nodeValue = ReadCurrentLevelTexture(coord).x;
     if(nodeValue != SOLID) return;  // Only collect SOLID nodes
@@ -135,7 +140,8 @@ void main(uint3 id : SV_DispatchThreadID) {
     // Step 4: Add to candidate buffer (simple append with atomic counter)
     uint candidateIndex;
     InterlockedAdd(candidateCountBuffer[0], 1, candidateIndex);
-
+    uint count;
+    InterlockedAdd(LevelCountBuffer[PushConstant.CurrentLevel], 1, count);
     // Only write if within buffer capacity
     if(candidateIndex < MAX_CANDIDATE_NODES) {
         GroupMemoryBarrierWithGroupSync();

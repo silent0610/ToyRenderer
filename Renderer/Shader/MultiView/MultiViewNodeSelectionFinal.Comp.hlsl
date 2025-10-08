@@ -22,6 +22,8 @@ RWStructuredBuffer<SolidNode> candidateNodesBuffer : register(u1);    // Read-on
 // Output: Final selected nodes
 RWStructuredBuffer<uint> finalCountBuffer : register(u2);             // Final selected count
 RWStructuredBuffer<SolidNode> finalNodesBuffer : register(u3);        // Final selected nodes
+StructuredBuffer<uint> LevelCountBuffer : register(t4);
+
 
 // === Utility Functions ===
 
@@ -52,23 +54,25 @@ void main(uint3 id : SV_DispatchThreadID) {
     // Read candidate count (safe since it's read-only at this stage)
     uint totalCandidates = candidateCountBuffer[0];
 
-    // === 优化：Workgroup级别早期退出 ===
-    // 如果整个workgroup都超出候选节点范围，整个workgroup退出
-    uint workgroupStartIndex = (id.x / 64) * 64;
-    if(workgroupStartIndex >= totalCandidates) return;
-
     // 个体线程边界检查
     if(myIndex >= totalCandidates) return;
-
+    if(finalCountBuffer[0]>=MAX_SELECTED_NODES)
+    {
+        return;
+    }
     // Get my candidate node
     SolidNode myNode = candidateNodesBuffer[myIndex];
 
     // Step 1: Check if included by any previous node (natural priority order)
     bool isIncluded = false;
 
-    // === 优化：限制比较范围和早期退出 ===
-    // 只检查有效的前置节点，避免检查过多节点
-    uint maxCheckCount = min(myIndex, 50u); // 限制最多检查50个前置节点
+    uint checkLow = LevelCountBuffer[myNode.level+1];
+
+    uint maxCheckCount = 0;
+    for(uint j = myNode.level + 1;j<=5;++j)
+    {
+        maxCheckCount+=LevelCountBuffer[j];
+    }
 
     for(uint i = 0; i < maxCheckCount; ++i) {
         SolidNode previousNode = candidateNodesBuffer[i];

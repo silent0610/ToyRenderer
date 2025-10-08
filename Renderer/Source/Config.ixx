@@ -1,5 +1,6 @@
 module;
 #include <stdint.h>
+
 export module ConfigMod;
 import GlmMod;
 import std;

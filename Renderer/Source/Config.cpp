@@ -2,7 +2,7 @@ module;
 #include "nlohmann/json.hpp"
 #include "glm/glm.hpp"
 #include <fstream>
-
+#include "spdlog/spdlog.h"
 module ConfigMod;
 import Logger;
 using Json = nlohmann::json;
@@ -45,4 +45,5 @@ Config::Config(std::string configPath)
         Sdf.MeshToSdfQuality = sdfConfig.value("MeshToSdfQuality", 1);
         Sdf.AnalyticalSampledLevel = sdfConfig.value("AnalyticalSampledLevel", 1);
     }
+    spdlog::info("config loadded");
 }

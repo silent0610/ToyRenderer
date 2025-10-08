@@ -289,6 +289,9 @@ def print_validation_summary():
     print("4. 3D等值面应该形成合理的几何体表面")
     print("5. 相关系数应该接近1.0表示高度相关")
 
+def UserInterface():
+    pass
+
 def main():
     """主函数"""
     # SDF文件路径（与Renderer.cpp中的输出路径对应）
@@ -298,6 +301,23 @@ def main():
     multiViewSdf = "MultiViewSdf.raw"
     data = load_sdf_data(meshToSdf, resolution=64)
     
+    # visualize_3d_isosurface(data)
+    print("\n选择可视化数据:")
+    print("1. bruteSdf ")
+    print("2. meshToSdf")
+    print("3. analyticalSdf")
+    print("4. multiViewSdf")
+    choice = input("请选择 (1-4): ").strip()
+    if choice == "1":
+        data = load_sdf_data(bruteSdf, resolution=64)
+    elif choice == "2":
+        data = load_sdf_data(meshToSdf, resolution=64)
+    elif choice == "3":
+        data = load_sdf_data(analyticalSdf, resolution=64)
+    elif choice == "4":
+        data = load_sdf_data(multiViewSdf, resolution=64)
+    else:
+        data = load_sdf_data(bruteSdf, resolution=64)
     visualize_3d_isosurface(data)
     # try:
     #     # 处理SDF对比

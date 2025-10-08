@@ -19,7 +19,7 @@ import FrameBufferMod;
 // import VulkanFactory;
 import TextureMod;
 import SettingMod;
-//import MeshOctreeMod;
+// import MeshOctreeMod;
 import GlmMod;
 import InitMod;
 import ToolMod;
@@ -28,8 +28,6 @@ import std;
 import CameraMod;
 import GPUMipmapOctreeMod;
 import MeshToSdf;
-
-
 
 const int LIGHT_COUNT = 3;
 struct ShadowSettings
@@ -79,34 +77,34 @@ struct UBOBlurParams
 };
 struct Params
 {
-	float exposure{ 4.5f };
-	float gamma{ 2.2f };
+	float exposure{4.5f};
+	float gamma{2.2f};
 };
 struct FXAAParams
 {
-	alignas(8) glm::vec2 rcpFrame{ 1.0f, 1.0f };
-	alignas(8) glm::vec2 sth{ 0.125f, 1.0f };
+	alignas(8) glm::vec2 rcpFrame{1.0f, 1.0f};
+	alignas(8) glm::vec2 sth{0.125f, 1.0f};
 };
 
 struct VkQueues
 {
-	VkQueue graphicsQueue{ nullptr };
-	VkQueue presentQueue{ nullptr };
+	VkQueue graphicsQueue{nullptr};
+	VkQueue presentQueue{nullptr};
 };
 
 // 应该是键值对 使用map
 struct NeededFeatures
 {
-	bool validation{ false };
-	VkBool32 sampleRateShading{ false };
-	VkBool32 samplerAnisotropy{ false };
+	bool validation{false};
+	VkBool32 sampleRateShading{false};
+	VkBool32 samplerAnisotropy{false};
 };
 
 struct Semaphores
 {
 	VkSemaphore presentComplete;
 	VkSemaphore renderComplete;
-	VkSemaphore deferedSemaphore{ nullptr };
+	VkSemaphore deferedSemaphore{nullptr};
 };
 
 struct UniformDataOffscreen
@@ -114,7 +112,7 @@ struct UniformDataOffscreen
 	glm::mat4 model;
 	glm::mat4 view;
 	glm::mat4 projection;
-	alignas(16) int layer{ 0 };
+	alignas(16) int layer{0};
 };
 
 // This UBO stores the shadow matrices for all of the light sources
@@ -140,26 +138,26 @@ struct UniformBuffers
 
 struct Pipelines
 {
-	VkPipeline defered{ VK_NULL_HANDLE };
-	VkPipeline composition{ VK_NULL_HANDLE };
-	VkPipeline shadow{ VK_NULL_HANDLE };
-	VkPipeline skyBox{ VK_NULL_HANDLE };
-	VkPipeline toneMapping{ VK_NULL_HANDLE };
-	VkPipeline blurVert{ VK_NULL_HANDLE };
-	VkPipeline blurHorz{ VK_NULL_HANDLE };
-	VkPipeline FXAA{ nullptr };
+	VkPipeline defered{VK_NULL_HANDLE};
+	VkPipeline composition{VK_NULL_HANDLE};
+	VkPipeline shadow{VK_NULL_HANDLE};
+	VkPipeline skyBox{VK_NULL_HANDLE};
+	VkPipeline toneMapping{VK_NULL_HANDLE};
+	VkPipeline blurVert{VK_NULL_HANDLE};
+	VkPipeline blurHorz{VK_NULL_HANDLE};
+	VkPipeline FXAA{nullptr};
 };
 
 struct DescriptorSets
 {
-	VkDescriptorSet deferedModel{ VK_NULL_HANDLE };
-	VkDescriptorSet composition{ VK_NULL_HANDLE };
-	VkDescriptorSet shadow{ VK_NULL_HANDLE };
-	VkDescriptorSet skyBox{ VK_NULL_HANDLE };
-	VkDescriptorSet toneMapping{ nullptr };
-	VkDescriptorSet blurVert{ nullptr };
-	VkDescriptorSet blurHorz{ nullptr };
-	VkDescriptorSet FXAA{ nullptr };
+	VkDescriptorSet deferedModel{VK_NULL_HANDLE};
+	VkDescriptorSet composition{VK_NULL_HANDLE};
+	VkDescriptorSet shadow{VK_NULL_HANDLE};
+	VkDescriptorSet skyBox{VK_NULL_HANDLE};
+	VkDescriptorSet toneMapping{nullptr};
+	VkDescriptorSet blurVert{nullptr};
+	VkDescriptorSet blurHorz{nullptr};
+	VkDescriptorSet FXAA{nullptr};
 };
 
 struct Textures
@@ -193,7 +191,7 @@ struct RenderPass
 struct PipelineLayouts
 {
 	VkPipelineLayout defered;
-	VkPipelineLayout composition{ nullptr };
+	VkPipelineLayout composition{nullptr};
 	VkPipelineLayout skyBox;
 	VkPipelineLayout shadow;
 	VkPipelineLayout toneMapping;
@@ -202,25 +200,25 @@ struct PipelineLayouts
 };
 struct DescriptorSetLayouts
 {
-	VkDescriptorSetLayout deferedModel{ nullptr };
-	VkDescriptorSetLayout deferedTextures{ nullptr };
-	VkDescriptorSetLayout composition{ nullptr };
-	VkDescriptorSetLayout skyBox{ nullptr };
-	VkDescriptorSetLayout toneMapping{ nullptr };
-	VkDescriptorSetLayout blur{ nullptr };
-	VkDescriptorSetLayout FXAA{ nullptr };
+	VkDescriptorSetLayout deferedModel{nullptr};
+	VkDescriptorSetLayout deferedTextures{nullptr};
+	VkDescriptorSetLayout composition{nullptr};
+	VkDescriptorSetLayout skyBox{nullptr};
+	VkDescriptorSetLayout toneMapping{nullptr};
+	VkDescriptorSetLayout blur{nullptr};
+	VkDescriptorSetLayout FXAA{nullptr};
 };
 struct Framebuffers
 {
 	// FramebufferManager resources for the deferred pass
-	FramebufferManager* deferred{ nullptr };
+	FramebufferManager *deferred{nullptr};
 	// FramebufferManager resources for the shadow pass
-	FramebufferManager* shadow{ nullptr };
-	FramebufferManager* lighting{ nullptr };
-	FramebufferManager* bloom{ nullptr };
-	FramebufferManager* bloom1{ nullptr };
-	FramebufferManager* ToneMapping{ nullptr };
-	FramebufferManager* SkyBox{ nullptr };
+	FramebufferManager *shadow{nullptr};
+	FramebufferManager *lighting{nullptr};
+	FramebufferManager *bloom{nullptr};
+	FramebufferManager *bloom1{nullptr};
+	FramebufferManager *ToneMapping{nullptr};
+	FramebufferManager *SkyBox{nullptr};
 };
 
 struct CmdBuffers
@@ -231,7 +229,7 @@ struct CmdBuffers
 export class Renderer
 {
 public:
-	Renderer(Config* config);
+	Renderer(Config *config);
 	void Run();
 	~Renderer() = default;
 
@@ -246,7 +244,7 @@ private:
 	std::vector<VkFramebuffer> m_finalFramebuffers;
 	VkRenderPass m_finalPass;
 	SmallScene scene;
-	Config* config_;
+	Config *config_;
 	std::vector<VkFence> m_waitFences;
 	float m_timer;
 	float m_timerSpeed = 0.25f;
@@ -255,25 +253,25 @@ private:
 	float m_frameTimer{};
 	std::chrono::time_point<std::chrono::high_resolution_clock> m_lastTimestamp, m_tPrevEnd;
 	std::string m_title = "Vulkan Example";
-	bool click{ false };
+	bool click{false};
 
 	MouseState m_mouseState;
 
 	UIOverlay m_UI;
 	VkPhysicalDeviceFeatures m_enabledFeatures{};
 	/** @brief Set of device extensions to be enabled for this example (must be set in the derived constructor) */
-	std::vector<const char*> m_enabledDeviceExtensions;
-	std::vector<const char*> m_enabledInstanceExtensions;
+	std::vector<const char *> m_enabledDeviceExtensions;
+	std::vector<const char *> m_enabledInstanceExtensions;
 	/** @brief Optional pNext structure for passing extension structures to device creation */
-	void* m_deviceCreatepNextChain = nullptr;
+	void *m_deviceCreatepNextChain = nullptr;
 
-	OldVulkanDevice* m_vulkanDevice;
+	OldVulkanDevice *m_vulkanDevice;
 
 	// RHI testing - new device alongside old one
 	// Core::UniquePtr<RhiDevice> rhiDevice_;
 
 	vkglTF::Model m_glTFModel;
-	//std::unique_ptr<MeshOctree> m_meshOctree;
+	// std::unique_ptr<MeshOctree> m_meshOctree;
 
 	Camera m_camera;
 	uint32_t currentBuffer = 0;
@@ -283,28 +281,28 @@ private:
 	std::vector<VkShaderModule> m_shaderModules{};
 	VkFormat m_depthFormat{};
 	Buffer m_uboBuffer{};
-	VkDescriptorSetLayout m_descriptorSetLayout{ VK_NULL_HANDLE };
-	VkPipelineLayout m_pipelineLayout{ VK_NULL_HANDLE };
-	VkDescriptorPool m_descriptorPool{ nullptr };
-	VkDescriptorSet m_descriptorSet{ nullptr };
-	VkDescriptorSet m_texturesDescriptorSet{ nullptr };
-	VkPipeline m_pipeline{ nullptr };
-	VkRenderPass m_renderPass{ nullptr };
+	VkDescriptorSetLayout m_descriptorSetLayout{VK_NULL_HANDLE};
+	VkPipelineLayout m_pipelineLayout{VK_NULL_HANDLE};
+	VkDescriptorPool m_descriptorPool{nullptr};
+	VkDescriptorSet m_descriptorSet{nullptr};
+	VkDescriptorSet m_texturesDescriptorSet{nullptr};
+	VkPipeline m_pipeline{nullptr};
+	VkRenderPass m_renderPass{nullptr};
 
 	std::vector<VkFramebuffer> m_frameBuffers;
 	VkCommandPool m_commandPool;
 	VkCommandBuffer m_commandBuffer;
 
-	VkDevice m_device{ nullptr };
+	VkDevice m_device{nullptr};
 	VkQueues m_queues{};
 
 	VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
-	VkInstance m_instance{ nullptr };
+	VkInstance m_instance{nullptr};
 
 	// 一个回调对象，用于通过 Vulkan 调试扩展（如 VK_EXT_DEBUG_UTILS）接收 Vulkan 驱动程序生成的调试信息。在应用程序结束时，你需要销毁这个对象，释放资源
-	VkDebugUtilsMessengerEXT m_debugMessenger{ nullptr };
-	VkSurfaceKHR m_surface{ nullptr }; // 对window的抽象
-	GLFWwindow* m_window{ nullptr };
+	VkDebugUtilsMessengerEXT m_debugMessenger{nullptr};
+	VkSurfaceKHR m_surface{nullptr}; // 对window的抽象
+	GLFWwindow *m_window{nullptr};
 	// VkSwapchainKHR m_swapChain{ nullptr };
 	VulkanSwapChain m_swapChain{};
 	SwapChainSupportDetails m_swapChainSupport;
@@ -327,10 +325,10 @@ private:
 		VkImageView view;
 	} m_depthStencil{};
 
-	const std::vector<const char*> m_validationLayers = {
-		"VK_LAYER_KHRONOS_validation" };
-	const std::vector<const char*> m_deviceExtensions = {
-		VK_KHR_SWAPCHAIN_EXTENSION_NAME, "VK_EXT_descriptor_indexing", "VK_EXT_conservative_rasterization", "VK_EXT_shader_viewport_index_layer" };
+	const std::vector<const char *> m_validationLayers = {
+		"VK_LAYER_KHRONOS_validation"};
+	const std::vector<const char *> m_deviceExtensions = {
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME, "VK_EXT_descriptor_indexing", "VK_EXT_conservative_rasterization", "VK_EXT_shader_viewport_index_layer"};
 
 private:
 	void SetupPasses();
@@ -350,16 +348,16 @@ private:
 	void GetDeviceProperties();
 	void SetRequiredFeatures();
 	bool CheckValidationLayerSupport();
-	std::vector<const char*> GetRequiredExtensions();
+	std::vector<const char *> GetRequiredExtensions();
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
 		VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
 		VkDebugUtilsMessageTypeFlagsEXT messageType,
-		const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
-		void* pUserData);
+		const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
+		void *pUserData);
 
 	void CreateDescriptorPool();
-	void PopulateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
+	void PopulateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo);
 	void PickPhysicalDevice();
 	QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device);
 	bool IsDeviceSuitable(VkPhysicalDevice device);
@@ -367,17 +365,17 @@ private:
 	void CreateSurface();
 	bool CheckDeviceExtensionSupport(VkPhysicalDevice device);
 	SwapChainSupportDetails QuerySwapChainSupport(VkPhysicalDevice device);
-	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
-	VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
-	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
+	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats);
+	VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes);
+	VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities);
 	void CreateSwapChainImageViews();
 
 	void CreateRenderPass();
 	void CreateFramebuffers();
 	void CreateCommandPool();
-	VkResult CreateBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, Buffer* buffer, VkDeviceSize size, void* data = nullptr);
+	VkResult CreateBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, Buffer *buffer, VkDeviceSize size, void *data = nullptr);
 	void CreateCommandBuffers();
-	// void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+
 	void DrawFrame();
 	void CreateSyncObjects();
 
@@ -386,17 +384,17 @@ private:
 	VkImageView CreateImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels);
 
 	void CreateDepthResources();
-	VkFormat FindSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
+	VkFormat FindSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 	VkFormat FindDepthFormat();
 
-	// void GenerateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
+	
 
 	VkSampleCountFlagBits GetMaxUsableSampleCount();
 
-	VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
-	void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator);
+	VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkDebugUtilsMessengerEXT *pDebugMessenger);
+	void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks *pAllocator);
 
-	// std::string GetShadersPath();
+
 	VkPipelineShaderStageCreateInfo LoadShader(std::string fileName, VkShaderStageFlagBits stage);
 
 	void PrepareFrame();
@@ -407,21 +405,22 @@ private:
 
 	void DrawUI(const VkCommandBuffer commandBuffer);
 	void InitUI();
+
 	/// @brief 设置ui
 	/// @param overlay
-	void DisplayUI(UIOverlay* overlay);
+	void DisplayUI(UIOverlay *overlay);
 	void UpdateOverlay();
 	std::string GetWindowTitle() const;
 
 	// std::string GetAssetsPath();
-	static void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
-	static void MouseCallback(GLFWwindow* window, double xpos, double ypos);
-	static void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
-	static void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
-	static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
+	static void KeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);
+	static void MouseCallback(GLFWwindow *window, double xpos, double ypos);
+	static void MouseButtonCallback(GLFWwindow *window, int button, int action, int mods);
+	static void ScrollCallback(GLFWwindow *window, double xoffset, double yoffset);
+	static void FramebufferResizeCallback(GLFWwindow *window, int width, int height);
 	void ResizeWindow();
 	void SetEnabledFeatures();
-	VkPipelineCache m_pipelineCache{ VK_NULL_HANDLE };
+	VkPipelineCache m_pipelineCache{VK_NULL_HANDLE};
 	void CreatePipelineCache();
 	VkPhysicalDeviceFeatures m_deviceFeatures{};
 
@@ -435,7 +434,7 @@ private:
 	DescriptorSets m_descriptorSets;
 	PipelineLayouts m_pipelineLayouts;
 	Pipelines m_pipelines;
-	VkCommandBuffer m_offScreenCmdBuffer{ VK_NULL_HANDLE };
+	VkCommandBuffer m_offScreenCmdBuffer{VK_NULL_HANDLE};
 	Semaphores m_semaphores{};
 
 	UniformDataOffscreen m_uniformDataOffscreen;
@@ -446,7 +445,7 @@ private:
 
 	void UpdateUniformBufferOffscreen();
 
-	Framebuffers m_framebuffers{ nullptr, nullptr };
+	Framebuffers m_framebuffers{nullptr, nullptr};
 	void SetupShadow();
 	void SetupDeferedPass();
 	// Post
@@ -454,8 +453,6 @@ private:
 	void SetupFinalPass();
 	void SetupBloomPass();
 	void SetupToneMappingPass();
-
-
 
 	// PBR
 	void GenerateBRDFLUT();
@@ -466,8 +463,8 @@ private:
 	void UpdateUniformBufferFXAA();
 	struct PostSettings
 	{
-		bool bloom{ true };
-		bool FXAA{ true };
+		bool bloom{true};
+		bool FXAA{true};
 	} m_postSettings;
 
 	void SetupBlurDescriptorSets();
@@ -501,7 +498,7 @@ private:
 		std::vector<CBufferDesc> CBufferData;
 		FramebufferAttachment Depth;
 	} m_spotLightPass;
-	uint32_t m_shadowSpotLightCount{ 0 };
+	uint32_t m_shadowSpotLightCount{0};
 	void CreateBuffersSpotLight();
 	void CreateBuffersSpotLightShadow();
 	void AllocateDescriptorSetSpotLightShadow();
@@ -512,21 +509,21 @@ private:
 	struct CubeMap
 	{
 		Texture Tex;
-		std::array<VkImageView, 6> FaceViews = { VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE };
+		std::array<VkImageView, 6> FaceViews = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
 		VkImageView framebufferView = VK_NULL_HANDLE; // 2D数组视图，用于framebuffer附件
 	};
 	struct ShadowOmniPass
 	{
 		// vector 每6个
-		static const int WIDTH{ 1280 };
-		static const int HEIGHT{ 1280 };
+		static const int WIDTH{1280};
+		static const int HEIGHT{1280};
 		std::vector<std::array<VkFramebuffer, 6>> FrameBuffers;
 		std::vector<CubeMap> CubeMaps;
 
-		VkPipelineLayout PipelineLayout{ nullptr };
-		VkPipeline Pipeline{ nullptr };
-		VkDescriptorSetLayout SetLayout{ VK_NULL_HANDLE };
-		VkDescriptorSet Set{ VK_NULL_HANDLE };
+		VkPipelineLayout PipelineLayout{nullptr};
+		VkPipeline Pipeline{nullptr};
+		VkDescriptorSetLayout SetLayout{VK_NULL_HANDLE};
+		VkDescriptorSet Set{VK_NULL_HANDLE};
 		// depth 共用
 		FramebufferAttachment Depth;
 		VkRenderPass RenderPass;
@@ -561,8 +558,8 @@ private:
 private:
 	struct LightCullingPass
 	{
-		static const uint32_t tileSize{ 16 };
-		static const uint32_t MAX_LIGHTS_PER_TILE{ 10 };
+		static const uint32_t tileSize{16};
+		static const uint32_t MAX_LIGHTS_PER_TILE{10};
 		uint32_t queueFamilyIndex;				   // Used to check if compute and graphics queue families differ and require additional barriers
 		VkQueue queue;							   // Separate queue for compute commands (queue family may differ from the one used for graphics)
 		VkCommandPool commandPool;				   // Use a separate command pool (queue family may differ from the one used for graphics)
@@ -584,7 +581,7 @@ private:
 		};
 		struct Tile
 		{
-			uint32_t lightCount{ 0 };
+			uint32_t lightCount{0};
 			uint32_t lightIndices[MAX_LIGHTS_PER_TILE];
 		};
 		struct LightCullingBuffers
@@ -609,22 +606,22 @@ private:
 private:
 	void OffscreenWork();
 	void SetupPassDepthCubeMap();
-	void RenderToCube(const vkglTF::Model& model, const glm::vec3& pos, const std::string& savePath);
-	void SaveToImage(const Texture& tex, const std::string& savePath);
+	void RenderToCube(const vkglTF::Model &model, const glm::vec3 &pos, const std::string &savePath);
+	void SaveToImage(const Texture &tex, const std::string &savePath);
 	void ExportSDFDataForVisualization(); // 导出SDF数据用于Python可视化验证
-    void ExportSDFDataForVisualization(Texture* texture, VkImageLayout oldLayout,const std::string outputPath);
+	void ExportSDFDataForVisualization(Texture *texture, VkImageLayout oldLayout, const std::string outputPath);
 	struct DepthCubeMapPass
 	{
-		static const int WIDTH{ 512 };
-		static const int HEIGHT{ 512 };
+		static const int WIDTH{512};
+		static const int HEIGHT{512};
 
 		CubeMap cubeMap;
 		std::array<VkFramebuffer, 6> frameBuffer;
 
-		VkPipelineLayout PipelineLayout{ nullptr };
-		VkPipeline Pipeline{ nullptr };
-		VkDescriptorSetLayout SetLayout{ VK_NULL_HANDLE };
-		VkDescriptorSet Set{ VK_NULL_HANDLE };
+		VkPipelineLayout PipelineLayout{nullptr};
+		VkPipeline Pipeline{nullptr};
+		VkDescriptorSetLayout SetLayout{VK_NULL_HANDLE};
+		VkDescriptorSet Set{VK_NULL_HANDLE};
 
 		FramebufferAttachment Depth;
 		VkRenderPass RenderPass;
@@ -662,15 +659,15 @@ private:
 		VkPipelineLayout PipelineLayout;
 		struct CBufferDesc
 		{
-			alignas(16) glm::vec4 SplitDepth{ glm::vec4(1.0f, 1.0f, 1.0f, 1.0f) };
+			alignas(16) glm::vec4 SplitDepth{glm::vec4(1.0f, 1.0f, 1.0f, 1.0f)};
 			alignas(4) uint32_t DirLightCount;
 			alignas(4) uint32_t ShadowDirCount;
 			alignas(4) uint32_t PointLightCount;
 			alignas(4) uint32_t ShadowPointCount;
 			alignas(4) uint32_t SpotLightCount;
 			alignas(4) uint32_t ShadowSpotCount;
-			alignas(4) float MetallicFactor{ 1.0f };
-			alignas(4) float RoughnessFactor{ 1.0f };
+			alignas(4) float MetallicFactor{1.0f};
+			alignas(4) float RoughnessFactor{1.0f};
 			alignas(4) uint32_t useShadows = 1;
 			alignas(4) int32_t debugDisplayTarget = 0;
 		} CBufferData;
@@ -700,8 +697,8 @@ private:
 	{
 		struct CBufferDesc
 		{
-			alignas(4) float Exposure{ 4.5f };
-			alignas(4) float Gamma{ 2.2f };
+			alignas(4) float Exposure{4.5f};
+			alignas(4) float Gamma{2.2f};
 		} CBufferData;
 	} m_BloomPass;
 
@@ -710,11 +707,11 @@ private:
 	Texture2D m_blueNoise;
 	struct SSAOPass
 	{
-		FramebufferManager* frameBuffer{ nullptr };
-		VkDescriptorSetLayout setLayout{ nullptr };
-		VkDescriptorSet set{ nullptr };
-		VkPipelineLayout pipelineLayout{ nullptr };
-		VkPipeline pipeline{ nullptr };
+		FramebufferManager *frameBuffer{nullptr};
+		VkDescriptorSetLayout setLayout{nullptr};
+		VkDescriptorSet set{nullptr};
+		VkPipelineLayout pipelineLayout{nullptr};
+		VkPipeline pipeline{nullptr};
 		Texture2D noiseTexture;
 		struct CBufferDesc
 		{
@@ -741,11 +738,11 @@ private:
 	class SdfAOPass
 	{
 	public:
-		FramebufferManager* frameBuffer{ nullptr };
-		VkDescriptorSetLayout setLayout{ nullptr };
-		VkDescriptorSet set{ nullptr };
-		VkPipelineLayout pipelineLayout{ nullptr };
-		VkPipeline pipeline{ nullptr };
+		FramebufferManager *frameBuffer{nullptr};
+		VkDescriptorSetLayout setLayout{nullptr};
+		VkDescriptorSet set{nullptr};
+		VkPipelineLayout pipelineLayout{nullptr};
+		VkPipeline pipeline{nullptr};
 		Texture2D noiseTexture;
 		struct CBufferDesc
 		{
@@ -778,7 +775,7 @@ private:
 private:
 	struct HBAOPass
 	{
-		FramebufferManager* FrameBuffer{ nullptr };
+		FramebufferManager *FrameBuffer{nullptr};
 		Texture2D NoiseTex;
 		VkDescriptorSetLayout SetLayout;
 		VkDescriptorSet Set;
@@ -815,7 +812,7 @@ private:
 private:
 	struct GTAOPass
 	{
-		FramebufferManager* FrameBuffer{ nullptr };
+		FramebufferManager *FrameBuffer{nullptr};
 		Texture2D NoiseTex;
 		VkDescriptorSetLayout SetLayout;
 		VkDescriptorSet Set;
@@ -847,8 +844,8 @@ private:
 	// 交叉双边滤波
 	struct CrossBilateralFilterPass
 	{
-		FramebufferManager* FrameBufferX{ nullptr };
-		FramebufferManager* FrameBufferY{ nullptr };
+		FramebufferManager *FrameBufferX{nullptr};
+		FramebufferManager *FrameBufferY{nullptr};
 		VkDescriptorSetLayout SetLayout;
 		VkDescriptorSet SetX;
 		VkDescriptorSet SetY;
@@ -901,7 +898,7 @@ private:
 	PFN_vkCmdBeginDebugUtilsLabelEXT m_vkCmdBeginDebugUtilsLabelEXT = nullptr;
 	PFN_vkCmdEndDebugUtilsLabelEXT m_vkCmdEndDebugUtilsLabelEXT = nullptr;
 	void LoadDebugUtilsFunctions();
-	void BeginDebugLabel(VkCommandBuffer cmd, const char* name, float r = 1.0f, float g = 1.0f, float b = 1.0f, float a = 1.0f);
+	void BeginDebugLabel(VkCommandBuffer cmd, const char *name, float r = 1.0f, float g = 1.0f, float b = 1.0f, float a = 1.0f);
 	void EndDebugLabel(VkCommandBuffer cmd);
 
 private:
@@ -909,8 +906,8 @@ private:
 
 	// CSM
 private:
-	static const uint32_t SHADOW_MAP_CASCADE_COUNT{ 4 };
-	static const uint32_t SHADOWMAP_DIM{ 4096 };
+	static const uint32_t SHADOW_MAP_CASCADE_COUNT{4};
+	static const uint32_t SHADOWMAP_DIM{4096};
 	struct Cascade
 	{
 		VkFramebuffer frameBuffer;
@@ -926,10 +923,10 @@ private:
 
 	class CSMPass
 	{
-    public:
-		VkRenderPass renderPass{ nullptr };
-		VkPipelineLayout pipelineLayout{ nullptr };
-		VkPipeline pipeline{ nullptr };
+	public:
+		VkRenderPass renderPass{nullptr};
+		VkPipelineLayout pipelineLayout{nullptr};
+		VkPipeline pipeline{nullptr};
 		FramebufferAttachment depth;
 		std::array<Cascade, SHADOW_MAP_CASCADE_COUNT> cascades;
 		std::vector<FramebufferAttachment> Depths;
@@ -944,8 +941,8 @@ private:
 			Buffer cascadeViewProjMatricesBuffer;
 			Buffer uboFS;
 		} buffers;
-		VkDescriptorSet set{ nullptr };
-		VkDescriptorSetLayout setLayout{ nullptr };
+		VkDescriptorSet set{nullptr};
+		VkDescriptorSetLayout setLayout{nullptr};
 		struct PushBlock
 		{
 			int lightIndex;
@@ -979,8 +976,8 @@ private:
 	Buffer SpotLightBuffer;
 	Buffer DirLightBuffer;
 	Buffer DirLightMatricesBufer;
-	int m_shadowDirLightCount{ 0 };
-	int m_shadowPointLightCount{ 0 };
+	int m_shadowDirLightCount{0};
+	int m_shadowPointLightCount{0};
 	void InitLights();
 	void CreateBuffersDirLights();
 	void CreateLightsBuffers();
@@ -1007,25 +1004,25 @@ private:
 		Buffer voxelUniformBuffer;		  // Uniform buffer for constants
 
 		// Descriptor sets and layouts
-		VkDescriptorSetLayout markPassDescriptorSetLayout{ VK_NULL_HANDLE };
-		VkDescriptorSetLayout fillPassDescriptorSetLayout{ VK_NULL_HANDLE };
-		VkDescriptorSet markPassDescriptorSet{ VK_NULL_HANDLE };
-		VkDescriptorSet fillPassDescriptorSet{ VK_NULL_HANDLE };
+		VkDescriptorSetLayout markPassDescriptorSetLayout{VK_NULL_HANDLE};
+		VkDescriptorSetLayout fillPassDescriptorSetLayout{VK_NULL_HANDLE};
+		VkDescriptorSet markPassDescriptorSet{VK_NULL_HANDLE};
+		VkDescriptorSet fillPassDescriptorSet{VK_NULL_HANDLE};
 
 		// Pipeline layouts and pipelines
-		VkPipelineLayout markPassPipelineLayout{ VK_NULL_HANDLE };
-		VkPipelineLayout fillPassPipelineLayout{ VK_NULL_HANDLE };
-		VkPipeline markPassPipeline{ VK_NULL_HANDLE };
-		VkPipeline fillPassPipeline{ VK_NULL_HANDLE };
+		VkPipelineLayout markPassPipelineLayout{VK_NULL_HANDLE};
+		VkPipelineLayout fillPassPipelineLayout{VK_NULL_HANDLE};
+		VkPipeline markPassPipeline{VK_NULL_HANDLE};
+		VkPipeline fillPassPipeline{VK_NULL_HANDLE};
 
 		// Render pass for voxelization (no color attachments, just for pipeline creation)
-		VkRenderPass renderPass{ VK_NULL_HANDLE };
-		VkFramebuffer framebuffer{ VK_NULL_HANDLE };
+		VkRenderPass renderPass{VK_NULL_HANDLE};
+		VkFramebuffer framebuffer{VK_NULL_HANDLE};
 
 		// Depth attachment for framebuffer
-		VkImage depthImage{ VK_NULL_HANDLE };
-		VkImageView depthImageView{ VK_NULL_HANDLE };
-		VkDeviceMemory depthImageMemory{ VK_NULL_HANDLE };
+		VkImage depthImage{VK_NULL_HANDLE};
+		VkImageView depthImageView{VK_NULL_HANDLE};
+		VkDeviceMemory depthImageMemory{VK_NULL_HANDLE};
 
 		// Constants matching shader struct
 		struct VoxelConstants
@@ -1099,14 +1096,14 @@ private:
 			uint32_t padding[3]; // 对齐到16字节
 		};
 
-        struct SolidNodeSelectionPushConstant
-        {
-            uint32_t BaseSize{128};
-            uint32_t SampledLevel{0};
-            glm::uvec2 Padding;
-            alignas(16)glm::vec3 modelCenter;    // 模型中心
-            float halfSizeWithMargin; // 包含边距的半尺寸
-        };
+		struct SolidNodeSelectionPushConstant
+		{
+			uint32_t BaseSize{128};
+			uint32_t SampledLevel{0};
+			glm::uvec2 Padding;
+			alignas(16) glm::vec3 modelCenter; // 模型中心
+			float halfSizeWithMargin;		   // 包含边距的半尺寸
+		};
 
 		// GPU资源
 		Buffer solidNodeBuffer; // 存储筛选出的solid nodes
@@ -1117,8 +1114,7 @@ private:
 		VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
 
 		// 参数
-		static constexpr uint32_t MAX_SOLID_NODES = 1024; // 最大solid node数量
-		uint32_t actualNodeCount = 0;					  // 实际筛选出的节点数量
+		uint32_t actualNodeCount = 0; // 实际筛选出的节点数量
 
 		void cleanup(VkDevice device)
 		{
@@ -1148,16 +1144,16 @@ private:
 		// 复用版本A的节点结构体
 		using SolidNode = AnalyticalSolidNodeSelection::SolidNode;
 
-		
 		Buffer selectedNodesBuffer; // 最终选中的节点 (最多10个)
 		Buffer selectedCountBuffer; // 最终节点计数
+        Buffer LevelCountBuffer;
 
 		// 新添加的多pass字段
-		struct  CollectionPushConstantDesc
+		struct CollectionPushConstantDesc
 		{
-            uint32_t BaseSize{};
-            uint32_t CurrentLevel{};
-        } CollectionPushConstant;
+			uint32_t BaseSize{};
+			uint32_t CurrentLevel{};
+		} CollectionPushConstant;
 		Buffer candidateNodesBuffer; // 候选节点缓冲区 (最多1000个)
 		Buffer candidateCountBuffer; // 候选节点计数
 		VkPipeline collectionPipeline = VK_NULL_HANDLE;
@@ -1172,27 +1168,24 @@ private:
 		VkDescriptorSet finalSelectionDescriptorSet = VK_NULL_HANDLE;
 
 		// 参数
-        static constexpr uint32_t MAX_CANDIDATE_NODES{50}; // 候选节点容量
-		uint32_t actualNodeCount = 0;						  // 实际选中的节点数量
+		static constexpr uint32_t MAX_CANDIDATE_NODES{50}; // 候选节点容量
+		uint32_t actualNodeCount = 0;					   // 实际选中的节点数量
 
 		void cleanup(VkDevice device);
 	} multiViewNodeSelection_;
 
 	// 版本控制：选择使用阶段三的哪个版本
-	bool m_useSolidNodeSelectionB = false; // false: 使用版本A, true: 使用版本B
+	bool useMultiview_ = false; // false: 使用版本A, true: 使用版本B
 
 	// 阶段四：解析式SDF生成 (Analytical SDF Generation)
 	struct AnalyticalSDFGeneration
 	{
 		// GPU资源
-        Texture sdfTexture{}; //最终输出
+		Texture sdfTexture{}; // 最终输出
 		VkPipeline pipeline = VK_NULL_HANDLE;
 		VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 		VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
 		VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-
-		// 参数
-		static constexpr uint32_t MAX_CUBES = 20;	   // 限制处理20个立方体
 
 		void cleanup(VkDevice device)
 		{
@@ -1215,47 +1208,23 @@ private:
 		}
 	} m_analyticalSDFGeneration;
 
-	Texture* GetAnalyticalSdfTexture()
+	Texture *GetAnalyticalSdfTexture()
 	{
-        m_analyticalSDFGeneration.sdfTexture.dimZ = config_->Sdf.Resolution;
+		m_analyticalSDFGeneration.sdfTexture.dimZ = config_->Sdf.Resolution;
 		return &m_analyticalSDFGeneration.sdfTexture;
-    }
-    Texture* GetMultiViewDepthSdfTexture()
-    {
-        // return m_multiViewDepthSDF4C.sdfFusionPass.finalSDFTexture
-        Texture* sdfTex{new Texture};
-        sdfTex->image = m_multiViewDepthSDF4C.sdfFusionPass.finalSDFTexture;
-        sdfTex->dimZ = config_->Sdf.Resolution;
-        return sdfTex;
-    }
+	}
+	Texture *GetMultiViewDepthSdfTexture()
+	{
+		// return m_multiViewDepthSDF4C.sdfFusionPass.finalSDFTexture
+		Texture *sdfTex{new Texture};
+		sdfTex->image = m_multiViewDepthSDF4C.sdfFusionPass.finalSDFTexture;
+		sdfTex->dimZ = config_->Sdf.Resolution;
+		return sdfTex;
+	}
 	// 阶段四 (版本B): 多视角深度渲染与融合 (Multi-View Depth SDF)
-
 
 	void CreateFinalSDFSampler();
 
-	// GPU驱动的数据准备架构
-	struct GPUDataPreparation
-	{
-		// 相机矩阵准备
-		VkPipeline cameraMatrixPipeline = VK_NULL_HANDLE;
-		VkPipelineLayout cameraMatrixPipelineLayout = VK_NULL_HANDLE;
-		VkDescriptorSetLayout cameraMatrixDescriptorLayout = VK_NULL_HANDLE;
-		VkDescriptorSet cameraMatrixDescriptorSet = VK_NULL_HANDLE;
-
-		// 间接命令生成
-		VkPipeline indirectCommandPipeline = VK_NULL_HANDLE;
-		VkPipelineLayout indirectCommandPipelineLayout = VK_NULL_HANDLE;
-		VkDescriptorSetLayout indirectCommandDescriptorLayout = VK_NULL_HANDLE;
-		VkDescriptorSet indirectCommandDescriptorSet = VK_NULL_HANDLE;
-
-		// GPU-only buffers (无CPU可见性)
-		Buffer cameraMatricesBuffer_GPU;	// 相机矩阵数据 (VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
-		Buffer activeCameraCountBuffer_GPU; // 活跃相机数量 (VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
-		Buffer indirectDrawBuffer_GPU;		// 间接绘制命令 (VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
-
-		void cleanup(VkDevice device);
-	
-	} m_gpuDataPreparation;
 
 	// 保存 multiview 的 dataprepare之后
 	struct MultiViewDepthSDF4C
@@ -1327,21 +1296,15 @@ private:
 			// 渲染参数结构体
 			struct RenderParams
 			{
-                glm::mat4 ModelMatrix;
+				glm::mat4 ModelMatrix;
 				glm::mat4 projectionMatrix;
 				uint32_t totalPartCount;
-				uint32_t activeCameraCount;
-				uint32_t totalDrawCommands; // 总绘制命令数 (partCount * cameraCount * 6)
-				uint32_t baseInstanceID;	// 基础实例ID用于解码
-				glm::uvec2 _padding;		// 16字节对齐
 			} renderParams;
 
 			// 深度附件 (用于深度测试)
 			VkImage depthAttachment = VK_NULL_HANDLE;
 			VkImageView depthAttachmentView = VK_NULL_HANDLE;
 			VkDeviceMemory depthAttachmentMemory = VK_NULL_HANDLE;
-
-			static constexpr VkFormat DEPTH_FORMAT = VK_FORMAT_R32_SFLOAT; // 32位浮点深度格式
 		} depthRendering;
 
 		// SDF融合阶段 - 计算着色器重建3D SDF
@@ -1370,25 +1333,24 @@ private:
 			{
 				uint32_t activeCameraCount; // Number of active cameras
 				float maxDistance;			// Maximum SDF distance
-				glm::vec2 _padding;			// 16-byte alignment
+                uint32_t BaseSize;
+				uint32_t Padding;			// 16-byte alignment
 			} pushConstants;
 
 		} sdfFusionPass;
 
-
 		// 清理函数
-        void cleanup(VkDevice device);
-		
+		void cleanup(VkDevice device);
+
 	} m_multiViewDepthSDF4C;
 
 	// Vulkan GPU到CPU读取finalVoxelStateTexture的完整实现示例
 	bool ReadFinalVoxelStateTextureToCPU_Staging();
 
-	// 统一GPU管线方法 - 分离资源管理
+	// 统一GPU管线方法 
 	void InitializeUnifiedGPUPipelineResources(); // 初始化资源
 	void RecordUnifiedGPUPipelineCommands();	  // 预录制命令
 	void SubmitUnifiedGPUPipeline();			  // 在渲染循环中提交
-
 
 	void ExecuteVoxelizationMarkPass(VkCommandBuffer cmd);
 	void ExecuteVoxelizationFillPass(VkCommandBuffer cmd);
@@ -1398,19 +1360,19 @@ private:
 	/// <summary>
 	/// 创建Analytical 节点选择所需的资源
 	/// </summary>
-	void InitializeAnalyticalNodeSelectionResource();			  // 初始化节点筛选资源
+	void InitializeAnalyticalNodeSelectionResource();		  // 初始化节点筛选资源
 	void InitializeAnalyticalSDFGenerationResources();		  // 初始化SDF生成资源
 	void UpdateSolidNodeSelectionDescriptorSet();			  // 更新节点筛选描述符集
-	void ExecuteAnalyticalNodeSelection(VkCommandBuffer cmd);	  // 执行节点筛选
+	void ExecuteAnalyticalNodeSelection(VkCommandBuffer cmd); // 执行节点筛选
 	void ExecuteAnalyticalSDFGeneration(VkCommandBuffer cmd); // 执行SDF生成
 	void ValidateSolidNodeSelectionResults();				  // 验证节点筛选结果（调试用）
 
 	// 阶段三版本B的相关函数
-	void InitializeMultiviewNodeSelectionResource();		  // 初始化版本B资源
-	void UpdateMultiviewNodeSelectionDescriptorSet();		  // 更新版本B描述符集
-	void UpdateAnalyticalSDFGenerationDescriptorSet();	  // 动态更新阶段四使用的节点选择版本
+	void InitializeMultiviewNodeSelectionResource();		 // 初始化版本B资源
+	void UpdateMultiviewNodeSelectionDescriptorSet();		 // 更新版本B描述符集
+	void UpdateAnalyticalSDFGenerationDescriptorSet();		 // 动态更新阶段四使用的节点选择版本
 	void ExecuteMultiViewNodeSelection(VkCommandBuffer cmd); // 执行版本B节点筛选
-	void SetSolidNodeSelectionVersion(bool useVersionB);  // 切换版本A/B
+	void SetSolidNodeSelectionVersion(bool useVersionB);	 // 切换版本A/B
 
 	// 阶段四版本B的相关函数 (Multi-View Depth SDF)
 	void InitializeMultiViewDepthSDFResources(); // 初始化多视角深度SDF资源
@@ -1433,8 +1395,7 @@ private:
 	void ExecuteMultiViewDepthRendering(VkCommandBuffer cmd); // 执行多视角深度渲染
 	void InitializeSDFFusion4C();							  // 初始化SDF融合阶段
 
-	void ExecuteSDFFusion(VkCommandBuffer cmd);				  // 执行SDF融合
-
+	void ExecuteSDFFusion(VkCommandBuffer cmd); // 执行SDF融合
 
 	// GPU驱动数据准备相关函数
 	void InitializeGPUDataPreparation();				 // 初始化GPU数据准备资源
@@ -1458,13 +1419,10 @@ private:
 		float padding;
 	};
 
-
-	VkBuffer GetModelVertexBuffer();		 // 获取模型顶点缓冲区
-	VkBuffer GetModelIndexBuffer();			 // 获取模型索引缓冲区
-	uint32_t GetModelIndexCount();			 // 获取模型索引数量
-	uint32_t GetModelVertexCount();			 // 获取模型顶点数量
-
-
+	VkBuffer GetModelVertexBuffer(); // 获取模型顶点缓冲区
+	VkBuffer GetModelIndexBuffer();	 // 获取模型索引缓冲区
+	uint32_t GetModelIndexCount();	 // 获取模型索引数量
+	uint32_t GetModelVertexCount();	 // 获取模型顶点数量
 
 	// Voxelization Pass functions
 	void SetupVoxelizationPass();
@@ -1477,24 +1435,23 @@ private:
 	void UpdateVoxelizationConstants();
 	void BuildVoxelizationCommandBuffer();
 
-
-
 	// Test function for voxelization
 	void TestVoxelization();
 
 	// Voxel texture save function
-	void SaveVoxelTextureWithValidation(const std::string& filename);
+	void SaveVoxelTextureWithValidation(const std::string &filename);
 
 	// Voxelization debug flag
-	bool m_voxelizationDebugEnabled{ false };
- private:
+	bool m_voxelizationDebugEnabled{false};
+
+private:
 	void InitializeMeshToSdfOperator();
-	MeshToSdf* meshToSdfOperator_{};
-    VkCommandBuffer meshToSdfCommandBuffer_{};
+	MeshToSdf *meshToSdfOperator_{};
+	VkCommandBuffer meshToSdfCommandBuffer_{};
 
 public:
-    MeshToSdf* GetMeshToSdfOperator();
+	MeshToSdf *GetMeshToSdfOperator();
 
-public: 
+public:
 	void TestBruteSdfAndSave();
 };

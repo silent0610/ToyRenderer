@@ -3,9 +3,9 @@
 // Converts multi-view depth maps to 3D signed distance field
 
 // SDF Grid Configuration
-static const uint SDF_RESOLUTION = 64;          // 256³ voxels
+
 static const float SDF_WORLD_SIZE = 2.0f;       // 10 units world space
-static const float VOXEL_SIZE = SDF_WORLD_SIZE / SDF_RESOLUTION; // Size of each voxel
+
 static const float3 SDF_MIN_BOUNDS = float3(-SDF_WORLD_SIZE * 0.5f, -SDF_WORLD_SIZE * 0.5f, -SDF_WORLD_SIZE * 0.5f);
 
 // Camera matrix structure (matches C++ GPUDataPreparation4C)
@@ -15,9 +15,10 @@ struct CameraMatrix {
 
 // Push constants for SDF parameters
 struct PushConstants {
-    uint activeCameraCount;     // Number of active cameras
+    uint maxCameraCount;     // Number of active cameras
     float maxDistance;          // Maximum SDF distance
-    float2 _padding;            // 16-byte alignment
+    uint BaseSize;
+    uint padding;            // 16-byte alignment
 };
 [[vk::push_constant]] PushConstants pushConsts;
 
@@ -26,27 +27,27 @@ SamplerState depthSampler : register(s0);                  // Binding 0: Sampler
 TextureCubeArray depthCubemapArray : register(t1);         // Binding 1: Sampled Image (Cube Array) 
 RWTexture3D<float> finalSDFTexture : register(u2);         // Binding 2: Storage Image (3D SDF output)
 StructuredBuffer<CameraMatrix> cameraMatrices : register(t3); // Binding 3: Storage Buffer
-
-[numthreads(8, 8, 8)]
+StructuredBuffer<uint> activeCameraCount:register(t4);
+[numthreads(4, 4, 4)]
 void main(uint3 id : SV_DispatchThreadID) {
+
+    
     // 1. Thread setup and bounds checking
-    if (id.x >= SDF_RESOLUTION || id.y >= SDF_RESOLUTION || id.z >= SDF_RESOLUTION) {
+    if (id.x >= pushConsts.BaseSize || id.y >= pushConsts.BaseSize || id.z >= pushConsts.BaseSize) {
         return; // Early exit if thread is outside SDF grid
     }
-
+    float voxelSize = SDF_WORLD_SIZE / pushConsts.BaseSize;
     // 2. Calculate world position of current voxel
     // Convert thread ID to voxel position in SDF grid
-    float3 voxelPos = float3(id) * VOXEL_SIZE + SDF_MIN_BOUNDS;
+    float3 voxelID = float3(id) + float3(0.5,0.5,0.5);
+    float3 voxelPos = voxelID * voxelSize + SDF_MIN_BOUNDS;
     // Calculate world position at voxel center
-    float3 worldPos1 = voxelPos + float3(VOXEL_SIZE * 0.5f, VOXEL_SIZE * 0.5f, VOXEL_SIZE * 0.5f);
-    worldPos1.y *=-1;
-    worldPos1.z *=-1;
-    const float3 worldPos = worldPos1;
+    float3 worldPos = float3(voxelPos.x,-voxelPos.y,-voxelPos.z);
     // 3. Initialize minimum SDF value
     float minSdfValue = pushConsts.maxDistance; // Start with maximum distance
 
     // 4. Main loop: iterate through all active cameras
-    for (uint cameraIndex = 0; cameraIndex < 10;cameraIndex++) {
+    for (uint cameraIndex = 0; cameraIndex < activeCameraCount[0];cameraIndex++) {
         // a. Get camera data
         const float3 cameraPos = cameraMatrices[cameraIndex].cameraPosition.xyz;
 

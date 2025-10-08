@@ -32,7 +32,7 @@
     },
     "SdfConfig": {
         "WorldSize": 2.0,
-        "Resolution": 8,
+        "Resolution": 128,
         "SdfMode": 1,
         "AnalyticalSampledLevel": 3,
         "MeshToSdfMode": 1,

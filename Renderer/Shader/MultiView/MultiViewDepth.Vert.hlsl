@@ -52,17 +52,14 @@ static const float3 CUBE_UP_VECTORS[6] = {
 
 // 资源绑定
 [[vk::binding(0, 0)]] StructuredBuffer<CameraMatrix> cameraMatrices;
-[[vk::binding(1, 0)]] StructuredBuffer<float4x4> modelMatrices;
+// [[vk::binding(1, 0)]] StructuredBuffer<float4x4> modelMatrices;
+[[vk::binding(1, 0)]] StructuredBuffer<uint> activeCameraCount;
 
 // Push Constants
 struct PushConstants {
     float4x4 ModelMatrix;
     float4x4 projectionMatrix;  // 统一的透视投影矩阵
     uint totalPartCount;        // 总子部件数量
-    uint activeCameraCount;     // 活跃相机数量
-    uint totalDrawCommands;     // 总绘制命令数 (partCount * cameraCount * 6)
-    uint baseInstanceID;        // 基础实例ID用于解码
-    uint2 _padding;             // 16字节对齐
 };
 [[vk::push_constant]] PushConstants pushConsts;
 
@@ -89,7 +86,7 @@ VertexOutput main(VertexInput input, uint instanceID : SV_InstanceID) {
     // SV_InstanceID = firstInstance + instanceID
     // firstInstance = partIndex * (cameraCount * 6), instanceID = 0 to (cameraCount * 6 - 1)
 
-    uint totalCameras = pushConsts.activeCameraCount;
+    uint totalCameras = activeCameraCount[0];
     uint totalFaces = 6;
     uint camerasAndFaces = totalCameras * totalFaces;
 
@@ -117,8 +114,6 @@ VertexOutput main(VertexInput input, uint instanceID : SV_InstanceID) {
     // 每个相机占用6个连续的layer (cubemap的6个面)
     output.renderTargetIndex = cameraIndex * 6 + faceIndex;
 
-
-
     // 4. 获取相机位置并构建视图矩阵 (V)
     // 每个相机从其位置看向cubemap的6个标准方向
 
@@ -138,14 +133,9 @@ VertexOutput main(VertexInput input, uint instanceID : SV_InstanceID) {
     // 6. 计算最终裁剪坐标 (P * V * M * vertex)
     // Apply Y-axis flip to projection matrix to correct coordinate system
     float4x4 projMatrix = pushConsts.projectionMatrix;
-    //projMatrix[1][1] = -projMatrix[1][1]; // Flip Y axis
 
     float4x4 mvpMatrix = mul(projMatrix, mul(viewMatrix, pushConsts.ModelMatrix));
     output.position = mul(mvpMatrix, float4(input.position, 1.0));
-
-    // 7. Debug: Pass view matrix first row for verification  
-
-    // 8. Output debug information
 
     return output;
 }

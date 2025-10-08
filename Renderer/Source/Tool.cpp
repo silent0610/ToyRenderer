@@ -2,9 +2,11 @@ module;
 #include "vulkan/vulkan.h"
 #include "assert.h"
 #include <windows.h>
+#include "spdlog/spdlog.h"
 module ToolMod;
 import std;
 import InitMod;
+
 namespace Tool
 {
 	bool errorModeSilent = false;
@@ -294,13 +296,14 @@ inline void Tool::CheckResult(VkResult res, const std::source_location &loc)
 {
 	if (res != VK_SUCCESS)
 	{
-		std::cout << "Error Code: " << res << "\n";
-		// 3. 使用 loc 的成员函数获取信息
-		std::cout << "Fatal : VkResult is \"" << Tool::ErrorString(res)
-				  << "\" in " << loc.file_name()			// 文件名
-				  << " at line " << loc.line()				// 行号
-				  << " in function " << loc.function_name() // 还能获取函数名!
-				  << "\n";
+		
+        spdlog::error("Error Code:{}\nFatal : VkResult is \"{}\" in {} at line {} in function {}", static_cast<int>(res), Tool::ErrorString(res),
+                      loc.file_name(),
+                      loc.line(),
+                      loc.function_name());
+		
+		//// 3. 使用 loc 的成员函数获取信息
+	
 		assert(res == VK_SUCCESS);
 	}
 }
