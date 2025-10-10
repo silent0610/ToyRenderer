@@ -118,6 +118,7 @@ void main(uint3 id : SV_DispatchThreadID) {
     uint nodeValue = ReadCurrentLevelTexture(coord).x;
     if(nodeValue != SOLID) return;  // Only collect SOLID nodes
 
+    // 根据权重进行选择
     uint3 coordPrev = coord/2;
     uint complexity = ReadPrevLevelTexture(coordPrev);
 
@@ -127,10 +128,10 @@ void main(uint3 id : SV_DispatchThreadID) {
     float distanceWeight = (centerOffset.x + centerOffset.y + centerOffset.z) / 1.5f; // 归一化到[0,1]
 
     // 结合复杂度和距离权重
-    uint finalComplexity = uint(float(complexity) * (0.3f + 0.7f * distanceWeight)); // 30%基础 + 70%距离权重
+    uint finalComplexity = uint(float(complexity)); // 20%基础 + 80%距离权重
 
     // 复杂度选择
-    if(RandomInt(coord) > finalComplexity) {
+    if(RandomInt(coord) > 2*finalComplexity) {
         return;
     }
     // Step 3: Create candidate node

@@ -336,8 +336,8 @@ private:
 	void AllocateDescriptorSets();
 	void PreparePipelines();
 	void UpdateBuffers();
-	void BuildDeferredCommandBuffer();
-	void BuildCommandBuffers();
+	void RecordMainCommandBuffer();
+	void BuildFinalCommandBuffer();
 
 	void CreateInstance();
 	void InitWindow();
@@ -772,6 +772,9 @@ private:
 	void PreparePipelineSdfAO();
 	void UpdateCBufferSdfAO();
 
+public:
+    void ExportAOData();
+
 private:
 	struct HBAOPass
 	{
@@ -1162,6 +1165,11 @@ private:
 		VkDescriptorSet collectionDescriptorSet = VK_NULL_HANDLE;
 
 		// 最终选择管线字段
+
+		struct FinalSelectionPushConstantDesc
+        {
+            uint32_t MaxSelectedNode{};
+        } FinalSelectionPushConstant{};
 		VkPipeline finalSelectionPipeline = VK_NULL_HANDLE;
 		VkPipelineLayout finalSelectionPipelineLayout = VK_NULL_HANDLE;
 		VkDescriptorSetLayout finalSelectionDescriptorSetLayout = VK_NULL_HANDLE;
@@ -1451,6 +1459,12 @@ private:
 
 public:
 	MeshToSdf *GetMeshToSdfOperator();
+
+private:
+	// 辅助函数: 从modelPath提取模型名称
+	std::string GetModelNameFromPath(const std::string& modelPath);
+	// 生成SDF输出文件名: ModelName_Resolution_MethodName.raw
+	std::string GenerateSdfFileName(const std::string& methodName);
 
 public:
 	void TestBruteSdfAndSave();

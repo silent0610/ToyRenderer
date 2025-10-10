@@ -1658,7 +1658,8 @@ void vkglTF::Model::bindBuffers(VkCommandBuffer commandBuffer)
     buffersBound = true;
 }
 
-void vkglTF::Model::drawNode(Node *node, VkCommandBuffer commandBuffer, uint32_t renderFlags, VkPipelineLayout pipelineLayout, uint32_t bindImageSet)
+void vkglTF::Model::drawNode(vkglTF::Node* node, VkCommandBuffer commandBuffer, uint32_t renderFlags, VkPipelineLayout pipelineLayout,
+                             uint32_t bindImageSet)
 {
     if (node->mesh)
     {
@@ -1709,7 +1710,7 @@ void vkglTF::Model::Draw(VkCommandBuffer commandBuffer, uint32_t renderFlags, Vk
     }
 }
 
-void vkglTF::Model::getNodeDimensions(Node *node, glm::vec3 &min, glm::vec3 &max)
+void vkglTF::Model::getNodeDimensions(vkglTF::Node* node, glm::vec3& min, glm::vec3& max)
 {
     if (node->mesh)
     {
@@ -1831,7 +1832,7 @@ void vkglTF::Model::updateAnimation(uint32_t index, float time)
 /*
     Helper functions
 */
-vkglTF::Node *vkglTF::Model::findNode(Node *parent, uint32_t index)
+vkglTF::Node* vkglTF::Model::findNode(vkglTF::Node* parent, uint32_t index)
 {
     Node *nodeFound = nullptr;
     if (parent->index == index)

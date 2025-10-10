@@ -41,7 +41,7 @@ void DeferredPass::Execute(RhiCommandBuffer* cmd)
 
 void DeferredPass::ExecuteVulkan(VkCommandBuffer commandBuffer, const vkglTF::Model& model)
 {
-    // This is the extracted deferred pass logic from BuildDeferredCommandBuffer()
+    // This is the extracted deferred pass logic from RecordMainCommandBuffer()
     // Lines 3297-3319 from the original implementation
     
     VkRenderPassBeginInfo renderPassBeginInfo{};

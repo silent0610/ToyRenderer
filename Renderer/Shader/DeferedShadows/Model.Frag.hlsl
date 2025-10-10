@@ -28,14 +28,17 @@ FSOutput main(VSOutput input) {
     output.Position = float4(input.WorldPos, 1.0);
 
     // // Calculate normal in tangent space
-    float3 N = normalize(input.Normal);
-    float3 T = normalize(input.Tangent);
-    float3 B = cross(N, T);
-    float3x3 TBN = float3x3(T, B, N);
-    float3 tnorm = mul(normalize(textureNormalMap.Sample(samplerNormalMap, input.UV).xyz * 2.0 - float3(1.0, 1.0, 1.0)), TBN);
-    output.Normal = float4(normalize(tnorm), 1.0);
+    // float3 N = normalize(input.Normal);
+    // float3 T = normalize(input.Tangent);
+    // float3 B = cross(N, T);
+    // float3x3 TBN = float3x3(T, B, N);
+    // float3 tnorm = mul(normalize(textureNormalMap.Sample(samplerNormalMap, input.UV).xyz * 2.0 - float3(1.0, 1.0, 1.0)), TBN);
+    // output.Normal = float4(normalize(tnorm), 1.0);
 
-    output.Albedo = textureColor.Sample(samplerColor, input.UV);
-    output.MRAO = textureMR.Sample(samplerMR, input.UV);
+    // output.Albedo = textureColor.Sample(samplerColor, input.UV);
+    //output.MRAO = textureMR.Sample(samplerMR, input.UV);
+    output.Normal = float4(input.Normal,1.0f);
+    output.Albedo = float4(1.0f,1.0f,1.0f,1.0f);    
+    output.MRAO = float4(1.0f,1.0f,1.0f,1.0f);
     return output;
 }

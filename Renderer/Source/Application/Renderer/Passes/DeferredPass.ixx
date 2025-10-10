@@ -10,7 +10,7 @@ import RhiCommandBuffer;
 import VkglTFModel;  // Import actual Model class instead of forward declaration
 
 // DeferredPass - G-Buffer generation for deferred rendering
-// Extracted from the monolithic Renderer::BuildDeferredCommandBuffer()
+// Extracted from the monolithic Renderer::RecordMainCommandBuffer()
 export class DeferredPass 
 {
 private:

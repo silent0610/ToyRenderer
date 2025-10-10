@@ -1,6 +1,6 @@
 {
     "modelPath": [
-        "Models/cat/scene.gltf"
+        "Models/fox_1k.gltf"
     ],
     "shaderPath": [
         "BlinnPhong/Basic.Vert.spv",
@@ -32,12 +32,14 @@
     },
     "SdfConfig": {
         "WorldSize": 2.0,
-        "Resolution": 128,
+        "Resolution": 64,
+        "MultiViewUsedCameraNum": 10,
         "SdfMode": 1,
-        "AnalyticalSampledLevel": 3,
+        "MultiViewDepthResolution": 64,
+        "AnalyticalSampledLevel": 2,
         "MeshToSdfMode": 1,
         "MeshToSdfIteration": 10,
         "MeshToSdfDistanceMode": 1,
-        "MeshToSdfQuality": 1
+        "MeshToSdfQuality": 0
     }
 }

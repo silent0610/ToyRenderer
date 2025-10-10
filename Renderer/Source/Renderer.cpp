@@ -11,7 +11,7 @@ module;
 
 module RendererMod;
 import BruteForceSdf;
-
+import Logger;
 const float PI = 3.1415929;
 
 Renderer::Renderer(Config* config) : config_(config)
@@ -224,14 +224,13 @@ void Renderer::InitVulkan()
     InitUI();
 
     PrepareUniformBuffers();
-
     SetupDescriptors();
     AllocateDescriptorSets(); // 4
 
     PreparePipelines(); // 5
 
-    BuildCommandBuffers();
-    BuildDeferredCommandBuffer();
+    BuildFinalCommandBuffer();
+    RecordMainCommandBuffer();
 
     {
 
@@ -252,24 +251,87 @@ void Renderer::InitVulkan()
         InitializeMeshToSdfOperator();
     }
 }
+// 从modelPath提取模型名称 (去除路径和扩展名)
+std::string Renderer::GetModelNameFromPath(const std::string& modelPath)
+{
+    std::string modelName = "unknown";
+
+    // 查找最后一个'/'或'\\'
+    size_t lastSlash = modelPath.find_last_of("/\\");
+    if (lastSlash != std::string::npos)
+    {
+        modelName = modelPath.substr(lastSlash + 1);
+    }
+    else
+    {
+        modelName = modelPath;
+    }
+
+    // 去除扩展名 (.gltf, .obj等)
+    size_t lastDot = modelName.find_last_of(".");
+    if (lastDot != std::string::npos)
+    {
+        modelName = modelName.substr(0, lastDot);
+    }
+
+    return modelName;
+}
+
+// 生成输出文件名: ModelName_Resolution_MethodName.raw
+std::string Renderer::GenerateSdfFileName(const std::string& methodName)
+{
+    std::string modelName = GetModelNameFromPath(config_->modelPath);
+    uint32_t resolution = config_->Sdf.Resolution;
+    return modelName + "_" + std::to_string(resolution) + "_" + methodName + ".raw";
+}
+
 void Renderer::TestBruteSdfAndSave()
 {
+    Log::Info("开始生成暴力法SDF (Ground Truth)...");
+
     BruteForceSdf sdfGenerator;
     BruteForceSdf::SdfParameters sdfParams{};
 
-    // 更新参数
-    sdfParams.signedDistance = false;
-    sdfParams.voxelResolution = glm::vec3(config_->Sdf.Resolution, config_->Sdf.Resolution, config_->Sdf.Resolution);
-    sdfParams.origin = glm::vec3(-config_->Sdf.WorldSize / 2.0f, -config_->Sdf.WorldSize / 2.0f, -config_->Sdf.WorldSize / 2.0f);
-    sdfParams.cellSize = config_->Sdf.WorldSize / static_cast<float>(config_->Sdf.Resolution);
+    // 从Config读取参数
+    const uint32_t resolution = config_->Sdf.Resolution;
+    const float worldSize = config_->Sdf.WorldSize;
+
+    // 设置SDF参数
+    sdfParams.signedDistance = false; // 无符号距离
+    sdfParams.voxelResolution = glm::vec3(resolution, resolution, resolution);
+    sdfParams.origin = glm::vec3(-worldSize / 2.0f, -worldSize / 2.0f, -worldSize / 2.0f);
+    sdfParams.cellSize = worldSize / static_cast<float>(resolution);
+
+    // 初始化生成器
     sdfGenerator.Initialize(sdfParams);
     sdfGenerator.SetModel(&m_glTFModel);
-    const int totalVoxels = sdfParams.voxelResolution.x * sdfParams.voxelResolution.y * sdfParams.voxelResolution.z;
-    std::vector<float> sdfData(totalVoxels, std::numeric_limits<float>::max());
-    sdfGenerator.GenerateGroundTruth(sdfData);
 
-    // 保存 SDF 结果为图像文件
-    sdfGenerator.SaveToFile(sdfData, Tool::GetAssetsPath() + "Sdf/" + "BruteSdf.raw");
+    // 分配SDF数据缓冲区
+    const int totalVoxels = resolution * resolution * resolution;
+    std::vector<float> sdfData(totalVoxels, std::numeric_limits<float>::max());
+
+    Log::Info("暴力法SDF生成参数:");
+    Log::Info("  分辨率: " + std::to_string(resolution) + "³");
+    Log::Info("  世界大小: " + std::to_string(worldSize));
+    Log::Info("  体素大小: " + std::to_string(sdfParams.cellSize));
+    Log::Info("  总体素数: " + std::to_string(totalVoxels));
+
+    // 生成SDF (Ground Truth)
+    auto startTime = std::chrono::high_resolution_clock::now();
+    sdfGenerator.GenerateGroundTruth(sdfData);
+    auto endTime = std::chrono::high_resolution_clock::now();
+
+    float generationTime = std::chrono::duration<float, std::milli>(endTime - startTime).count();
+    Log::Info("暴力法SDF生成完成,耗时: " + std::to_string(generationTime) + " ms");
+
+    // 生成输出文件名并保存
+    std::string outputFileName = GenerateSdfFileName("BruteSdf");
+    std::string outputPath = Tool::GetAssetsPath() + "Sdf/" + outputFileName;
+
+    sdfGenerator.SaveToFile(sdfData, outputPath);
+
+    Log::Info("暴力法SDF已保存到: " + outputPath);
+    Log::Info("文件大小: " + std::to_string(totalVoxels * sizeof(float) / (1024.0f * 1024.0f)) + " MB");
 }
 void Renderer::InitializeMeshToSdfOperator()
 {
@@ -315,8 +377,8 @@ void ::Renderer::CreateCommandBuffers()
     Tool::CheckResult(vkAllocateCommandBuffers(m_device, &cmdBufAllocateInfo, m_drawCmdBuffers.data()));
 }
 
-// composition
-void Renderer::BuildCommandBuffers()
+
+void Renderer::BuildFinalCommandBuffer()
 {
     for (int32_t i = 0; i < m_drawCmdBuffers.size(); ++i)
     {
@@ -573,7 +635,7 @@ void Renderer::UpdateUniformBufferOffscreen()
 {
     m_uniformDataOffscreen.projection = m_camera.matrices.perspective;
     m_uniformDataOffscreen.view = m_camera.matrices.view;
-    m_uniformDataOffscreen.model = glm::mat4(1.0f);
+    m_uniformDataOffscreen.model = m_glTFModel.GetModelToStandardTransform();
     memcpy(m_uniformBuffers.defered.mapped, &m_uniformDataOffscreen, sizeof(UniformDataOffscreen));
 }
 
@@ -1353,10 +1415,16 @@ void Renderer::KeyCallback(GLFWwindow* window, int key, int scancode, int action
             app->ExportSDFDataForVisualization();
             break;
         }
-        case GLFW_KEY_M: // 按E键导出SDF数据用于Python可视化
-            printf("Exporting SDF data for visualization...\n");
+        case GLFW_KEY_M: // 按M键导出MeshToSdf数据用于Python可视化
+            printf("Exporting MeshToSdf data for visualization...\n");
             app->ExportSDFDataForVisualization(app->GetMeshToSdfOperator()->GetSdfTexture(), VK_IMAGE_LAYOUT_GENERAL,
                                                Tool::GetAssetsPath() + "Sdf/" + "MeshToSdf.raw");
+            break;
+        case GLFW_KEY_O: // 按O键导出SDFAO贴图
+            
+            printf("Exporting SDFAO texture...\n");
+            
+            app->ExportAOData();
             break;
         }
 
@@ -1475,32 +1543,32 @@ void Renderer::DisplayUI(UIOverlay* overlay)
             if (overlay->CheckBox("Show Dir Light", &Settings.ShadowSetting.DirLight))
             {
                 PreparePipelineLighting();
-                BuildDeferredCommandBuffer();
+                RecordMainCommandBuffer();
             }
             if (overlay->CheckBox("Show Dir Light Shadow", &Settings.ShadowSetting.DirLightShadow))
             {
                 PreparePipelineLighting();
-                BuildDeferredCommandBuffer();
+                RecordMainCommandBuffer();
             }
             if (overlay->CheckBox("Dir Light Shadow PCF", &Settings.ShadowSetting.DirLightPCF))
             {
                 PreparePipelineLighting();
-                BuildDeferredCommandBuffer();
+                RecordMainCommandBuffer();
             }
             if (overlay->CheckBox("Show Point Light", &Settings.ShadowSetting.PointLight))
             {
                 PreparePipelineLighting();
-                BuildDeferredCommandBuffer();
+                RecordMainCommandBuffer();
             }
             if (overlay->CheckBox("Show Point Light Shadow", &Settings.ShadowSetting.PointLightShadow))
             {
                 PreparePipelineLighting();
-                BuildDeferredCommandBuffer();
+                RecordMainCommandBuffer();
             }
             if (overlay->CheckBox("Show Spot Light", &Settings.ShadowSetting.SpotLight))
             {
                 PreparePipelineLighting();
-                BuildDeferredCommandBuffer();
+                RecordMainCommandBuffer();
             }
 
             // if (overlay->CheckBox("SpotLight", &Settings.ShadowSetting.SpotLightShadow))
@@ -1533,13 +1601,13 @@ void Renderer::DisplayUI(UIOverlay* overlay)
             {
                 PreparePipelineSkyBox();
                 PreparePipelineLighting();
-                BuildDeferredCommandBuffer();
+                RecordMainCommandBuffer();
             }
 
             if (overlay->CheckBox("Use IBL", &Settings.PBRSetting.UseIBL))
             {
                 PreparePipelineLighting();
-                BuildDeferredCommandBuffer();
+                RecordMainCommandBuffer();
             }
         }
         // if (overlay->Header("Deferred"))
@@ -1572,7 +1640,7 @@ void Renderer::DisplayUI(UIOverlay* overlay)
                 PreparePipelineLighting();
                 UpdateDescritporSetLighting();
                 UpdateDescriptorSetCBF();
-                BuildDeferredCommandBuffer();
+                RecordMainCommandBuffer();
             }
             if (Settings.AOSetting.UseAO != 0)
             {
@@ -1581,7 +1649,7 @@ void Renderer::DisplayUI(UIOverlay* overlay)
                     PreparePipelineLighting();
                     UpdateDescritporSetLighting();
                     UpdateDescriptorSetCBF();
-                    BuildDeferredCommandBuffer();
+                    RecordMainCommandBuffer();
                 }
             }
             if (Settings.AOSetting.UseAO != 0 && Settings.AOSetting.UseCBFBlur)
@@ -1690,7 +1758,7 @@ void Renderer::DisplayUI(UIOverlay* overlay)
 
                     vkUpdateDescriptorSets(m_device, 1, &write, 0, NULL);
                 }
-                BuildDeferredCommandBuffer();
+                RecordMainCommandBuffer();
             }
             if (overlay->InputFloat("Scale", &Settings.PostSetting.BloomScale, 0.1f))
             {
@@ -1747,7 +1815,7 @@ void Renderer::UpdateOverlay()
 
     if (m_UI.Update() || m_UI.updated)
     {
-        BuildCommandBuffers();
+        BuildFinalCommandBuffer();
         m_UI.updated = false;
     }
 }
@@ -1833,7 +1901,7 @@ void Renderer::ResizeWindow()
     // references to the recreated frame buffer
     vkFreeCommandBuffers(m_device, m_commandPool, static_cast<uint32_t>(m_drawCmdBuffers.size()), m_drawCmdBuffers.data());
     CreateCommandBuffers();
-    BuildCommandBuffers();
+    BuildFinalCommandBuffer();
 
     // SRS - Recreate fences in case number of swapchain images has changed on resize
     // for (auto& fence : m_waitFences)
@@ -3062,7 +3130,8 @@ void Renderer::CreateLogicalDevice()
 
 void Renderer::LoadAssets()
 {
-    uint32_t glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors;
+    uint32_t glTFLoadingFlags =
+        vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors | vkglTF::FileLoadingFlags::DontLoadImages;
     /*LoadglTFFile(Tool::GetAssetsPath() + "Models/FlightHelmet/glTF/FlightHelmet.gltf");*/
     m_glTFModel.loadFromFile(Tool::GetAssetsPath() + config_->modelPath, m_vulkanDevice, m_queues.graphicsQueue, glTFLoadingFlags);
     auto tStart = std::chrono::high_resolution_clock::now();
@@ -3150,7 +3219,7 @@ void Renderer::CreatePipelineCache()
     Tool::CheckResult(vkCreatePipelineCache(m_device, &pipelineCacheCreateInfo, nullptr, &m_pipelineCache));
 }
 // model
-void Renderer::BuildDeferredCommandBuffer()
+void Renderer::RecordMainCommandBuffer()
 {
     if (m_offScreenCmdBuffer == VK_NULL_HANDLE)
     {
@@ -3258,18 +3327,6 @@ void Renderer::BuildDeferredCommandBuffer()
                 m_glTFModel.Draw(m_offScreenCmdBuffer);
                 vkCmdEndRenderPass(m_offScreenCmdBuffer);
 
-                // VkImageSubresourceRange subresourceRange = {};
-                // subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-                // subresourceRange.baseMipLevel = 0;
-                // subresourceRange.levelCount = 1;
-                // subresourceRange.baseArrayLayer = 0;
-                // subresourceRange.layerCount = 4;
-                // Tool::SetImageLayout(
-                //	m_offScreenCmdBuffer,
-                //	m_CSMPass.Depths[j].image,
-                //	VK_IMAGE_LAYOUT_UNDEFINED,
-                //	VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                //	subresourceRange);
             }
         }
     }
@@ -3318,7 +3375,8 @@ void Renderer::BuildDeferredCommandBuffer()
     vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.defered);
     vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.defered, 0, 1, &m_descriptorSets.deferedModel, 0,
                             nullptr);
-    m_glTFModel.Draw(m_offScreenCmdBuffer, vkglTF::RenderFlags::BindImages, m_pipelineLayouts.defered, 1);
+    m_glTFModel.Draw(m_offScreenCmdBuffer, 0, m_pipelineLayouts.defered, 1);
+    //m_glTFModel.Draw(m_offScreenCmdBuffer);
     vkCmdEndRenderPass(m_offScreenCmdBuffer);
     EndDebugLabel(m_offScreenCmdBuffer);
 
@@ -4604,14 +4662,14 @@ void Renderer::PreparePipelines()
     shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Post/FXAA.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
     Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.FXAA));
 
-    // Offscreen pipeline
+    // Geometry pipeline
     std::array<VkPipelineColorBlendAttachmentState, 4> blendAttachmentStates = {
         Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE), Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
         Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE), Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE)};
     colorBlendState.pAttachments = blendAttachmentStates.data();
-    // defered model
     colorBlendState.attachmentCount = 4;
     rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizationState.polygonMode = VK_POLYGON_MODE_LINE;
     depthStencilState.depthWriteEnable = VK_TRUE;
     depthStencilState.depthTestEnable = VK_TRUE;
     pipelineCI.layout = m_pipelineLayouts.defered;
@@ -8219,6 +8277,7 @@ void Renderer::InitializeAnalyticalNodeSelectionResource()
     // NOTE: Bindings 2-9: Mipmap textures will be bound dynamically in UpdateSolidNodeSelectionDescriptorSet()
     // This is because GPUMipmapOctree textures are created after BuildFromVoxelTexture() is called
 
+    
     // 更新描述符集
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 
@@ -8418,10 +8477,16 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
         vkCreateDescriptorSetLayout(m_device, &finalSelectionLayoutInfo, nullptr, &multiViewNodeSelection_.finalSelectionDescriptorSetLayout));
 
     // 创建最终选择管线布局
+    VkPushConstantRange pushConstantRangeFinal{
+        Init::pushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, sizeof(MultiViewSolidNodeSelection::FinalSelectionPushConstantDesc), 0)};
+
     VkPipelineLayoutCreateInfo finalSelectionPipelineLayoutInfo{};
     finalSelectionPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     finalSelectionPipelineLayoutInfo.setLayoutCount = 1;
     finalSelectionPipelineLayoutInfo.pSetLayouts = &multiViewNodeSelection_.finalSelectionDescriptorSetLayout;
+    finalSelectionPipelineLayoutInfo.pushConstantRangeCount = 1;
+    finalSelectionPipelineLayoutInfo.pPushConstantRanges = &pushConstantRangeFinal;
+
     Tool::CheckResult(
         vkCreatePipelineLayout(m_device, &finalSelectionPipelineLayoutInfo, nullptr, &multiViewNodeSelection_.finalSelectionPipelineLayout));
 
@@ -8500,7 +8565,6 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
     finalNodesWrite.pBufferInfo = &multiViewNodeSelection_.selectedNodesBuffer.descriptor;
     finalSelectionDescriptorWrites.push_back(finalNodesWrite);
 
-   
     levelCountWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     levelCountWrite.dstSet = multiViewNodeSelection_.finalSelectionDescriptorSet;
     levelCountWrite.dstBinding = 4;
@@ -8662,6 +8726,8 @@ void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
     // === Phase 3: Pass 4 最终选择（包含检查）===
 
     // 绑定最终选择管线
+
+    multiViewNodeSelection_.FinalSelectionPushConstant.MaxSelectedNode = config_->Sdf.MultiViewUsedCameraNum;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.finalSelectionPipeline);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.finalSelectionPipelineLayout, 0, 1,
                             &multiViewNodeSelection_.finalSelectionDescriptorSet, 0, nullptr);
@@ -8676,7 +8742,8 @@ void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
 
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &candidateCountBarrier, 0, nullptr, 0,
                          nullptr);
-
+    vkCmdPushConstants(commandBuffer, multiViewNodeSelection_.finalSelectionPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                       sizeof(MultiViewSolidNodeSelection::FinalSelectionPushConstantDesc), &multiViewNodeSelection_.FinalSelectionPushConstant);
     // 需要提交命令缓冲区并等待，以便读取候选节点数量
     // 为了优化，我们可以使用间接dispatch或保守估计
     // 这里先使用保守但更合理的估计：基于level数量
@@ -8684,7 +8751,7 @@ void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
     uint32_t optimizedDispatch = (estimatedCandidates + 63) / 64;               // 约2个workgroup而不是16个
 
     // printf("Optimized final selection dispatch: %u workgroups (estimated %u candidates)\n", optimizedDispatch, estimatedCandidates);
-
+  
     vkCmdDispatch(commandBuffer, optimizedDispatch, 1, 1);
 
     // printf("Solid Node Selection B executed (multi-pass: 3 collection passes + 1 final selection pass)\n");
@@ -8810,7 +8877,7 @@ void Renderer::ExecuteGPUDataPreparation(VkCommandBuffer cmd)
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT, 0, 1, &indirectCommandBarrier, 0, nullptr, 0,
                          nullptr);
 
-    printf("GPU Data Preparation executed: camera matrices + indirect commands\n");
+
 }
 
 void Renderer::InitializeMultiViewDepthRenderingPass()
@@ -8818,10 +8885,10 @@ void Renderer::InitializeMultiViewDepthRenderingPass()
     ;
 }
 
-/// @brief 初始化阶段四：解析式SDF生成资源
+/// @brief 解析式SDF生成资源
 void Renderer::InitializeAnalyticalSDFGenerationResources()
 {
-    // 创建64x64x64的SDF纹理 (R16_SFLOAT格式存储带符号距离)
+
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_3D;
@@ -10177,7 +10244,7 @@ void Renderer::CreateMultiViewDepthPipeline()
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_NONE; // 启用背面剔除优化
+    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; // 启用背面剔除优化
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -10635,8 +10702,6 @@ void Renderer::InitializeSDFFusionPass()
 
 void Renderer::ExecuteSDFFusion(VkCommandBuffer cmd)
 {
-    // Debug: Print current state for debugging
-    printf("SDF Fusion: About to read from depth cubemap array (image: %p)\n", (void*)m_multiViewDepthSDF4C.depthRendering.depthCubemapArray);
 
     // Step 1: Transition SDF texture to general layout for compute write
     VkImageMemoryBarrier sdfBarrier{};
@@ -10839,15 +10904,14 @@ void Renderer::SetupSdfAOPass()
     sdfAOPass_.frameBuffer->width = m_width;
     sdfAOPass_.frameBuffer->height = m_height;
 
-    AttachmentCreateInfo attachmentCi{};
-    attachmentCi.width = sdfAOPass_.frameBuffer->width;
-    attachmentCi.height = sdfAOPass_.frameBuffer->height;
-    attachmentCi.layerCount = 1;
-    attachmentCi.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    AttachmentCreateInfo attachmentCI{};
+    attachmentCI.width = sdfAOPass_.frameBuffer->width;
+    attachmentCI.height = sdfAOPass_.frameBuffer->height;
+    attachmentCI.layerCount = 1;
+    attachmentCI.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT| VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    attachmentCI.format = VK_FORMAT_R32G32B32A32_SFLOAT;
 
-    attachmentCi.format = VK_FORMAT_R32G32B32A32_SFLOAT;
-
-    sdfAOPass_.frameBuffer->AddAttachment(attachmentCi);
+    sdfAOPass_.frameBuffer->AddAttachment(attachmentCI);
 
     Tool::CheckResult(sdfAOPass_.frameBuffer->CreateSampler(VK_FILTER_NEAREST, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
     Tool::CheckResult(sdfAOPass_.frameBuffer->CreateRenderPass());
@@ -10870,8 +10934,8 @@ void Renderer::UpdateCBufferSdfAO()
     sdfAOPass_.buffers.cBufferData.falloffPower = 1.0f;
     sdfAOPass_.buffers.cBufferData.voxelSize = 1.0f;
     sdfAOPass_.buffers.cBufferData.sdfTextureSize = config_->Sdf.Resolution;
-    sdfAOPass_.buffers.cBufferData.minBounds = glm::vec4(-2.5f, 2.5f, 2.5f, 1.0f);
-    sdfAOPass_.buffers.cBufferData.maxBounds = glm::vec4(2.5f, -2.5f, -2.5f, 1.0f);
+    sdfAOPass_.buffers.cBufferData.minBounds = glm::vec4(-1.f, 1.f, 1.f, 1.0f);
+    sdfAOPass_.buffers.cBufferData.maxBounds = glm::vec4(1.f, -1.f, -1.f, 1.0f);
     sdfAOPass_.buffers.cBufferData.noiseScale = glm::vec2(1.0f, 1.0f);
     memcpy(sdfAOPass_.buffers.cBuffer.mapped, &sdfAOPass_.buffers.cBufferData, sizeof(SdfAOPass::CBufferDesc));
 }
@@ -11115,4 +11179,99 @@ void Renderer::MultiViewDepthSDF4C::cleanup(VkDevice device)
         vkFreeMemory(device, sdfFusionPass.finalSDFMemory, nullptr);
         sdfFusionPass.finalSDFMemory = VK_NULL_HANDLE;
     }
+}
+
+void Renderer::ExportAOData()
+{
+    // 从sdfAOPass_.frameBuffer的attachment[0]读取AO贴图并保存为PNG
+    // Format: VK_FORMAT_R32G32B32A32_SFLOAT (见SetupSdfAOPass中line 10844)
+    vkDeviceWaitIdle(m_device);
+    if (!sdfAOPass_.frameBuffer || sdfAOPass_.frameBuffer->attachments.empty())
+    {
+        Log::Error("SdfAOPass framebuffer not initialized");
+        return;
+    }
+
+    const uint32_t width = sdfAOPass_.frameBuffer->width;
+    const uint32_t height = sdfAOPass_.frameBuffer->height;
+    const VkImage aoImage = sdfAOPass_.frameBuffer->attachments[0].image;
+
+    // 1. 创建staging buffer (RGBA32F = 16 bytes per pixel)
+    const VkDeviceSize bufferSize = width * height * 16; // 4 channels * 4 bytes
+    Buffer stagingBuffer;
+    m_vulkanDevice->CreateBuffer(
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        &stagingBuffer, bufferSize);
+
+    // 2. 创建命令缓冲区并执行图像拷贝
+    VkCommandBuffer cmdBuffer = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+
+    // 2.1 图像布局转换: SHADER_READ_ONLY -> TRANSFER_SRC
+    VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    Tool::SetImageLayout(
+        cmdBuffer, aoImage,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        range);
+
+    // 2.2 配置拷贝区域
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;   // 紧密打包
+    region.bufferImageHeight = 0; // 紧密打包
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {width, height, 1};
+
+    // 2.3 执行图像到buffer的拷贝
+    vkCmdCopyImageToBuffer(
+        cmdBuffer, aoImage,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        stagingBuffer.buffer, 1, &region);
+
+    // 2.4 恢复图像布局: TRANSFER_SRC -> SHADER_READ_ONLY
+    Tool::SetImageLayout(
+        cmdBuffer, aoImage,
+        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        range);
+
+    // 3. 提交命令并等待完成
+    m_vulkanDevice->FlushCommandBuffer(cmdBuffer, m_queues.graphicsQueue, true);
+
+    // 4. 映射内存并读取数据
+    void* data;
+    vkMapMemory(m_device, stagingBuffer.memory, 0, bufferSize, 0, &data);
+    float* aoData = static_cast<float*>(data); // RGBA32F数据
+
+    // 5. 转换为8位灰度PNG格式 (只取R通道,因为AO是单通道数据)
+    uint8_t* pngPixels = new uint8_t[width * height];
+    for (uint32_t y = 0; y < height; ++y)
+    {
+        for (uint32_t x = 0; x < width; ++x)
+        {
+            uint32_t idx = y * width + x;
+            float aoValue = aoData[idx * 4]; // 取RGBA中的R通道
+
+            // 夹紧到[0, 1]并转换为8位
+            aoValue = glm::clamp(aoValue, 0.0f, 1.0f);
+            pngPixels[idx] = static_cast<uint8_t>(aoValue * 255.0f);
+        }
+    }
+
+    // 6. 保存为PNG文件
+    std::string savePath = Tool::GetAssetsPath() + "Sdf/SdfAO.png";
+    stbi_write_png(savePath.c_str(), width, height, 1, pngPixels, width);
+
+    Log::Info("AO texture exported to: " + savePath);
+    Log::Info("Export AO Data Success, Resolution: " + std::to_string(width) + "x" + std::to_string(height));
+
+    // 7. 清理资源
+    delete[] pngPixels;
+    vkUnmapMemory(m_device, stagingBuffer.memory);
+    stagingBuffer.Destroy();
 }

@@ -2,9 +2,6 @@
 // Pass 4: 包含检查和最终选择
 // 每个线程检查自己的候选节点是否被之前的节点包含
 
-// === Constants ===
-#define MAX_SELECTED_NODES 10
-#define MAX_CANDIDATE_NODES 1000
 
 // === Data Structures ===
 struct SolidNode {
@@ -24,7 +21,12 @@ RWStructuredBuffer<uint> finalCountBuffer : register(u2);             // Final s
 RWStructuredBuffer<SolidNode> finalNodesBuffer : register(u3);        // Final selected nodes
 StructuredBuffer<uint> LevelCountBuffer : register(t4);
 
-
+struct PushConstantDesc
+{
+    uint MaxSelectedNode;
+};
+[[vk::push_constant]]
+PushConstantDesc PC;
 // === Utility Functions ===
 
 // Check if child node is completely included within parent node
@@ -56,7 +58,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 
     // 个体线程边界检查
     if(myIndex >= totalCandidates) return;
-    if(finalCountBuffer[0]>=MAX_SELECTED_NODES)
+    if(finalCountBuffer[0]>=PC.MaxSelectedNode)
     {
         return;
     }
@@ -89,7 +91,7 @@ void main(uint3 id : SV_DispatchThreadID) {
         InterlockedAdd(finalCountBuffer[0], 1, previousCount);
 
         // Only write if we successfully reserved a valid slot
-        if(previousCount < MAX_SELECTED_NODES) {
+        if(previousCount < PC.MaxSelectedNode) {
             finalNodesBuffer[previousCount] = myNode;
         } else {
             // We exceeded the limit, decrement the counter back

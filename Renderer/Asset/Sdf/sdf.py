@@ -17,6 +17,13 @@ except ImportError:
     print("警告: 未安装PyVista，只能进行2D可视化")
     HAS_PYVISTA = False
 
+try:
+    from skimage.metrics import structural_similarity as ssim
+    HAS_SKIMAGE = True
+except ImportError:
+    print("警告: 未安装scikit-image，SSIM计算将使用简化实现")
+    HAS_SKIMAGE = False
+
 def load_sdf_data(file_path, resolution=64):
     """从二进制文件加载SDF数据"""
     if not os.path.exists(file_path):
@@ -80,23 +87,116 @@ def visualize_2d_slices(sdf_volume, slice_positions=[0.25, 0.5, 0.75]):
     sdf_flipped = sdf_volume.copy()
     sdf_flipped = np.flip(sdf_flipped, axis=1)  # 翻转Y轴 (axis=1)
     sdf_flipped = np.flip(sdf_flipped, axis=2)  # 翻转Z轴 (axis=2)
-    
+
     resolution = sdf_flipped.shape[0]
     fig, axes = plt.subplots(1, len(slice_positions), figsize=(15, 5))
-    
+
     if len(slice_positions) == 1:
         axes = [axes]
-    
+
     for i, pos in enumerate(slice_positions):
         z_index = int(pos * resolution)
         slice_data = sdf_flipped[:, :, z_index]
-        
+
         im = axes[i].imshow(slice_data, cmap='RdBu_r', origin='lower')
         axes[i].set_title(f'Z切片 {z_index}/{resolution} (pos={pos:.2f}) [Y,Z翻转]')
         axes[i].set_xlabel('X')
         axes[i].set_ylabel('Y (翻转)')
         plt.colorbar(im, ax=axes[i])
-    
+
+    plt.tight_layout()
+    plt.show()
+
+def visualize_error_slices(error_volume, slice_positions=[0.25, 0.5, 0.75], title_prefix="误差"):
+    """误差切片可视化 - 显示误差分布的2D切片
+
+    Args:
+        error_volume: 误差体素数据 (3D numpy数组)
+        slice_positions: 切片位置列表 (0-1范围)
+        title_prefix: 标题前缀
+    """
+    # 应用Y和Z轴翻转以匹配着色器坐标系
+    error_flipped = error_volume.copy()
+    error_flipped = np.flip(error_flipped, axis=1)  # 翻转Y轴
+    error_flipped = np.flip(error_flipped, axis=2)  # 翻转Z轴
+
+    resolution = error_flipped.shape[0]
+    fig, axes = plt.subplots(1, len(slice_positions), figsize=(15, 5))
+
+    if len(slice_positions) == 1:
+        axes = [axes]
+
+    # 使用热力图显示误差 (值越大越红)
+    for i, pos in enumerate(slice_positions):
+        z_index = int(pos * resolution)
+        slice_data = error_flipped[:, :, z_index]
+
+        # 使用'hot'或'YlOrRd'颜色映射,更直观地显示误差大小
+        im = axes[i].imshow(slice_data, cmap='YlOrRd', origin='lower')
+        axes[i].set_title(f'{title_prefix}切片 Z={z_index}/{resolution} (pos={pos:.2f})')
+        axes[i].set_xlabel('X')
+        axes[i].set_ylabel('Y (翻转)')
+
+        # 添加颜色条并显示统计信息
+        cbar = plt.colorbar(im, ax=axes[i])
+        cbar.set_label('绝对误差')
+
+        # 在标题中添加统计信息
+        mean_err = slice_data.mean()
+        max_err = slice_data.max()
+        axes[i].text(0.5, -0.15, f'平均: {mean_err:.4f}, 最大: {max_err:.4f}',
+                     transform=axes[i].transAxes, ha='center', fontsize=9)
+
+    plt.tight_layout()
+    plt.show()
+
+def visualize_error_distribution(error_volume):
+    """误差分布直方图和统计可视化
+
+    Args:
+        error_volume: 误差体素数据 (3D numpy数组)
+    """
+    error_flat = error_volume.flatten()
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+
+    # 1. 误差直方图
+    axes[0].hist(error_flat, bins=100, edgecolor='black', alpha=0.7)
+    axes[0].set_xlabel('绝对误差')
+    axes[0].set_ylabel('体素数量')
+    axes[0].set_title('误差分布直方图')
+    axes[0].grid(True, alpha=0.3)
+
+    # 添加统计信息
+    mean_err = error_flat.mean()
+    median_err = np.median(error_flat)
+    axes[0].axvline(mean_err, color='r', linestyle='--', label=f'平均: {mean_err:.4f}')
+    axes[0].axvline(median_err, color='g', linestyle='--', label=f'中位数: {median_err:.4f}')
+    axes[0].legend()
+
+    # 2. 累积分布函数 (CDF)
+    sorted_errors = np.sort(error_flat)
+    cumulative = np.arange(1, len(sorted_errors) + 1) / len(sorted_errors)
+    axes[1].plot(sorted_errors, cumulative, linewidth=2)
+    axes[1].set_xlabel('绝对误差')
+    axes[1].set_ylabel('累积概率')
+    axes[1].set_title('累积分布函数 (CDF)')
+    axes[1].grid(True, alpha=0.3)
+
+    # 标记百分位点
+    for p in [50, 90, 95, 99]:
+        val = np.percentile(error_flat, p)
+        axes[1].axvline(val, color='r', linestyle=':', alpha=0.5)
+        axes[1].text(val, p/100, f'P{p}: {val:.3f}', rotation=90, va='bottom')
+
+    # 3. 对数尺度直方图 (查看尾部分布)
+    axes[2].hist(error_flat, bins=100, edgecolor='black', alpha=0.7)
+    axes[2].set_xlabel('绝对误差')
+    axes[2].set_ylabel('体素数量 (对数尺度)')
+    axes[2].set_title('误差分布 (对数尺度)')
+    axes[2].set_yscale('log')
+    axes[2].grid(True, alpha=0.3)
+
     plt.tight_layout()
     plt.show()
 def visualize_3d_isosurface(sdf_volume, voxel_half_extent=32, iso_value=0.0):
@@ -196,22 +296,206 @@ def apply_sign_from_reference(brute_sdf, signed_sdf):
 
     return signed_brute_sdf
 
+def calculate_rmse(sdf1, sdf2):
+    """计算均方根误差 (Root Mean Square Error)
+
+    Args:
+        sdf1: 第一个SDF数据 (通常是待评估的方法)
+        sdf2: 第二个SDF数据 (通常是ground truth参考)
+
+    Returns:
+        float: RMSE值
+    """
+    squared_diff = (sdf1 - sdf2) ** 2
+    mse = np.mean(squared_diff)
+    rmse = np.sqrt(mse)
+    return rmse
+
+def calculate_mae(sdf1, sdf2):
+    """计算平均绝对误差 (Mean Absolute Error)
+
+    Args:
+        sdf1: 第一个SDF数据 (通常是待评估的方法)
+        sdf2: 第二个SDF数据 (通常是ground truth参考)
+
+    Returns:
+        float: MAE值
+    """
+    abs_diff = np.abs(sdf1 - sdf2)
+    mae = np.mean(abs_diff)
+    return mae
+
+def calculate_max_error(sdf1, sdf2):
+    """计算最大绝对误差 (Maximum Absolute Error)
+
+    Args:
+        sdf1: 第一个SDF数据 (通常是待评估的方法)
+        sdf2: 第二个SDF数据 (通常是ground truth参考)
+
+    Returns:
+        float: 最大绝对误差值
+    """
+    abs_diff = np.abs(sdf1 - sdf2)
+    max_error = np.max(abs_diff)
+    return max_error
+
+def calculate_psnr(image1, image2, data_range=None):
+    """计算峰值信噪比 (Peak Signal-to-Noise Ratio)
+
+    PSNR用于评估图像质量,值越高表示图像越接近参考图像
+    通常用于SDFAO等渲染图像的质量评估
+
+    Args:
+        image1: 第一张图像 (通常是待评估的方法生成的图像)
+        image2: 第二张图像 (通常是ground truth参考图像)
+        data_range: 数据范围,如果为None则自动计算为max(image2) - min(image2)
+
+    Returns:
+        float: PSNR值 (单位: dB), 通常20-50dB之间
+    """
+    # 确保输入是浮点数
+    image1 = image1.astype(np.float64)
+    image2 = image2.astype(np.float64)
+
+    # 计算MSE
+    mse = np.mean((image1 - image2) ** 2)
+
+    # 如果MSE为0,说明两张图像完全相同
+    if mse == 0:
+        return float('inf')
+
+    # 确定数据范围
+    if data_range is None:
+        data_range = image2.max() - image2.min()
+
+    # 计算PSNR
+    psnr = 20 * np.log10(data_range / np.sqrt(mse))
+
+    return psnr
+
+def calculate_ssim(image1, image2, data_range=None, use_simple=False):
+    """计算结构相似性指数 (Structural Similarity Index)
+
+    SSIM用于评估图像质量,考虑了亮度、对比度和结构信息
+    值在[-1, 1]之间,越接近1表示越相似
+
+    Args:
+        image1: 第一张图像 (通常是待评估的方法生成的图像)
+        image2: 第二张图像 (通常是ground truth参考图像)
+        data_range: 数据范围,如果为None则自动计算
+        use_simple: 是否使用简化实现 (当scikit-image不可用时)
+
+    Returns:
+        float: SSIM值,范围[-1, 1],通常在[0, 1]之间
+    """
+    # 确定数据范围
+    if data_range is None:
+        data_range = max(image1.max(), image2.max()) - min(image1.min(), image2.min())
+
+    # 如果有scikit-image且不强制使用简化实现,使用官方实现
+    if HAS_SKIMAGE and not use_simple:
+        # 对于2D图像
+        if image1.ndim == 2:
+            return ssim(image1, image2, data_range=data_range)
+        # 对于3D体积数据,需要指定channel_axis
+        else:
+            # 逐切片计算SSIM并取平均
+            ssim_values = []
+            for i in range(image1.shape[2]):
+                slice_ssim = ssim(image1[:, :, i], image2[:, :, i], data_range=data_range)
+                ssim_values.append(slice_ssim)
+            return np.mean(ssim_values)
+    else:
+        # 简化的SSIM实现 (用于没有scikit-image的情况)
+        return _calculate_ssim_simple(image1, image2, data_range)
+
+def _calculate_ssim_simple(image1, image2, data_range):
+    """简化的SSIM实现
+
+    基于SSIM的基本定义,不包含高斯滤波等高级特性
+    """
+    # 常数,避免除零
+    C1 = (0.01 * data_range) ** 2
+    C2 = (0.03 * data_range) ** 2
+
+    # 计算均值
+    mu1 = np.mean(image1)
+    mu2 = np.mean(image2)
+
+    # 计算方差和协方差
+    sigma1_sq = np.var(image1)
+    sigma2_sq = np.var(image2)
+    sigma12 = np.mean((image1 - mu1) * (image2 - mu2))
+
+    # 计算SSIM
+    numerator = (2 * mu1 * mu2 + C1) * (2 * sigma12 + C2)
+    denominator = (mu1**2 + mu2**2 + C1) * (sigma1_sq + sigma2_sq + C2)
+
+    ssim_value = numerator / denominator
+
+    return ssim_value
+
 def compare_sdf_data(sdf1, sdf2, name1="SDF1", name2="SDF2"):
-    """对比两个SDF数据的差异"""
+    """对比两个SDF数据的差异,计算各种误差指标
+
+    Args:
+        sdf1: 第一个SDF数据 (通常是待评估的方法)
+        sdf2: 第二个SDF数据 (通常是ground truth参考)
+        name1: 第一个SDF的名称
+        name2: 第二个SDF的名称
+
+    Returns:
+        dict: 包含误差图和各项指标的字典
+    """
     print(f"\n=== {name1} vs {name2} 对比 ===")
 
-    # 计算差异
-    diff = np.abs(sdf1 - sdf2)
-
+    # 数据范围
     print(f"{name1} 范围: [{sdf1.min():.3f}, {sdf1.max():.3f}]")
     print(f"{name2} 范围: [{sdf2.min():.3f}, {sdf2.max():.3f}]")
-    print(f"绝对差异: 平均={diff.mean():.4f}, 最大={diff.max():.4f}, 标准差={diff.std():.4f}")
+
+    # 计算所有误差指标
+    print("\n--- SDF数值分布误差指标 ---")
+
+    # RMSE (均方根误差)
+    rmse = calculate_rmse(sdf1, sdf2)
+    print(f"RMSE (均方根误差): {rmse:.4f}")
+
+    # MAE (平均绝对误差)
+    mae = calculate_mae(sdf1, sdf2)
+    print(f"MAE (平均绝对误差): {mae:.4f}")
+
+    # 最大绝对误差
+    max_error = calculate_max_error(sdf1, sdf2)
+    print(f"最大绝对误差: {max_error:.4f}")
+
+    # 计算误差分布
+    diff = np.abs(sdf1 - sdf2)
+    print(f"\n误差分布统计:")
+    print(f"  标准差: {diff.std():.4f}")
+    print(f"  中位数: {np.median(diff):.4f}")
+    print(f"  90百分位: {np.percentile(diff, 90):.4f}")
+    print(f"  95百分位: {np.percentile(diff, 95):.4f}")
+    print(f"  99百分位: {np.percentile(diff, 99):.4f}")
 
     # 计算相关性
     correlation = np.corrcoef(sdf1.flatten(), sdf2.flatten())[0, 1]
-    print(f"相关系数: {correlation:.4f}")
+    print(f"\n相关系数: {correlation:.4f}")
 
-    return diff
+    # 返回结果字典
+    results = {
+        'diff': diff,
+        'rmse': rmse,
+        'mae': mae,
+        'max_error': max_error,
+        'correlation': correlation,
+        'std': diff.std(),
+        'median': np.median(diff),
+        'p90': np.percentile(diff, 90),
+        'p95': np.percentile(diff, 95),
+        'p99': np.percentile(diff, 99)
+    }
+
+    return results
 
 def process_sdf_comparison(brute_file, signed_file):
     """处理SDF对比的完整流程"""
@@ -279,6 +563,129 @@ def interactive_visualization(brute_sdf, signed_sdf, signed_brute_sdf, diff):
         print("\n默认可视化附加符号后BruteSdf...")
         visualize_3d_isosurface(signed_brute_sdf)
 
+def load_image_data(file_path):
+    """加载SDFAO渲染图像数据
+
+    支持的格式: PNG, JPG, BMP等常见图像格式
+
+    Args:
+        file_path: 图像文件路径
+
+    Returns:
+        numpy数组,归一化到[0, 1]范围
+    """
+    from PIL import Image
+
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"图像文件未找到: {file_path}")
+
+    # 加载图像
+    img = Image.open(file_path)
+
+    # 转换为灰度图(如果是RGB)
+    if img.mode != 'L':
+        img = img.convert('L')
+
+    # 转换为numpy数组并归一化到[0, 1]
+    img_array = np.array(img, dtype=np.float64) / 255.0
+
+    print(f"图像加载成功: {img_array.shape}, 范围: [{img_array.min():.3f}, {img_array.max():.3f}]")
+
+    return img_array
+
+def compare_sdfao_images(image1_path, image2_path, name1="方法1", name2="参考"):
+    """对比两张SDFAO渲染图像的质量
+
+    计算PSNR和SSIM指标,用于评估不同SDF生成方法的渲染质量
+
+    Args:
+        image1_path: 第一张图像路径 (待评估方法)
+        image2_path: 第二张图像路径 (ground truth参考)
+        name1: 第一张图像的名称
+        name2: 第二张图像的名称
+
+    Returns:
+        dict: 包含PSNR和SSIM的结果字典
+    """
+    print(f"\n=== SDFAO图像对比: {name1} vs {name2} ===")
+
+    # 加载图像
+    image1 = load_image_data(image1_path)
+    image2 = load_image_data(image2_path)
+
+    # 检查尺寸是否匹配
+    if image1.shape != image2.shape:
+        raise ValueError(f"图像尺寸不匹配: {image1.shape} vs {image2.shape}")
+
+    # 计算PSNR
+    psnr = calculate_psnr(image1, image2, data_range=1.0)
+    print(f"\nPSNR (峰值信噪比): {psnr:.2f} dB")
+    print(f"  - 参考范围: 20-30dB (可接受), 30-40dB (良好), >40dB (优秀)")
+
+    # 计算SSIM
+    ssim_value = calculate_ssim(image1, image2, data_range=1.0)
+    print(f"\nSSIM (结构相似性): {ssim_value:.4f}")
+    print(f"  - 参考范围: 0.8-0.9 (可接受), 0.9-0.95 (良好), >0.95 (优秀)")
+
+    # 返回结果
+    results = {
+        'psnr': psnr,
+        'ssim': ssim_value,
+        'image1': image1,
+        'image2': image2
+    }
+
+    return results
+
+def visualize_sdfao_comparison(image1, image2, name1="方法1", name2="参考"):
+    """可视化SDFAO图像对比
+
+    Args:
+        image1: 第一张图像数组
+        image2: 第二张图像数组
+        name1: 第一张图像的名称
+        name2: 第二张图像的名称
+    """
+    # 计算差异图
+    diff = np.abs(image1 - image2)
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 12))
+
+    # 图1: 第一张图像
+    im1 = axes[0, 0].imshow(image1, cmap='gray', vmin=0, vmax=1)
+    axes[0, 0].set_title(f'{name1}')
+    axes[0, 0].axis('off')
+    plt.colorbar(im1, ax=axes[0, 0])
+
+    # 图2: 第二张图像
+    im2 = axes[0, 1].imshow(image2, cmap='gray', vmin=0, vmax=1)
+    axes[0, 1].set_title(f'{name2}')
+    axes[0, 1].axis('off')
+    plt.colorbar(im2, ax=axes[0, 1])
+
+    # 图3: 差异图
+    im3 = axes[1, 0].imshow(diff, cmap='hot', vmin=0, vmax=diff.max())
+    axes[1, 0].set_title(f'绝对差异 (最大: {diff.max():.4f})')
+    axes[1, 0].axis('off')
+    plt.colorbar(im3, ax=axes[1, 0])
+
+    # 图4: 差异直方图
+    axes[1, 1].hist(diff.flatten(), bins=100, edgecolor='black', alpha=0.7)
+    axes[1, 1].set_xlabel('像素差异')
+    axes[1, 1].set_ylabel('像素数量')
+    axes[1, 1].set_title('差异分布直方图')
+    axes[1, 1].grid(True, alpha=0.3)
+
+    # 添加统计信息
+    mean_diff = diff.mean()
+    median_diff = np.median(diff)
+    axes[1, 1].axvline(mean_diff, color='r', linestyle='--', label=f'平均: {mean_diff:.4f}')
+    axes[1, 1].axvline(median_diff, color='g', linestyle='--', label=f'中位数: {median_diff:.4f}')
+    axes[1, 1].legend()
+
+    plt.tight_layout()
+    plt.show()
+
 def print_validation_summary():
     """打印验证总结"""
     print("\n=== SDF验证完成 ===")
@@ -319,22 +726,7 @@ def main():
     else:
         data = load_sdf_data(bruteSdf, resolution=64)
     visualize_3d_isosurface(data)
-    # try:
-    #     # 处理SDF对比
-    #     brute_sdf, signed_sdf, signed_brute_sdf, diff = process_sdf_comparison(sdf_file, signedSdf)
 
-    #     # 交互式可视化
-    #     interactive_visualization(brute_sdf, signed_sdf, signed_brute_sdf, diff)
-
-    #     # 打印验证总结
-    #     print_validation_summary()
-        
-    # except Exception as e:
-    #     print(f"错误: {e}")
-    #     print("\n请确保:")
-    #     print("1. 先运行渲染器并按E键导出SDF数据")
-    #     print("2. sdf_output.raw文件存在于当前目录")
-    #     print("3. 已安装必要的Python包: numpy, matplotlib, pyvista")
 
 if __name__ == "__main__":
     main()

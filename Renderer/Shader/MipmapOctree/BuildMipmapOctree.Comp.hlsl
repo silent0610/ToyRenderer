@@ -81,11 +81,11 @@ void main(uint3 id : SV_DispatchThreadID) {
     // Determine parent node state
     uint parentState = NODE_EMPTY;
     
-    if (solidCount >= 7 ) {
+    if (solidCount >= 6 ) {
         // All 8 children are solid -> parent is solid
         parentState = NODE_SOLID;
     }
-    else if (emptyCount >= 7) {
+    else if (emptyCount >= 6) {
         // All 8 children are empty -> parent is empty
         parentState = NODE_EMPTY;
     }

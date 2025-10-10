@@ -406,140 +406,19 @@ void GPUMipmapOctree::BuildFromVoxelTexture(VkCommandBuffer commandBuffer, Textu
 	// Bind compute pipeline
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_buildPipeline);
 
-	// === IMMEDIATE FIX: Restore correct sequential build ===
-	// Build each mip level sequentially with proper barriers
-	// Limit to level 4 (4x4x4 resolution) as requested
-	uint32_t targetLevel = std::min(m_maxLevel, 4u); // 限制到第4层(4x4x4分辨率)
-	for (uint32_t level = 0; level < targetLevel; level++)
+
+	for (uint32_t level = 0; level < m_maxLevel; level++)
 	{
 		BuildMipLevel(commandBuffer, level);
 
 		// Insert barrier after every level to ensure writes complete before next level reads
-		if (level < targetLevel - 1)
+        if (level < m_maxLevel - 1)
 		{
 			InsertMemoryBarrier(commandBuffer, level);
 		}
 	}
 }
 
-void GPUMipmapOctree::BuildFromVoxelTextureOptimized(VkCommandBuffer commandBuffer, Texture *voxelTexture, VkQueue computeQueue, VkCommandPool computeCommandPool)
-{
-	if (!m_buildPipeline)
-	{
-		std::cout << "Warning: Build pipeline not available, fallback to sequential build" << std::endl;
-		BuildFromVoxelTexture(commandBuffer, voxelTexture);
-		return;
-	}
-
-	// Update descriptor sets with input voxel texture
-	UpdateDescriptorSets(voxelTexture);
-
-	// Transition all mip level textures to general layout (same as before)
-	for (uint32_t level = 0; level < m_maxLevel; level++)
-	{
-		VkImageMemoryBarrier mipBarrier{};
-		mipBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		mipBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		mipBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-		mipBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		mipBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		mipBarrier.image = m_mipLevels[level].image;
-		mipBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		mipBarrier.subresourceRange.baseMipLevel = 0;
-		mipBarrier.subresourceRange.levelCount = 1;
-		mipBarrier.subresourceRange.baseArrayLayer = 0;
-		mipBarrier.subresourceRange.layerCount = 1;
-		mipBarrier.srcAccessMask = 0;
-		mipBarrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-
-		vkCmdPipelineBarrier(commandBuffer,
-							 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-							 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-							 0, 0, nullptr, 0, nullptr, 1, &mipBarrier);
-	}
-
-	// Bind compute pipeline once
-	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_buildPipeline);
-
-	// === SEMAPHORE OPTIMIZATION: Parallel levels with dependency chain ===
-
-	// Create semaphores for level dependencies
-	std::vector<VkSemaphore> levelSemaphores(m_maxLevel);
-	VkSemaphoreCreateInfo semaphoreInfo = {};
-	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-	for (uint32_t i = 0; i < m_maxLevel; i++)
-	{
-		if (vkCreateSemaphore(m_device->logicalDevice, &semaphoreInfo, nullptr, &levelSemaphores[i]) != VK_SUCCESS)
-		{
-			throw std::runtime_error("Failed to create level semaphore!");
-		}
-	}
-
-	// Create individual command buffers for each level
-	std::vector<VkCommandBuffer> levelCommandBuffers(m_maxLevel);
-	VkCommandBufferAllocateInfo cmdBufAllocInfo = {};
-	cmdBufAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	cmdBufAllocInfo.commandPool = computeCommandPool;
-	cmdBufAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	cmdBufAllocInfo.commandBufferCount = m_maxLevel;
-
-	if (vkAllocateCommandBuffers(m_device->logicalDevice, &cmdBufAllocInfo, levelCommandBuffers.data()) != VK_SUCCESS)
-	{
-		throw std::runtime_error("Failed to allocate level command buffers!");
-	}
-
-	// Record each level's command buffer
-	for (uint32_t level = 0; level < m_maxLevel; level++)
-	{
-		VkCommandBufferBeginInfo beginInfo = {};
-		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-		vkBeginCommandBuffer(levelCommandBuffers[level], &beginInfo);
-		vkCmdBindPipeline(levelCommandBuffers[level], VK_PIPELINE_BIND_POINT_COMPUTE, m_buildPipeline);
-
-		// Record the level build
-		BuildMipLevel(levelCommandBuffers[level], level);
-
-		vkEndCommandBuffer(levelCommandBuffers[level]);
-	}
-
-	// Submit levels with semaphore dependencies
-	for (uint32_t level = 0; level < m_maxLevel; level++)
-	{
-		VkSubmitInfo submitInfo = {};
-		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = &levelCommandBuffers[level];
-
-		// Level dependencies: Level N waits for Level N-1
-		VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT};
-		if (level > 0)
-		{
-			submitInfo.waitSemaphoreCount = 1;
-			submitInfo.pWaitSemaphores = &levelSemaphores[level - 1];
-			submitInfo.pWaitDstStageMask = waitStages;
-		}
-
-		// Signal completion
-		submitInfo.signalSemaphoreCount = 1;
-		submitInfo.pSignalSemaphores = &levelSemaphores[level];
-
-		if (vkQueueSubmit(computeQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
-		{
-			throw std::runtime_error("Failed to submit level command buffer!");
-		}
-	}
-
-	// Wait for all levels to complete by waiting on the last semaphore
-	// This is done by the caller through proper synchronization
-
-	// Cleanup (Note: Semaphores should be cleaned up by caller or stored as member variables)
-	// For now, we'll leave cleanup to prevent resource leaks in this demo
-
-	std::cout << "GPUMipmapOctree: Semaphore-optimized build submitted successfully" << std::endl;
-}
 
 std::vector<OctreeNode> GPUMipmapOctree::FindSolidNodes(uint32_t minLevel)
 {
