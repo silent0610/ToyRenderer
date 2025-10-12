@@ -414,6 +414,7 @@ private:
 
 	// std::string GetAssetsPath();
 	static void KeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods);
+	static void CharCallback(GLFWwindow *window, unsigned int codepoint);
 	static void MouseCallback(GLFWwindow *window, double xpos, double ypos);
 	static void MouseButtonCallback(GLFWwindow *window, int button, int action, int mods);
 	static void ScrollCallback(GLFWwindow *window, double xoffset, double yoffset);
@@ -744,6 +745,7 @@ private:
 		VkPipelineLayout pipelineLayout{nullptr};
 		VkPipeline pipeline{nullptr};
 		Texture2D noiseTexture;
+		Texture3D bruteForceSdfTexture; // Brute force SDF loaded from raw file
 		struct CBufferDesc
 		{
 			alignas(4) uint32_t sampleCount;

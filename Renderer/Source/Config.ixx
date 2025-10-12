@@ -47,6 +47,7 @@ export struct Config
         uint32_t MeshToSdfIteration{10};
         uint32_t MeshToSdfDistanceMode{1}; // unsigned:0, signed:1
         uint32_t MeshToSdfQuality{0};      // normal:0, ultra:1
+        uint32_t UseBruteForce{1};         // 
     };
     SdfConfig Sdf;
 };

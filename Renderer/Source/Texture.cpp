@@ -11,6 +11,7 @@ module TextureMod;
 import InitMod;
 import ToolMod;
 import DeviceMod;
+import Logger;
 
 
 void Texture::UpdateDescriptor()
@@ -709,6 +710,195 @@ void Texture3D::Create(uint32_t dimX, uint32_t dimY, uint32_t dimZ, OldVulkanDev
 	VkCommandBuffer cmd = device->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 	Tool::SetImageLayout(cmd, image, VK_IMAGE_LAYOUT_UNDEFINED, imageLayout, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, layerCount });
 	device->FlushCommandBuffer(cmd, queue);
-	
+
 	UpdateDescriptor();
+}
+
+void Texture3D::LoadFromRawFile(
+	const std::string& filename,
+	uint32_t dimX,
+	uint32_t dimY,
+	uint32_t dimZ,
+	VkFormat format,
+	OldVulkanDevice* device,
+	VkQueue copyQueue,
+	VkImageUsageFlags imageUsageFlags,
+	VkImageLayout imageLayout)
+{
+	// Read raw binary file containing float data
+	std::ifstream file(filename, std::ios::binary | std::ios::ate);
+	if (!file.is_open())
+	{
+		Log::Error(std::format("Failed to open raw file: {}", filename));
+		return;
+	}
+
+	// Get file size and calculate expected size
+	std::streamsize fileSize = file.tellg();
+	file.seekg(0, std::ios::beg);
+
+	size_t expectedSize = static_cast<size_t>(dimX) * dimY * dimZ * sizeof(float);
+	if (fileSize != expectedSize)
+	{
+		Log::Warn(std::format("File size mismatch. Expected: {} bytes, Got: {} bytes", expectedSize, fileSize));
+	}
+
+	// Read float data from file
+	std::vector<float> sdfData(dimX * dimY * dimZ);
+	if (!file.read(reinterpret_cast<char*>(sdfData.data()), fileSize))
+	{
+		Log::Error(std::format("Failed to read data from raw file: {}", filename));
+		file.close();
+		return;
+	}
+	file.close();
+
+	Log::Info(std::format("Loaded raw SDF file: {}", filename));
+	Log::Info(std::format("  Dimensions: {}x{}x{}", dimX, dimY, dimZ));
+	Log::Info(std::format("  Data size: {} MB", fileSize / (1024.0f * 1024.0f)));
+
+	// Initialize texture members
+	this->device = device;
+	this->format = format;
+	this->imageLayout = imageLayout;
+	this->width = dimX;
+	this->height = dimY;
+	this->dimZ = dimZ;
+	this->mipLevels = 1;
+	this->layerCount = 1;
+
+	VkMemoryAllocateInfo memAllocInfo = Init::memoryAllocateInfo();
+	VkMemoryRequirements memReqs;
+
+	// Create staging buffer
+	VkBuffer stagingBuffer;
+	VkDeviceMemory stagingMemory;
+
+	VkBufferCreateInfo bufferCreateInfo = Init::bufferCreateInfo();
+	bufferCreateInfo.size = fileSize;
+	bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	Tool::CheckResult(vkCreateBuffer(device->logicalDevice, &bufferCreateInfo, nullptr, &stagingBuffer));
+
+	vkGetBufferMemoryRequirements(device->logicalDevice, stagingBuffer, &memReqs);
+	memAllocInfo.allocationSize = memReqs.size;
+	memAllocInfo.memoryTypeIndex = device->GetMemoryType(memReqs.memoryTypeBits,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	Tool::CheckResult(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &stagingMemory));
+	Tool::CheckResult(vkBindBufferMemory(device->logicalDevice, stagingBuffer, stagingMemory, 0));
+
+	// Copy SDF data to staging buffer
+	uint8_t* data;
+	Tool::CheckResult(vkMapMemory(device->logicalDevice, stagingMemory, 0, memReqs.size, 0, (void**)&data));
+	memcpy(data, sdfData.data(), fileSize);
+	vkUnmapMemory(device->logicalDevice, stagingMemory);
+
+	// Create 3D image
+	VkImageCreateInfo imageCreateInfo = Init::imageCreateInfo();
+	imageCreateInfo.imageType = VK_IMAGE_TYPE_3D;
+	imageCreateInfo.format = format;
+	imageCreateInfo.extent = { dimX, dimY, dimZ };
+	imageCreateInfo.mipLevels = 1;
+	imageCreateInfo.arrayLayers = 1;
+	imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	imageCreateInfo.usage = imageUsageFlags;
+
+	// Ensure TRANSFER_DST flag is set
+	if (!(imageCreateInfo.usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT))
+	{
+		imageCreateInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	}
+
+	Tool::CheckResult(vkCreateImage(device->logicalDevice, &imageCreateInfo, nullptr, &image));
+
+	vkGetImageMemoryRequirements(device->logicalDevice, image, &memReqs);
+	memAllocInfo.allocationSize = memReqs.size;
+	memAllocInfo.memoryTypeIndex = device->GetMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	Tool::CheckResult(vkAllocateMemory(device->logicalDevice, &memAllocInfo, nullptr, &deviceMemory));
+	Tool::CheckResult(vkBindImageMemory(device->logicalDevice, image, deviceMemory, 0));
+
+	// Create command buffer for copying
+	VkCommandBuffer copyCmd = device->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+
+	// Transition image layout from UNDEFINED to TRANSFER_DST_OPTIMAL
+	VkImageSubresourceRange subresourceRange = {};
+	subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	subresourceRange.baseMipLevel = 0;
+	subresourceRange.levelCount = 1;
+	subresourceRange.baseArrayLayer = 0;
+	subresourceRange.layerCount = 1;
+
+	Tool::SetImageLayout(
+		copyCmd,
+		image,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		subresourceRange);
+
+	// Copy buffer to image
+	VkBufferImageCopy bufferCopyRegion = {};
+	bufferCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	bufferCopyRegion.imageSubresource.mipLevel = 0;
+	bufferCopyRegion.imageSubresource.baseArrayLayer = 0;
+	bufferCopyRegion.imageSubresource.layerCount = 1;
+	bufferCopyRegion.imageExtent.width = dimX;
+	bufferCopyRegion.imageExtent.height = dimY;
+	bufferCopyRegion.imageExtent.depth = dimZ;
+	bufferCopyRegion.bufferOffset = 0;
+
+	vkCmdCopyBufferToImage(
+		copyCmd,
+		stagingBuffer,
+		image,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		1,
+		&bufferCopyRegion);
+
+	// Transition to final layout
+	this->imageLayout = imageLayout;
+	Tool::SetImageLayout(
+		copyCmd,
+		image,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		imageLayout,
+		subresourceRange);
+
+	device->FlushCommandBuffer(copyCmd, copyQueue);
+
+	// Clean up staging resources
+	vkDestroyBuffer(device->logicalDevice, stagingBuffer, nullptr);
+	vkFreeMemory(device->logicalDevice, stagingMemory, nullptr);
+
+	// Create sampler
+	VkSamplerCreateInfo samplerCreateInfo = Init::samplerCreateInfo();
+	samplerCreateInfo.magFilter = VK_FILTER_LINEAR;
+	samplerCreateInfo.minFilter = VK_FILTER_LINEAR;
+	samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerCreateInfo.mipLodBias = 0.0f;
+	samplerCreateInfo.maxAnisotropy = 1.0f;
+	samplerCreateInfo.minLod = 0.0f;
+	samplerCreateInfo.maxLod = 1.0f;
+	Tool::CheckResult(vkCreateSampler(device->logicalDevice, &samplerCreateInfo, nullptr, &sampler));
+
+	// Create 3D image view
+	VkImageViewCreateInfo viewCreateInfo = Init::imageViewCreateInfo();
+	viewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_3D;
+	viewCreateInfo.format = format;
+	viewCreateInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+	viewCreateInfo.image = image;
+	Tool::CheckResult(vkCreateImageView(device->logicalDevice, &viewCreateInfo, nullptr, &view));
+
+	// Update descriptor
+	UpdateDescriptor();
+
+	Log::Info(std::format("Successfully created 3D texture from raw file: {}", filename));
 }

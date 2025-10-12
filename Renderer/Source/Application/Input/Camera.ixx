@@ -127,11 +127,22 @@ public:
     Math::Vector3 GetUp() const { return up_; }
     Math::Vector3 GetRight() const { return right_; }
     float GetZoom() const { return zoom_; }
-    
+    float GetYaw() const { return yaw_; }
+    float GetPitch() const { return pitch_; }
+
     // Setters
-    void SetPosition(const Math::Vector3& position) { 
-        position_ = position; 
+    void SetPosition(const Math::Vector3& position) {
+        position_ = position;
         Log::Debug(std::format("Camera position set to ({:.2f}, {:.2f}, {:.2f})", position.x, position.y, position.z));
+    }
+    void SetRotation(float yaw, float pitch) {
+        yaw_ = yaw;
+        pitch_ = pitch;
+        // Constrain pitch
+        if (pitch_ > 89.0f) pitch_ = 89.0f;
+        if (pitch_ < -89.0f) pitch_ = -89.0f;
+        UpdateCameraVectors();
+        Log::Debug(std::format("Camera rotation set to yaw: {:.2f}, pitch: {:.2f}", yaw_, pitch_));
     }
     void SetMovementSpeed(float speed) { movementSpeed_ = speed; }
     void SetMouseSensitivity(float sensitivity) { mouseSensitivity_ = sensitivity; }

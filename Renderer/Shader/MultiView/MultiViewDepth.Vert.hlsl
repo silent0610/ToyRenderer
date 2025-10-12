@@ -99,16 +99,7 @@ VertexOutput main(VertexInput input, uint instanceID : SV_InstanceID) {
     uint faceIndex = instanceWithinPart % totalFaces;
 
     // 边界检查
-    if (partIndex >= pushConsts.totalPartCount || 
-        cameraIndex >= totalCameras || 
-        faceIndex >= totalFaces) {
-        // 输出退化三角形，移到远平面外避免影响深度缓冲
-        output.position = float4(0, 0, -1, 1);
-        output.worldPosition = float3(0, 0, 0);
-        output.cameraPosition = float3(0, 0, 0);
-        output.renderTargetIndex = 0; // 默认输出到第一层
-        return output;
-    }
+
 
     // 2. 计算正确的输出layer：cameraIndex * 6 + faceIndex
     // 每个相机占用6个连续的layer (cubemap的6个面)

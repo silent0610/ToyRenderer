@@ -52,6 +52,7 @@ void Renderer::InitWindow()
     // 传递对象this指针给回调函数。这样我们就可以在回调函数中访问类的成员变量, 也就是传递窗口变化信息
     glfwSetWindowUserPointer(m_window, this);
     glfwSetKeyCallback(m_window, KeyCallback);                           // 键盘事件
+    glfwSetCharCallback(m_window, CharCallback);                         // 字符输入 (for ImGui text input)
     glfwSetCursorPosCallback(m_window, MouseCallback);                   // 鼠标移动
     glfwSetScrollCallback(m_window, ScrollCallback);                     // 鼠标滚轮
     glfwSetMouseButtonCallback(m_window, MouseButtonCallback);           // 鼠标按键
@@ -1391,64 +1392,71 @@ void Renderer::ExportSDFDataForVisualization()
 void Renderer::KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
     auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
+
+    // Check if ImGui wants to capture keyboard input
+    ImGuiIO& io = ImGui::GetIO();
+
     if (action == GLFW_PRESS) // 按键按下
     {
+        // Global hotkeys that always work (even when ImGui has focus)
         switch (key)
         {
-        // case GLFW_KEY_P:
-        //	app->m_camera.paused = !paused;
-        //	break;
-        // case GLFW_KEY_F1:
-        //	uiVisible = !uiVisible;
-        //	break;
         case GLFW_KEY_F2:
             app->m_camera.type = (app->m_camera.type == Camera::CameraType::lookat) ? Camera::CameraType::firstperson : Camera::CameraType::lookat;
             break;
         case GLFW_KEY_ESCAPE:
             glfwSetWindowShouldClose(window, true);
             break;
-        case GLFW_KEY_V:
-            app->TestBruteSdfAndSave();
-            break;
-        case GLFW_KEY_E: { // 按E键导出SDF数据用于Python可视化
-            printf("Exporting SDF data for visualization...\n");
-            app->ExportSDFDataForVisualization();
-            break;
-        }
-        case GLFW_KEY_M: // 按M键导出MeshToSdf数据用于Python可视化
-            printf("Exporting MeshToSdf data for visualization...\n");
-            app->ExportSDFDataForVisualization(app->GetMeshToSdfOperator()->GetSdfTexture(), VK_IMAGE_LAYOUT_GENERAL,
-                                               Tool::GetAssetsPath() + "Sdf/" + "MeshToSdf.raw");
-            break;
-        case GLFW_KEY_O: // 按O键导出SDFAO贴图
-            
-            printf("Exporting SDFAO texture...\n");
-            
-            app->ExportAOData();
-            break;
         }
 
-        if (app->m_camera.type == Camera::firstperson)
+        // Only handle these keys if ImGui doesn't want keyboard input
+        if (!io.WantCaptureKeyboard)
         {
             switch (key)
             {
-            case GLFW_KEY_W:
-                app->m_camera.keys.up = true;
+            case GLFW_KEY_V:
+                app->TestBruteSdfAndSave();
                 break;
-            case GLFW_KEY_S:
-                app->m_camera.keys.down = true;
+            case GLFW_KEY_E: { // 按E键导出SDF数据用于Python可视化
+                printf("Exporting SDF data for visualization...\n");
+                app->ExportSDFDataForVisualization();
                 break;
-            case GLFW_KEY_A:
-                app->m_camera.keys.left = true;
+            }
+            case GLFW_KEY_M: // 按M键导出MeshToSdf数据用于Python可视化
+                printf("Exporting MeshToSdf data for visualization...\n");
+                app->ExportSDFDataForVisualization(app->GetMeshToSdfOperator()->GetSdfTexture(), VK_IMAGE_LAYOUT_GENERAL,
+                                                   Tool::GetAssetsPath() + "Sdf/" + "MeshToSdf.raw");
                 break;
-            case GLFW_KEY_D:
-                app->m_camera.keys.right = true;
+            case GLFW_KEY_O: // 按O键导出SDFAO贴图
+                printf("Exporting SDFAO texture...\n");
+                app->ExportAOData();
                 break;
+            }
+
+            // Camera movement keys (only if ImGui is not capturing keyboard)
+            if (app->m_camera.type == Camera::firstperson)
+            {
+                switch (key)
+                {
+                case GLFW_KEY_W:
+                    app->m_camera.keys.up = true;
+                    break;
+                case GLFW_KEY_S:
+                    app->m_camera.keys.down = true;
+                    break;
+                case GLFW_KEY_A:
+                    app->m_camera.keys.left = true;
+                    break;
+                case GLFW_KEY_D:
+                    app->m_camera.keys.right = true;
+                    break;
+                }
             }
         }
     }
     else if (action == GLFW_RELEASE) // 按键释放
     {
+        // Always release camera keys regardless of ImGui state
         if (app->m_camera.type == Camera::CameraType::firstperson)
         {
             switch (key)
@@ -1469,6 +1477,13 @@ void Renderer::KeyCallback(GLFWwindow* window, int key, int scancode, int action
         }
     }
 }
+
+void Renderer::CharCallback(GLFWwindow* window, unsigned int codepoint)
+{
+    ImGuiIO& io = ImGui::GetIO();
+    io.AddInputCharacter(codepoint);
+}
+
 void Renderer::MouseCallback(GLFWwindow* window, double xpos, double ypos)
 {
 
@@ -1772,6 +1787,38 @@ void Renderer::DisplayUI(UIOverlay* overlay)
         if (overlay->Header("Others"))
         {
         }
+
+        // Camera Control
+        if (overlay->Header("Camera"))
+        {
+            // Position controls
+            if (overlay->InputFloat("Position X", &m_camera.position.x, 0.01f))
+            {
+                m_camera.setPosition(m_camera.position);
+            }
+            if (overlay->InputFloat("Position Y", &m_camera.position.y, 0.01f))
+            {
+                m_camera.setPosition(m_camera.position);
+            }
+            if (overlay->InputFloat("Position Z", &m_camera.position.z, 0.01f))
+            {
+                m_camera.setPosition(m_camera.position);
+            }
+
+            // Rotation controls (X = pitch, Y = yaw, Z = roll)
+            if (overlay->InputFloat("Rotation X (Pitch)", &m_camera.rotation.x, 0.01f))
+            {
+                m_camera.setRotation(m_camera.rotation);
+            }
+            if (overlay->InputFloat("Rotation Y (Yaw)", &m_camera.rotation.y, 0.01f))
+            {
+                m_camera.setRotation(m_camera.rotation);
+            }
+            if (overlay->InputFloat("Rotation Z (Roll)", &m_camera.rotation.z, 0.01f))
+            {
+                m_camera.setRotation(m_camera.rotation);
+            }
+        }
     }
 }
 
@@ -1794,6 +1841,10 @@ void Renderer::UpdateOverlay()
     io.MouseDown[0] = m_mouseState.Buttons.Left && m_UI.visible;
     io.MouseDown[1] = m_mouseState.Buttons.Right && m_UI.visible;
     io.MouseDown[2] = m_mouseState.Buttons.Middle && m_UI.visible;
+
+    // Note: Keyboard input is now handled via callbacks (KeyCallback and CharCallback)
+    // The new ImGui API (1.87+) uses AddKeyEvent() which is called in KeyCallback
+    // No need to manually update KeysDown array or KeyMap
 
     ImGui::NewFrame();
 
@@ -4668,7 +4719,7 @@ void Renderer::PreparePipelines()
         Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE), Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE)};
     colorBlendState.pAttachments = blendAttachmentStates.data();
     colorBlendState.attachmentCount = 4;
-    rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizationState.cullMode = VK_CULL_MODE_NONE;
     rasterizationState.polygonMode = VK_POLYGON_MODE_LINE;
     depthStencilState.depthWriteEnable = VK_TRUE;
     depthStencilState.depthTestEnable = VK_TRUE;
@@ -10380,7 +10431,7 @@ void Renderer::ExecuteMultiViewDepthRendering(VkCommandBuffer cmd)
     // Use MAX_CAMERAS to ensure consistent behavior (no GPU readback)
 
     depthPass.renderParams.ModelMatrix = m_glTFModel.GetModelToStandardTransform();
-    depthPass.renderParams.projectionMatrix = glm::perspective(glm::radians(90.0f), 1.0f, 0.005f, 2.0f); // 降低远平面到50
+    depthPass.renderParams.projectionMatrix = glm::perspective(glm::radians(90.0f), 1.0f, 0.005f, 10.0f); // 降低远平面到50
     depthPass.renderParams.totalPartCount = 1;                                                           // Only use first part
 
     vkCmdPushConstants(cmd, depthPass.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
@@ -10944,6 +10995,48 @@ void Renderer::AllocateDescriptorSetSdfAO()
     CreateFinalSDFTexture();
     CreateFinalSDFSampler(); // Create sampler for SDF AO Pass sampling
 
+    // Decide which SDF to use based on config
+    VkDescriptorImageInfo sdfDescriptor;
+    if (config_->Sdf.UseBruteForce)
+    {
+        // Load brute force SDF from raw file
+        std::string sdfFileName = GenerateSdfFileName("BruteSdf");
+        std::string sdfFilePath = Tool::GetAssetsPath() + "Sdf/" + sdfFileName;
+
+        Log::Info(std::format("Loading brute force SDF for SDFAO: {}", sdfFilePath));
+
+        // Check if file exists
+        if (Tool::CheckFileExists(sdfFilePath))
+        {
+            uint32_t resolution = config_->Sdf.Resolution;
+            sdfAOPass_.bruteForceSdfTexture.LoadFromRawFile(
+                sdfFilePath,
+                resolution,
+                resolution,
+                resolution,
+                VK_FORMAT_R32_SFLOAT,
+                m_vulkanDevice,
+                m_queues.graphicsQueue,
+                VK_IMAGE_USAGE_SAMPLED_BIT,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+            sdfDescriptor = sdfAOPass_.bruteForceSdfTexture.descriptor;
+            Log::Info("Successfully loaded brute force SDF for SDFAO");
+        }
+        else
+        {
+            Log::Warn(std::format("Brute force SDF file not found: {}", sdfFilePath));
+            Log::Warn("Falling back to runtime generated SDF");
+            sdfDescriptor = m_multiViewDepthSDF4C.sdfFusionPass.finalSDFDescriptor;
+        }
+    }
+    else
+    {
+        // Use runtime generated SDF
+        Log::Info("Using runtime generated SDF for SDFAO");
+        sdfDescriptor = m_multiViewDepthSDF4C.sdfFusionPass.finalSDFDescriptor;
+    }
+
     std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings{
         // camera
         Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 0),
@@ -10982,8 +11075,7 @@ void Renderer::AllocateDescriptorSetSdfAO()
         Init::writeDescriptorSet(sdfAOPass_.set, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &texDescriptorPosition),
         Init::writeDescriptorSet(sdfAOPass_.set, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &texDescriptorNormal),
         Init::writeDescriptorSet(sdfAOPass_.set, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, &texDescriptorDepth),
-        Init::writeDescriptorSet(sdfAOPass_.set, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4,
-                                 &m_multiViewDepthSDF4C.sdfFusionPass.finalSDFDescriptor),
+        Init::writeDescriptorSet(sdfAOPass_.set, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4, &sdfDescriptor), // Use selected SDF
         Init::writeDescriptorSet(sdfAOPass_.set, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, &m_blueNoise.descriptor),
         Init::writeDescriptorSet(sdfAOPass_.set, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6, &m_sharedBuffers.ConstBufferCamera.descriptor)};
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);

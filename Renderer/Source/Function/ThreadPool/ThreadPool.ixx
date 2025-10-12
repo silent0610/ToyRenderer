@@ -6,7 +6,7 @@ export class ThreadPool
 public:
     ThreadPool(int t_numThreads) : m_workingNum(0), m_isStop(false)
     {
-
+        std::cout << "use threads num " << t_numThreads << "\n";
         for (int i = 0; i < t_numThreads; i++)
         {
             m_threads.emplace_back([this] { // 为每一个线程提供一个lamda函数作为他们的工作
@@ -48,6 +48,7 @@ public:
     }
     ThreadPool() : m_isStop(false)
     {
+        std::cout << "use threads num " << std::thread::hardware_concurrency() << "\n";
         for (int i = 0; i < std::thread::hardware_concurrency(); i++)
         {
             m_threads.emplace_back([this] { // 为每一个线程提供一个lamda函数作为他们的工作

@@ -86,5 +86,17 @@ export class Texture3D :public Texture
 {
 public:
 	void Create(uint32_t dimX, uint32_t dimY, uint32_t dimZ, OldVulkanDevice* device, VkQueue queue, VkFormat format, VkImageUsageFlags usage, VkImageLayout imageLayout);
+
+	// Load 3D SDF data from raw binary file
+	void LoadFromRawFile(
+		const std::string& filename,
+		uint32_t dimX,
+		uint32_t dimY,
+		uint32_t dimZ,
+		VkFormat format,
+		OldVulkanDevice* device,
+		VkQueue copyQueue,
+		VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
+		VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 };
 

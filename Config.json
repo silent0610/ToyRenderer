@@ -1,13 +1,13 @@
 {
     "modelPath": [
-        "Models/fox_1k.gltf"
+        "Models/happy_15k.gltf"
     ],
     "shaderPath": [
         "BlinnPhong/Basic.Vert.spv",
         "BlinnPhong/Basic.Frag.spv"
     ],
     "pipelineType": "basic",
-    "enableValidation": true,
+    "enableValidation": false,
     "camera": {
         "pos": [
             0.0,
