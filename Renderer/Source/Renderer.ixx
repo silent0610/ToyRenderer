@@ -408,7 +408,7 @@ private:
 
 	/// @brief 设置ui
 	/// @param overlay
-	void DisplayUI(UIOverlay *overlay);
+	void SetUI(UIOverlay *overlay);
 	void UpdateOverlay();
 	std::string GetWindowTitle() const;
 
@@ -604,6 +604,9 @@ private:
 	void UpdateLightCullingUBO();
 	void BuildTileBasedLightingCommandBuffer();
 
+	public:
+    void ExportMeshToSdfData();
+
 private:
 	void OffscreenWork();
 	void SetupPassDepthCubeMap();
@@ -611,6 +614,7 @@ private:
 	void SaveToImage(const Texture &tex, const std::string &savePath);
 	void ExportSDFDataForVisualization(); // 导出SDF数据用于Python可视化验证
 	void ExportSDFDataForVisualization(Texture *texture, VkImageLayout oldLayout, const std::string outputPath);
+    
 	struct DepthCubeMapPass
 	{
 		static const int WIDTH{512};
@@ -748,12 +752,12 @@ private:
 		Texture3D bruteForceSdfTexture; // Brute force SDF loaded from raw file
 		struct CBufferDesc
 		{
-			alignas(4) uint32_t sampleCount;
-			alignas(4) float sampleRadius;
-			alignas(4) float aoStrength;
-			alignas(4) float biasDistance;
-			alignas(4) float maxDistance;
-			alignas(4) float falloffPower;
+            alignas(4) uint32_t sampleCount{10};
+            alignas(4) float sampleRadius{0.3};
+            alignas(4) float aoStrength{1.0f};
+            alignas(4) float biasDistance{0.0f};
+            alignas(4) float maxDistance{0.3f};
+            alignas(4) float falloffPower{2.0f};
 			alignas(4) float voxelSize;
 			alignas(4) uint32_t sdfTextureSize;
 			alignas(16) glm::vec4 minBounds;
@@ -1043,7 +1047,7 @@ private:
 
 	// GPU稀疏体素八叉树
 	// GPU Mipmap隐式八叉树
-	std::unique_ptr<GPUMipmapOctree> m_gpuMipmapOctree;
+    std::unique_ptr<GPUMipmapOctree> m_gpuMipmapOctree{};
 	bool m_enableVoxelization = true;
 
 	// 统一GPU管线资源管理
@@ -1459,10 +1463,39 @@ private:
 	MeshToSdf *meshToSdfOperator_{};
 	VkCommandBuffer meshToSdfCommandBuffer_{};
 
+	// GPU Timestamp支持 - 连续1000帧统计
+	VkQueryPool timestampQueryPool_{VK_NULL_HANDLE};
+	static constexpr uint32_t MAX_TIMESTAMP_QUERIES = 4; // 只需要4个时间戳
+	float timestampPeriod_{1.0f}; // GPU时间戳周期（纳秒）
+
+	// 性能计时索引
+	enum TimestampQuery : uint32_t {
+		MESHTOSDF_START = 0,
+		MESHTOSDF_END = 1,
+		UNIFIED_PIPELINE_START = 2,
+		UNIFIED_PIPELINE_END = 3
+	};
+
+	// 性能统计数据
+	struct PerformanceStats {
+		std::vector<float> meshToSdfTimes; // MeshToSdf的GPU时间（毫秒）
+		std::vector<float> unifiedPipelineTimes; // UnifiedPipeline的GPU时间（毫秒）
+		uint32_t warmupFrames = 100; // 预热帧数（跳过前100帧）
+		uint32_t targetFrames = 1000; // 目标统计帧数
+		uint32_t currentFrame = 0; // 当前帧计数
+		bool isCollecting = false; // 是否正在收集数据
+		bool isComplete = false; // 是否已完成收集
+	} perfStats_;
+
+	void InitializeTimestampQueries();
+	void CleanupTimestampQueries();
+	void CollectFrameTimestamps(); // 每帧收集时间戳
+	void PrintPerformanceStatistics(); // 打印最终统计结果
+
 public:
 	MeshToSdf *GetMeshToSdfOperator();
 
-private:
+public:
 	// 辅助函数: 从modelPath提取模型名称
 	std::string GetModelNameFromPath(const std::string& modelPath);
 	// 生成SDF输出文件名: ModelName_Resolution_MethodName.raw

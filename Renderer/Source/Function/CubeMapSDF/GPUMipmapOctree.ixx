@@ -11,11 +11,6 @@ import TextureMod;
 import GlmMod;
 
 // Node state enumeration
-export enum class NodeState : uint32_t {
-    EMPTY = 0, // All 8 child nodes are outside
-    MIXED = 1, // Some child nodes inside, some outside
-    SOLID = 2  // All 8 child nodes are inside
-};
 
 // Level info structure for uniform buffer (matches shader cbuffer)
 export struct LevelInfo
@@ -30,14 +25,7 @@ export struct LevelInfo
 };
 
 // Octree node information for CPU queries
-export struct OctreeNode
-{
-    glm::uvec3 position; // Position in mip level
-    uint32_t level;      // Mip level (0=64³, 1=32³, ...)
-    NodeState state;     // EMPTY/MIXED/SOLID
-    float size;          // Node size in world units
-    glm::vec3 center;    // World coordinate center
-};
+
 
 // Configuration for node selection
 export struct NodeSelectionConfig
@@ -53,7 +41,7 @@ export struct NodeSelectionConfig
 export class GPUMipmapOctree
 {
 public:
-    GPUMipmapOctree(OldVulkanDevice* device, uint32_t mode, uint32_t baseSize = 64);
+    GPUMipmapOctree(OldVulkanDevice* device, uint32_t mode, uint32_t baseSize = 64, bool useRandom=false);
     ~GPUMipmapOctree();
     void SetVoxelTexture(VkImageView view);
     // Build mipmap octree from 3D binary texture
@@ -61,11 +49,6 @@ public:
 
     // Build mipmap octree with semaphore optimization (parallel levels)
     void BuildFromVoxelTextureOptimized(VkCommandBuffer commandBuffer, Texture *voxelTexture, VkQueue computeQueue, VkCommandPool computeCommandPool);
-
-    // Query interface for CPU (不应当使用)
-    std::vector<OctreeNode> FindSolidNodes(uint32_t minLevel = 2);
-    OctreeNode GetNode(glm::uvec3 position, uint32_t level);
-    std::vector<OctreeNode> ExtractNodes(const NodeSelectionConfig &config);
 
     // Debug and validation functions
     void ValidateResults();

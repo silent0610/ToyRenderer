@@ -62,6 +62,7 @@ public:
 	bool CheckBox(const char* caption, int32_t* value);
 	bool RadioButton(const char* caption, bool value);
 	bool InputFloat(const char* caption, float* value, float step, const char* format = "%.3f");
+    bool InputInt(const char* caption, int* value, float step);
 	bool SliderFloat(const char* caption, float* value, float min, float max);
 	bool SliderInt(const char* caption, int32_t* value, int32_t min, int32_t max);
 	bool ComboBox(const char* caption, int32_t* itemindex, std::vector<std::string> items);

@@ -40,8 +40,9 @@ VSOutput main(VSInput input)
     output.WorldPos = mul(ubo.model, input.Pos).xyz;
 
     // Normal in world space
+    output.Normal = normalize(float3(input.Normal.x,-input.Normal.z,input.Normal.y));
     output.Normal = normalize(input.Normal);
-
+    // 
     output.Tangent = normalize(input.Tangent);
     // Currently just vertex color
     output.Color = input.Color;

@@ -24,14 +24,25 @@ except ImportError:
     print("警告: 未安装scikit-image，SSIM计算将使用简化实现")
     HAS_SKIMAGE = False
 
-def load_sdf_data(file_path, resolution=64):
-    """从二进制文件加载SDF数据"""
+def load_sdf_data(file_path, resolution=64, flip_x=False, flip_y=False, flip_z=False):
+    """从二进制文件加载SDF数据
+
+    Args:
+        file_path: SDF文件路径
+        resolution: 体素分辨率 (默认64)
+        flip_x: 是否翻转X轴 (默认False)
+        flip_y: 是否翻转Y轴 (默认False)
+        flip_z: 是否翻转Z轴 (默认False)
+
+    Returns:
+        numpy数组: 加载并可选翻转后的SDF体素数据
+    """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"SDF文件未找到: {file_path}")
-    
+
     expected_size = resolution ** 3
     file_size = os.path.getsize(file_path)
-    
+
     # 统一使用R32_SFLOAT格式
     if file_size == expected_size * 4:
         sdf_data = np.fromfile(file_path, dtype=np.float32)
@@ -47,16 +58,88 @@ def load_sdf_data(file_path, resolution=64):
                 raise ValueError(f"文件大小不匹配32位浮点格式: {file_size} bytes")
         else:
             raise ValueError(f"文件大小必须是4的倍数(R32_SFLOAT): {file_size} bytes")
-    
+
     expected_size = resolution ** 3
     if len(sdf_data) != expected_size:
         raise ValueError(f"数据尺寸不匹配: 期望{expected_size}，实际{len(sdf_data)}")
-    
+
     # 重塑为3D数组
     sdf_volume = sdf_data.reshape((resolution, resolution, resolution))
-    print(f"SDF数据加载成功: {resolution}³ = {len(sdf_data)} 体素 [R32_SFLOAT]")
-    
+
+    # 应用坐标系翻转
+    flip_info = []
+    if flip_x:
+        sdf_volume = np.flip(sdf_volume, axis=0)
+        flip_info.append("X")
+    if flip_y:
+        sdf_volume = np.flip(sdf_volume, axis=1)
+        flip_info.append("Y")
+    if flip_z:
+        sdf_volume = np.flip(sdf_volume, axis=2)
+        flip_info.append("Z")
+
+    flip_str = f" [翻转: {','.join(flip_info)}]" if flip_info else ""
+    print(f"SDF数据加载成功: {resolution}³ = {len(sdf_data)} 体素 [R32_SFLOAT]{flip_str}")
+
     return sdf_volume
+
+def save_sdf_data(sdf_volume, file_path):
+    """将SDF数据保存到二进制文件
+
+    Args:
+        sdf_volume: SDF体素数据 (3D numpy数组)
+        file_path: 保存的文件路径
+
+    Returns:
+        bool: 保存是否成功
+    """
+    try:
+        # 确保数据类型为float32 (R32_SFLOAT)
+        sdf_to_save = sdf_volume.astype(np.float32)
+
+        # 保存到文件
+        sdf_to_save.tofile(file_path)
+
+        # 验证文件大小
+        file_size = os.path.getsize(file_path)
+        expected_size = sdf_to_save.size * 4  # 4 bytes per float32
+        resolution = sdf_to_save.shape[0]
+
+        if file_size == expected_size:
+            print(f"SDF数据保存成功: {file_path}")
+            print(f"  分辨率: {resolution}³ = {sdf_to_save.size} 体素")
+            print(f"  文件大小: {file_size} bytes ({file_size / 1024:.2f} KB)")
+            print(f"  数据范围: [{sdf_to_save.min():.3f}, {sdf_to_save.max():.3f}]")
+            print(f"  格式: R32_SFLOAT")
+            return True
+        else:
+            print(f"警告: 文件大小不匹配 (期望{expected_size}, 实际{file_size})")
+            return False
+
+    except Exception as e:
+        print(f"保存SDF数据失败: {e}")
+        return False
+
+def abs_sdf(sdf_volume):
+    """将SDF的所有负值转换为正值（取绝对值）
+
+    Args:
+        sdf_volume: SDF体素数据 (3D numpy数组)
+
+    Returns:
+        numpy数组: 转换后的SDF数据（所有值为正）
+    """
+    result = np.abs(sdf_volume)
+
+    negative_count = np.sum(sdf_volume < 0)
+    total_count = sdf_volume.size
+
+    print(f"SDF负值转正完成:")
+    print(f"  转换前范围: [{sdf_volume.min():.3f}, {sdf_volume.max():.3f}]")
+    print(f"  转换后范围: [{result.min():.3f}, {result.max():.3f}]")
+    print(f"  转换体素数: {negative_count} ({negative_count/total_count*100:.1f}%)")
+
+    return result
 
 def analyze_sdf_quality(sdf_volume):
     """分析SDF质量指标"""
@@ -227,13 +310,12 @@ def visualize_3d_isosurface(sdf_volume, voxel_half_extent=32, iso_value=0.0):
         grid.point_data["sdf"] = sdf.ravel(order="F")
 
         # 提取等值面
-        surface = grid.contour(isosurfaces=[iso_value], scalars="sdf")
-        if surface.n_points == 0:
-            for iso_try in [0.05, 0.1, 0.2, 0.5, 1.0]:
-                surface = grid.contour(isosurfaces=[iso_try], scalars="sdf")
-                if surface.n_points > 0:
-                    print(f"使用等值面 SDF={iso_try}")
-                    break
+
+        for iso_try in [0.05, 0.1, 0.2, 0.5, 1.0]:
+            surface = grid.contour(isosurfaces=[iso_try], scalars="sdf")
+            if surface.n_points > 0:
+                print(f"使用等值面 SDF={iso_try}")
+                break
 
         # 绘制
         plotter = pv.Plotter(window_size=[1000, 700])
@@ -435,7 +517,7 @@ def _calculate_ssim_simple(image1, image2, data_range):
 
     return ssim_value
 
-def compare_sdf_data(sdf1, sdf2, name1="SDF1", name2="SDF2"):
+def compare_sdf_data(sdf1, sdf2, name1="SDF1", name2="true"):
     """对比两个SDF数据的差异,计算各种误差指标
 
     Args:
@@ -637,7 +719,7 @@ def compare_sdfao_images(image1_path, image2_path, name1="方法1", name2="参�
 
     return results
 
-def visualize_sdfao_comparison(image1, image2, name1="方法1", name2="参考"):
+def z(image1, image2, name1="方法1", name2="参考"):
     """可视化SDFAO图像对比
 
     Args:
@@ -699,16 +781,7 @@ def print_validation_summary():
 def UserInterface():
     pass
 
-def main():
-    """主函数"""
-    # SDF文件路径（与Renderer.cpp中的输出路径对应）
-    bruteSdf = "BruteSdf.raw"
-    analyticalSdf = "AnalyticalSdf.raw"
-    meshToSdf = "MeshToSdf.raw"
-    multiViewSdf = "MultiViewSdf.raw"
-    data = load_sdf_data(meshToSdf, resolution=64)
-    
-    # visualize_3d_isosurface(data)
+def Visualize(bruteSdf,meshToSdf,analyticalSdf,multiViewSdf,resolution):
     print("\n选择可视化数据:")
     print("1. bruteSdf ")
     print("2. meshToSdf")
@@ -716,16 +789,51 @@ def main():
     print("4. multiViewSdf")
     choice = input("请选择 (1-4): ").strip()
     if choice == "1":
-        data = load_sdf_data(bruteSdf, resolution=64)
+        data = bruteSdf
     elif choice == "2":
-        data = load_sdf_data(meshToSdf, resolution=64)
+        data = meshToSdf
     elif choice == "3":
-        data = load_sdf_data(analyticalSdf, resolution=64)
+        data = analyticalSdf
     elif choice == "4":
-        data = load_sdf_data(multiViewSdf, resolution=64)
+        data = multiViewSdf
     else:
-        data = load_sdf_data(bruteSdf, resolution=64)
-    visualize_3d_isosurface(data)
+        data = bruteSdf
+    visualize_3d_isosurface(data,voxel_half_extent=resolution/2)
+def main():
+    """主函数"""
+    # SDF文件路径（与Renderer.cpp中的输出路径对应）
+    # bruteSdf = "duck_4k_64_BruteSdf.raw"
+    # analyticalSdf = "duck_4k_64_Analytical.raw"
+    # meshToSdf = "duck_4k_64_JumpFlood.raw"
+    # multiViewSdf = "duck_4k_64_Multview.raw"
+    
+    modelName = "happy_65k_"
+    resolution = 128
+    modelName = modelName + str(resolution) +"_"
+    methodName1 = "BruteSdf"
+    methodName2 = "JumpFlood"
+    methodName3 = "Analytical"
+    methodName4 = "Multview"
+    appendix = ".raw"
+
+    fileTrue = modelName+ methodName1 + appendix
+    file2 = modelName +methodName2 + appendix
+    file3 = modelName +methodName3 + appendix
+    file4 = modelName +methodName4 + appendix
+    dataTrue = load_sdf_data(fileTrue,resolution=resolution,flip_x=True,flip_y=True)
+    data2 = load_sdf_data(file2,resolution=resolution,flip_x=True,flip_y=True)
+    data3 = load_sdf_data(file3,resolution=resolution)
+    data3 = abs_sdf(data3)
+    data4 = load_sdf_data(file4,resolution=resolution)
+    data4 = abs_sdf(data4)
+    
+    compare_sdf_data(data2,dataTrue,"meshtoSDf")
+    compare_sdf_data(data3,dataTrue,"Analytical")
+    compare_sdf_data(data4,dataTrue,"MultiView")
+    # visualize_3d_isosurface(data4,resolution/2)
+    Visualize(dataTrue,data2,data3,data4,resolution)
+    save_sdf_data(dataTrue,fileTrue)
+
 
 
 if __name__ == "__main__":

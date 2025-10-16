@@ -8,13 +8,14 @@ MeshToSdf::MeshToSdf() : device_{nullptr}, queue_(VK_NULL_HANDLE), currentMesh_(
 {
     //sdfParam_ = {};
 }
-void MeshToSdf::Initialize(OldVulkanDevice* device, VkQueue queue, VkDescriptorPool descriptorPool, vkglTF::Model* mesh)
+void MeshToSdf::Initialize(OldVulkanDevice* device, VkQueue queue, VkDescriptorPool descriptorPool, vkglTF::Model* mesh, SdfParam& param)
 {
     Log::Info("Initializing MeshToSdf");
     device_ = device;
     queue_ = queue;
     currentMesh_ = mesh;
     worldToLocal_ = currentMesh_->GetModelToStandardTransform();
+    this->sdfParam_ = param;
     // 纹理资源
     CreateSdfResource();
 
@@ -342,25 +343,28 @@ void MeshToSdf::UpdateDescriptorSet()
     VkWriteDescriptorSet sdfBufferWrite =
         Init::writeDescriptorSet(descriptor_.NormalSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0, &sdfBuffer_.descriptor);
     descriptorWrites.push_back(sdfBufferWrite);
+    VkDescriptorBufferInfo vertexBufferInfo{};
+    vertexBufferInfo.buffer = currentMesh_->vertices.buffer;
+    vertexBufferInfo.offset = 0;
+    vertexBufferInfo.range = VK_WHOLE_SIZE;
+    VkDescriptorBufferInfo indexBufferInfo{};
+    indexBufferInfo.buffer = currentMesh_->indices.buffer;
+    indexBufferInfo.offset = 0;
+    indexBufferInfo.range = VK_WHOLE_SIZE;
     // 3: ByteAddressBuffer VertexBuffer : register(t3)
     if (currentMesh_ && currentMesh_->vertices.buffer)
     {
-        VkDescriptorBufferInfo vertexBufferInfo{};
-        vertexBufferInfo.buffer = currentMesh_->vertices.buffer;
-        vertexBufferInfo.offset = 0;
-        vertexBufferInfo.range = VK_WHOLE_SIZE;
+
 
         VkWriteDescriptorSet vertexBufferWrite =
             Init::writeDescriptorSet(descriptor_.NormalSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, &vertexBufferInfo);
         descriptorWrites.push_back(vertexBufferWrite);
     }
+
     // 4: ByteAddressBuffer IndexBuffer : register(t4)
     if (currentMesh_ && currentMesh_->indices.buffer)
     {
-        VkDescriptorBufferInfo indexBufferInfo{};
-        indexBufferInfo.buffer = currentMesh_->indices.buffer;
-        indexBufferInfo.offset = 0;
-        indexBufferInfo.range = VK_WHOLE_SIZE;
+
 
         VkWriteDescriptorSet indexBufferWrite =
             Init::writeDescriptorSet(descriptor_.NormalSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2, &indexBufferInfo);

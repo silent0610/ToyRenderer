@@ -154,7 +154,7 @@ static const float PI = 3.14159265359;
 float3 materialcolor() {
     return float3(0.1, 0.1, 0.1);
 }
-// Normal Distribution function --------------------------------------
+// Normal Distribution function ------------------------------------
 float D_GGX(float dotNH, float roughness) {
     float alpha = roughness * roughness;
     float alpha2 = alpha * alpha;

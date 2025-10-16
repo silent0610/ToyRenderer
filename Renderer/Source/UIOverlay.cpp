@@ -451,7 +451,15 @@ bool UIOverlay::RadioButton(const char* caption, bool value)
 	};
 	return res;
 }
-
+bool UIOverlay::InputInt(const char* caption, int* value, float step)
+{
+    bool res = ImGui::InputInt(caption, value, step);
+    if (res)
+    {
+        updated = true;
+    };
+    return res;
+}
 bool UIOverlay::InputFloat(const char* caption, float* value, float step, const char* format)
 {
 	bool res = ImGui::InputFloat(caption, value, step, step * 10.0f, "%.3f");

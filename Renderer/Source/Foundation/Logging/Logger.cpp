@@ -120,7 +120,7 @@ namespace Log
             g_asyncMode = true; // 标记为"高性能"模式
 
             // 记录模式切换
-            logger->info("High-performance logging mode enabled (queue_size: {})", queue_size);
+            //logger->info("High-performance logging mode enabled (queue_size: {})", queue_size);
         }
     }
 

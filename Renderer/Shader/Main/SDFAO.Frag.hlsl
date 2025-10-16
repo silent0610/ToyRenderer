@@ -144,7 +144,7 @@ float3 CalculateSdfAO(float3 worldPos, float3 normal, float2 screenUV) {
             float sdfDist = SampleSDF(samplePos);
             // return sdfDist.xxx;
             // 如果采样点在表面内部 (sdfDist < 0)，则产生遮蔽
-            if (sdfDist < 0) {
+            if (sdfDist < 0.02) {
                 // 命中遮挡，记为1（也可按厚度调整）
                 float occlusionStrength = 1.0;
 

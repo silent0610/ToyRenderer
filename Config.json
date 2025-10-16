@@ -14,6 +14,11 @@
             0.0,
             -5.0
         ],
+        "Rotation": [
+            0.0,
+            0.0,
+            0.0
+        ],
         "type": "lookat",
         "flipY": true,
         "fov": 90.0,
@@ -32,14 +37,16 @@
     },
     "SdfConfig": {
         "WorldSize": 2.0,
-        "Resolution": 64,
-        "MultiViewUsedCameraNum": 10,
+        "Resolution": 128,
+        "MultiViewUsedCameraNum": 300,
         "SdfMode": 1,
         "MultiViewDepthResolution": 64,
-        "AnalyticalSampledLevel": 2,
+        "SampledLevel": 3,
         "MeshToSdfMode": 1,
-        "MeshToSdfIteration": 10,
+        "MeshToSdfIteration": 16,
         "MeshToSdfDistanceMode": 1,
-        "MeshToSdfQuality": 0
+        "MeshToSdfQuality": 1,
+        "UseBruteForce": 0,
+        "UseRandomSelection": 0
     }
 }
