@@ -11091,6 +11091,7 @@ void Renderer::AllocateDescriptorSetSdfAO()
         else
         {
             Log::Warn(std::format("Brute force SDF file not found: {}", sdfFilePath));
+            Log::Warn(std::format("Brute force SDF file not found: {}", sdfFilePath));
             Log::Warn("Falling back to runtime generated SDF");
             sdfDescriptor = m_multiViewDepthSDF4C.sdfFusionPass.finalSDFDescriptor;
         }

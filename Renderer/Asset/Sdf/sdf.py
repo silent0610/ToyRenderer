@@ -168,8 +168,6 @@ def visualize_2d_slices(sdf_volume, slice_positions=[0.25, 0.5, 0.75]):
     """2D切片可视化 - 应用Y和Z轴翻转"""
     # 应用Y和Z轴翻转以匹配着色器坐标系
     sdf_flipped = sdf_volume.copy()
-    sdf_flipped = np.flip(sdf_flipped, axis=1)  # 翻转Y轴 (axis=1)
-    sdf_flipped = np.flip(sdf_flipped, axis=2)  # 翻转Z轴 (axis=2)
 
     resolution = sdf_flipped.shape[0]
     fig, axes = plt.subplots(1, len(slice_positions), figsize=(15, 5))
@@ -184,7 +182,7 @@ def visualize_2d_slices(sdf_volume, slice_positions=[0.25, 0.5, 0.75]):
         im = axes[i].imshow(slice_data, cmap='RdBu_r', origin='lower')
         axes[i].set_title(f'Z切片 {z_index}/{resolution} (pos={pos:.2f}) [Y,Z翻转]')
         axes[i].set_xlabel('X')
-        axes[i].set_ylabel('Y (翻转)')
+        axes[i].set_ylabel('Y ')
         plt.colorbar(im, ax=axes[i])
 
     plt.tight_layout()
@@ -200,8 +198,6 @@ def visualize_error_slices(error_volume, slice_positions=[0.25, 0.5, 0.75], titl
     """
     # 应用Y和Z轴翻转以匹配着色器坐标系
     error_flipped = error_volume.copy()
-    error_flipped = np.flip(error_flipped, axis=1)  # 翻转Y轴
-    error_flipped = np.flip(error_flipped, axis=2)  # 翻转Z轴
 
     resolution = error_flipped.shape[0]
     fig, axes = plt.subplots(1, len(slice_positions), figsize=(15, 5))
@@ -311,7 +307,7 @@ def visualize_3d_isosurface(sdf_volume, voxel_half_extent=32, iso_value=0.0):
 
         # 提取等值面
 
-        for iso_try in [0.05, 0.1, 0.2, 0.5, 1.0]:
+        for iso_try in [0.02, 0.05, 0.1, 0.2, 0.5, 1.0]:
             surface = grid.contour(isosurfaces=[iso_try], scalars="sdf")
             if surface.n_points > 0:
                 print(f"使用等值面 SDF={iso_try}")
@@ -335,12 +331,12 @@ def visualize_3d_isosurface(sdf_volume, voxel_half_extent=32, iso_value=0.0):
         plotter.enable_parallel_projection() 
     
         # 相机调整，确保全范围可见
-        plotter.reset_camera(bounds=bbox.bounds)
-        cam = plotter.camera
-        cam_pos = cam.position
-        cam.position = (cam_pos[0] * 1.2, cam_pos[1] * 1.2, cam_pos[2] * 1.2)
+        plotter.view_zx()
+        plotter.camera.SetViewUp(-1.0, 0.0, 0.0) 
+        # plotter.camera.Azimuth(90)
+        # plotter.camera.SetViewUp((0, 0, 1))
         #cam.SetClippingRange(0.1, max(1.0, 2 * voxel_half_extent) * 10.0)
-
+  
         print("3D可视化窗口已打开（完整范围 [-extent,extent]^3 可见）")
         plotter.show()
 
@@ -694,7 +690,8 @@ def compare_sdfao_images(image1_path, image2_path, name1="方法1", name2="参�
     # 加载图像
     image1 = load_image_data(image1_path)
     image2 = load_image_data(image2_path)
-
+    diff = z(image1,image2)
+    plt.imsave("diff.png", diff, cmap='hot')
     # 检查尺寸是否匹配
     if image1.shape != image2.shape:
         raise ValueError(f"图像尺寸不匹配: {image1.shape} vs {image2.shape}")
@@ -730,7 +727,7 @@ def z(image1, image2, name1="方法1", name2="参考"):
     """
     # 计算差异图
     diff = np.abs(image1 - image2)
-
+    
     fig, axes = plt.subplots(2, 2, figsize=(12, 12))
 
     # 图1: 第一张图像
@@ -767,16 +764,9 @@ def z(image1, image2, name1="方法1", name2="参考"):
 
     plt.tight_layout()
     plt.show()
+    return diff
 
-def print_validation_summary():
-    """打印验证总结"""
-    print("\n=== SDF验证完成 ===")
-    print("验证指标:")
-    print("1. 数据范围应该合理 (通常在±几个单位之内)")
-    print("2. 应该有明显的内部(负值)和外部(正值)区域")
-    print("3. 表面附近应该有连续的梯度变化")
-    print("4. 3D等值面应该形成合理的几何体表面")
-    print("5. 相关系数应该接近1.0表示高度相关")
+
 
 def UserInterface():
     pass
@@ -807,7 +797,7 @@ def main():
     # meshToSdf = "duck_4k_64_JumpFlood.raw"
     # multiViewSdf = "duck_4k_64_Multview.raw"
     
-    modelName = "happy_65k_"
+    modelName = "happy_15k_"
     resolution = 128
     modelName = modelName + str(resolution) +"_"
     methodName1 = "BruteSdf"
@@ -820,19 +810,26 @@ def main():
     file2 = modelName +methodName2 + appendix
     file3 = modelName +methodName3 + appendix
     file4 = modelName +methodName4 + appendix
-    dataTrue = load_sdf_data(fileTrue,resolution=resolution,flip_x=True,flip_y=True)
-    data2 = load_sdf_data(file2,resolution=resolution,flip_x=True,flip_y=True)
-    data3 = load_sdf_data(file3,resolution=resolution)
-    data3 = abs_sdf(data3)
-    data4 = load_sdf_data(file4,resolution=resolution)
+    file4 = "happy_15k_128_Multview.raw"
+    dataTrue = load_sdf_data(fileTrue,resolution=resolution,flip_z=True)
+    # data2 = load_sdf_data(file2,resolution=resolution,flip_x=True,flip_y=True)
+    # data3 = load_sdf_data(file3,resolution=resolution)
+    # data3 = abs_sdf(data3)
+    data4 = load_sdf_data(file4,resolution=resolution,flip_z=True)
     data4 = abs_sdf(data4)
-    
-    compare_sdf_data(data2,dataTrue,"meshtoSDf")
-    compare_sdf_data(data3,dataTrue,"Analytical")
+    # diffSdf = data4 - dataTrue
+    # visualize_error_distribution(diffSdf)
+    # visualize_2d_slices(dataTrue,[0.5,0.5,0.5])
+    # visualize_2d_slices(data4,[0.5,0.5,0.5])
+    # visualize_error_slices(diffSdf,[0.5,0.5,0.5])
+    # compare_sdfao_images("happy_15k_128_AO1.png","happy_15k_128_AO_brute1.png")
+    # compare_sdf_data(data2,dataTrue,"meshtoSDf")
+    # compare_sdf_data(data3,dataTrue,"Analytical")
     compare_sdf_data(data4,dataTrue,"MultiView")
-    # visualize_3d_isosurface(data4,resolution/2)
-    Visualize(dataTrue,data2,data3,data4,resolution)
-    save_sdf_data(dataTrue,fileTrue)
+    visualize_3d_isosurface(data4,resolution/2)
+    # Visualize(dataTrue,data2,data3,data4,resolution)
+    # save_sdf_data(dataTrue,fileTrue)
+
 
 
 
