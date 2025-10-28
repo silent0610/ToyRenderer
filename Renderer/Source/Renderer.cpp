@@ -8424,6 +8424,12 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
     // 最终节点计数缓冲区
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                    &multiViewNodeSelection_.LevelCountBuffer, 6 * sizeof(uint32_t)));
+    //Pass 5:计数排序
+    Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT ,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                                   &multiViewNodeSelection_.SortedCountBuffer, sizeof(uint32_t)));
+    Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                                   &multiViewNodeSelection_.SortedNodeBuffer,
+                                                   sizeof(MultiViewSolidNodeSelection::SolidNode) * config_->Sdf.MultiViewUsedCameraNum));
 
     // 初始化所有计数器为0
     uint32_t zero = 0;
@@ -8694,7 +8700,45 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
     // 更新最终选择描述符集
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(finalSelectionDescriptorWrites.size()), finalSelectionDescriptorWrites.data(), 0, nullptr);
 
-    printf("Solid Node Selection B resources initialized (multi-pass architecture with final selection)");
+    std::vector<VkDescriptorSetLayoutBinding> sortBinding{};
+    // Binding 0: candidateCountBuffer (read-only)
+    VkDescriptorSetLayoutBinding inputNodeBinding{};
+    inputNodeBinding.binding = 0;
+    inputNodeBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    inputNodeBinding.descriptorCount = 1;
+    inputNodeBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    sortBinding.push_back(inputNodeBinding);
+
+    // Binding 1: candidateNodesBuffer (read-only)
+    VkDescriptorSetLayoutBinding outputNodeFinalBinding{};
+    outputNodeFinalBinding.binding = 1;
+    outputNodeFinalBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    outputNodeFinalBinding.descriptorCount = 1;
+    outputNodeFinalBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    sortBinding.push_back(outputNodeFinalBinding);
+
+    // Binding 2: finalCountBuffer (write)
+    VkDescriptorSetLayoutBinding nodeCountBinding{};
+    nodeCountBinding.binding = 2;
+    nodeCountBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    nodeCountBinding.descriptorCount = 1;
+    nodeCountBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    sortBinding.push_back(nodeCountBinding);
+    VkDescriptorSetLayoutCreateInfo sortSetLayoutCreateInfo{Init::descriptorSetLayoutCreateInfo(sortBinding.data(), sortBinding.size())};
+
+    Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &sortSetLayoutCreateInfo, nullptr, &multiViewNodeSelection_.SortingDescriptorSetLayout));
+
+    VkPipelineLayoutCreateInfo countSortPipelineLayoutCreateInfo{};
+    finalSelectionPipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    finalSelectionPipelineLayoutInfo.setLayoutCount = 1;
+    finalSelectionPipelineLayoutInfo.pSetLayouts = &multiViewNodeSelection_.SortingDescriptorSetLayout;
+    finalSelectionPipelineLayoutInfo.pushConstantRangeCount = 0;
+
+    Tool::CheckResult(
+        vkCreatePipelineLayout(m_device, &finalSelectionPipelineLayoutInfo, nullptr, &multiViewNodeSelection_.SortingPipelineLayout));
+
+
+    Log::Info("Solid Node Selection B resources initialized (multi-pass architecture with final selection)");
 }
 
 // Update descriptor set with mipmap textures for Solid Node Selection B
@@ -8866,7 +8910,6 @@ void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
     // 需要提交命令缓冲区并等待，以便读取候选节点数量
     // 为了优化，我们可以使用间接dispatch或保守估计
     // 这里先使用保守但更合理的估计：基于level数量
-    uint32_t estimatedCandidates = multiViewNodeSelection_.MAX_CANDIDATE_NODES; // Level 3: 4³=64, Level 2: 8³=512太多，保守估计
     uint32_t optimizedDispatch = (config_->Sdf.MultiViewUsedCameraNum + 63) / 64;               // 约2个workgroup而不是16个
 
     // printf("Optimized final selection dispatch: %u workgroups (estimated %u candidates)\n", optimizedDispatch, estimatedCandidates);

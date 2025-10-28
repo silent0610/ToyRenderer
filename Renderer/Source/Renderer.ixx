@@ -1155,6 +1155,7 @@ private:
 
 		Buffer selectedNodesBuffer; // 最终选中的节点 (最多10个)
 		Buffer selectedCountBuffer; // 最终节点计数
+       
         Buffer LevelCountBuffer;
 
 		// 新添加的多pass字段
@@ -1181,15 +1182,21 @@ private:
 		VkDescriptorSetLayout finalSelectionDescriptorSetLayout = VK_NULL_HANDLE;
 		VkDescriptorSet finalSelectionDescriptorSet = VK_NULL_HANDLE;
 
-		// 参数
-		static constexpr uint32_t MAX_CANDIDATE_NODES{50}; // 候选节点容量
-		uint32_t actualNodeCount = 0;					   // 实际选中的节点数量
-
+		struct SortedPushConstantDesc
+		{
+			uint32_t MaxNodeCount{1000};
+        };
+		Buffer SortedNodeBuffer{}; // 排序后的节点缓冲区
+        Buffer SortedCountBuffer{};
+        VkPipeline SortingPipeline{};
+        VkPipelineLayout SortingPipelineLayout{};
+        VkDescriptorSetLayout SortingDescriptorSetLayout{};
+        VkDescriptorSet SortingDescriptorSet{};
 		void cleanup(VkDevice device);
 	} multiViewNodeSelection_;
 
 	// 版本控制：选择使用阶段三的哪个版本
-	bool useMultiview_ = false; // false: 使用版本A, true: 使用版本B
+	bool useMultiview_ = false; 
 
 	// 阶段四：解析式SDF生成 (Analytical SDF Generation)
 	struct AnalyticalSDFGeneration
