@@ -5,7 +5,7 @@
 #define NODE_EMPTY 0
 #define NODE_MIXED 2
 #define NODE_SOLID 1
-
+#define MAX_COMPLEXITY 255
 // Use standard HLSL register binding (consistent with other shaders)
 struct LevelInfo {
     uint current_level;        // Current mip level being built
@@ -19,6 +19,7 @@ Texture3D<uint2> InputLevel : register(t1);
 RWTexture3D<uint2> OutputLevel : register(u2); 
 SamplerState InputSampler : register(s3);
 
+static const float Hmax = log2(3.0f);
 // Decode child offset from index (0-7)
 uint3 DecodeChildOffset(uint childIndex) {
     return uint3(
@@ -36,7 +37,7 @@ uint CalculateValue(uint countA, uint countB, uint countC)
     float mean = 1/3;
     float variance = (pow(pA-mean,2.0f)+pow(pB-mean,2.0f)+pow(pC-mean,2.0f))/3.0f;
     variance = variance *9.0f /2.0f;
-    return (1.0f - variance)*255;
+    return (1.0f - variance)*MAX_COMPLEXITY;
 }
 
 [numthreads(8, 8, 8)]
@@ -53,6 +54,7 @@ void main(uint3 id : SV_DispatchThreadID) {
     uint emptyCount = 0;
     uint mixedCount = 0;
     
+    uint parentComplexity =0;
     // Check all 8 child nodes
     for (uint i = 0; i < 8; i++) {
         // Calculate child position in input level
@@ -65,23 +67,40 @@ void main(uint3 id : SV_DispatchThreadID) {
         }
         
         // Sample child state from voxel data (0=outside, 1=inside)
-        uint voxelValue = InputLevel[childPos].x;
+        uint2 voxelValue;
+        if(cb.current_level==0)
+        {
+            voxelValue.x = InputLevel[childPos].x;
+            voxelValue.y = 0;
+        }
+        else
+        {
+            voxelValue = InputLevel[childPos].xy;
+        }
+        parentComplexity += voxelValue.y;
         
         // For Level 0: input is binary voxel data, treat 1 as SOLID, 0 as EMPTY
         // For Level 1+: input is previous octree level with proper NODE_* values
-        if (cb.current_level == 0) {
+        if (cb.current_level == 0) 
+        {
             // First level: convert voxel binary data
-            if (voxelValue == 1)
+            if (voxelValue.x == 1)
+            {
                 solidCount++;
+            }
             else
+            {
                 emptyCount++;
-        } else {
+            };  
+        } 
+        else 
+        {
             // Subsequent levels: use octree node states
-            if (voxelValue == NODE_SOLID)
+            if (voxelValue.x == NODE_SOLID)
                 solidCount++;
-            else if (voxelValue == NODE_EMPTY)
+            else if (voxelValue.x == NODE_EMPTY)
                 emptyCount++;
-            else if (voxelValue == NODE_MIXED)
+            else if (voxelValue.x == NODE_MIXED)
                 mixedCount++;
             else
                 // Treat any unexpected values as EMPTY to prevent propagation
@@ -104,7 +123,10 @@ void main(uint3 id : SV_DispatchThreadID) {
         // Mixed case: some children solid, some empty/mixed -> parent is mixed
         parentState = NODE_MIXED;
     }
-    uint complexity = CalculateValue(solidCount,emptyCount,mixedCount);
-    // Write result to output texture (ensure only 8-bit values)
+    uint complexity = CalculateValue(solidCount,emptyCount,mixedCount) + parentComplexity/8;
+    if(complexity>MAX_COMPLEXITY)
+    {
+        complexity = MAX_COMPLEXITY;
+    }
     OutputLevel[outputPos] = uint2(parentState,complexity) ;
 }
