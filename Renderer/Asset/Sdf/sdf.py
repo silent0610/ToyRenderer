@@ -307,7 +307,7 @@ def visualize_3d_isosurface(sdf_volume, voxel_half_extent=32, iso_value=0.0):
 
         # 提取等值面
 
-        for iso_try in [0.02, 0.05, 0.1, 0.2, 0.5, 1.0]:
+        for iso_try in [0.05, 0.1, 0.2, 0.5, 1.0]:
             surface = grid.contour(isosurfaces=[iso_try], scalars="sdf")
             if surface.n_points > 0:
                 print(f"使用等值面 SDF={iso_try}")
@@ -810,24 +810,24 @@ def main():
     file2 = modelName +methodName2 + appendix
     file3 = modelName +methodName3 + appendix
     file4 = modelName +methodName4 + appendix
-    file4 = "happy_15k_128_Multview.raw"
+    # file4 = "happy_15k_128_Multview.raw"
     dataTrue = load_sdf_data(fileTrue,resolution=resolution,flip_z=True)
-    # data2 = load_sdf_data(file2,resolution=resolution,flip_x=True,flip_y=True)
-    # data3 = load_sdf_data(file3,resolution=resolution)
-    # data3 = abs_sdf(data3)
+    data2 = load_sdf_data(file2,resolution=resolution,flip_x=True,flip_y=True)
+    data3 = load_sdf_data(file3,resolution=resolution)
+    data3 = abs_sdf(data3)
     data4 = load_sdf_data(file4,resolution=resolution,flip_z=True)
     data4 = abs_sdf(data4)
-    # diffSdf = data4 - dataTrue
+    diffSdf = data4 - dataTrue
     # visualize_error_distribution(diffSdf)
     # visualize_2d_slices(dataTrue,[0.5,0.5,0.5])
     # visualize_2d_slices(data4,[0.5,0.5,0.5])
-    # visualize_error_slices(diffSdf,[0.5,0.5,0.5])
+    # visualize_error_slices(diffSdf,[0.25,0.5,0.75])
     # compare_sdfao_images("happy_15k_128_AO1.png","happy_15k_128_AO_brute1.png")
     # compare_sdf_data(data2,dataTrue,"meshtoSDf")
     # compare_sdf_data(data3,dataTrue,"Analytical")
     compare_sdf_data(data4,dataTrue,"MultiView")
-    visualize_3d_isosurface(data4,resolution/2)
-    # Visualize(dataTrue,data2,data3,data4,resolution)
+    # visualize_3d_isosurface(data4,resolution/2)
+    Visualize(dataTrue,data2,data3,data4,resolution)
     # save_sdf_data(dataTrue,fileTrue)
 
 

@@ -8,7 +8,8 @@ struct SolidNode {
     float3 center;      // World space center
     float size;         // Cube edge length
     uint level;         // Mipmap level
-    uint padding[3];    // 16-byte alignment
+    uint Complexity;
+    uint padding[2];    // 16-byte alignment
 };
 
 // === Resource Bindings ===
@@ -71,18 +72,18 @@ void main(uint3 id : SV_DispatchThreadID) {
     uint checkLow = LevelCountBuffer[myNode.level+1];
 
     uint maxCheckCount = 0;
-    // for(uint j = myNode.level + 1;j<=5;++j)
-    // {
-    //     maxCheckCount+=LevelCountBuffer[j];
-    // }
+    for(uint j = myNode.level + 1;j<=5;++j)
+    {
+        maxCheckCount+=LevelCountBuffer[j];
+    }
 
-    // for(uint i = 0; i < maxCheckCount; ++i) {
-    //     SolidNode previousNode = candidateNodesBuffer[i];
-    //     if(IsNodeIncludedBy(myNode, previousNode)) {
-    //         isIncluded = true;
-    //         break; // 早期退出
-    //     }
-    // }
+    for(uint i = 0; i < maxCheckCount; ++i) {
+        SolidNode previousNode = candidateNodesBuffer[i];
+        if(IsNodeIncludedBy(myNode, previousNode)) {
+            isIncluded = true;
+            break; // 早期退出
+        }
+    }
 
     // Step 2: If not included and there's space, add to final selection
     if(!isIncluded) {

@@ -13,7 +13,8 @@ struct SolidNode {
     float3 center;      // World space center
     float size;         // Cube edge length
     uint level;         // Mipmap level
-    uint padding[3];    // 16-byte alignment
+    uint Complexity;
+    uint padding[2];    // 16-byte alignment
 };
 
 // === Resource Bindings ===
@@ -64,7 +65,6 @@ SolidNode CreateNode(uint3 coord, uint level) {
     node.level = level;
     node.padding[0] = 0;
     node.padding[1] = 0;
-    node.padding[2] = 0;
     return node;
 }
 
@@ -127,15 +127,18 @@ void main(uint3 id : SV_DispatchThreadID) {
     float3 centerOffset = abs(normalizedCoord - 0.5f); // 距离中心的偏移量 [0, 0.5]
     float distanceWeight = (centerOffset.x + centerOffset.y + centerOffset.z) / 1.5f; // 归一化到[0,1]
 
-    // 结合复杂度和距离权重
-    uint finalComplexity = uint(float(complexity)); // 20%基础 + 80%距离权重
+    // // 结合复杂度和距离权重
+    float w = lerp(0.8, 1.2, pow(distanceWeight, 1.5));  // 边缘更强
+    uint finalComplexity = (uint)min(float(complexity) * w, 255);
 
-    // 复杂度选择
-    if(RandomInt(coord) > 2*finalComplexity) {
-        return;
-    }
+
+    // // 复杂度选择
+    // if(RandomInt(coord) > 2*finalComplexity) {
+    //     return;
+    // }
     // Step 3: Create candidate node
     SolidNode candidate = CreateNode(coord, PushConstant.CurrentLevel);
+    candidate.Complexity = finalComplexity;
     candidate.center.y *= -1.0; // Invert Y to match world coordinate system
     candidate.center.z *= -1.0; // Invert Z to match world coordinate system
     // Step 4: Add to candidate buffer (simple append with atomic counter)

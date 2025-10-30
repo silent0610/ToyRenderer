@@ -41,7 +41,8 @@ void main(uint3 id : SV_DispatchThreadID) {
     if (nodeIndex >= pushConsts.maxCameraCount) return;
     
     // Read selected node information
-    SolidNode node = selectedNodes[nodeIndex];
+    uint revertNodeIndex = actualCount-1-nodeIndex;
+    SolidNode node = selectedNodes[revertNodeIndex];
     
     // 将归一化相机位置映射到统一世界坐标系
     // node.center 是归一化坐标 [-1,1]

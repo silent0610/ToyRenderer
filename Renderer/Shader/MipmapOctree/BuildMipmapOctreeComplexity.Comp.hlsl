@@ -40,6 +40,15 @@ uint CalculateValue(uint countA, uint countB, uint countC)
     return (1.0f - variance)*MAX_COMPLEXITY;
 }
 
+float CalculateGeometricComplexity(uint solidCount, uint emptyCount)
+{
+    float Ns = float(solidCount);
+    float Ne = float(emptyCount);
+    float denom = (Ns + Ne) * (Ns + Ne) + 1e-5;
+    float ratio = (4.0 * Ns * Ne) / denom;   // [0,1]，混合越均衡越高
+    return ratio;
+}
+
 [numthreads(8, 8, 8)]
 void main(uint3 id : SV_DispatchThreadID) {
     // Current position in output mip level
@@ -123,7 +132,15 @@ void main(uint3 id : SV_DispatchThreadID) {
         // Mixed case: some children solid, some empty/mixed -> parent is mixed
         parentState = NODE_MIXED;
     }
-    uint complexity = CalculateValue(solidCount,emptyCount,mixedCount) + parentComplexity/8;
+    //uint complexity = CalculateValue(solidCount,emptyCount,mixedCount) + parentComplexity/8;
+
+    float localComplex = CalculateValue(solidCount,emptyCount,mixedCount);
+    float inherited = parentComplexity / 8.0;  // 子层平均复杂度
+    float alpha = 0.75;                       // 局部占权重
+    float finalComplex =  localComplex +inherited;
+    
+    uint complexity = uint(finalComplex);
+
     if(complexity>MAX_COMPLEXITY)
     {
         complexity = MAX_COMPLEXITY;

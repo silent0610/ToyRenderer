@@ -3246,10 +3246,6 @@ void Renderer::LoadAssets()
         vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors | vkglTF::FileLoadingFlags::DontLoadImages;
     /*LoadglTFFile(Tool::GetAssetsPath() + "Models/FlightHelmet/glTF/FlightHelmet.gltf");*/
     m_glTFModel.loadFromFile(Tool::GetAssetsPath() + config_->modelPath, m_vulkanDevice, m_queues.graphicsQueue, glTFLoadingFlags);
-    auto tStart = std::chrono::high_resolution_clock::now();
-    // m_meshOctree = std::make_unique<MeshOctree>(m_glTFModel, 0.1f, 5);
-    auto tEnd = std::chrono::high_resolution_clock::now();
-    auto tDiff = std::chrono::duration<double, std::milli>(tEnd - tStart).count();
     // std::cout << "Build MeshOctree cost: " << tDiff << " ms\n";
     // glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors |
     // vkglTF::FileLoadingFlags::FlipY;
@@ -8399,10 +8395,9 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
 {
     // === Pass 1-3: 创建候选节点缓冲区 ===
 
-    Tool::CheckResult(
-        m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                     &multiViewNodeSelection_.candidateNodesBuffer,
-                                     sizeof(MultiViewSolidNodeSelection::SolidNode) * config_->Sdf.MultiViewUsedCameraNum));
+    Tool::CheckResult(m_vulkanDevice->CreateBuffer(
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        &multiViewNodeSelection_.candidateNodesBuffer, sizeof(MultiViewSolidNodeSelection::SolidNode) * config_->Sdf.MultiViewUsedCameraNum));
 
     // 候选节点计数缓冲区
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -8424,8 +8419,8 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
     // 最终节点计数缓冲区
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                    &multiViewNodeSelection_.LevelCountBuffer, 6 * sizeof(uint32_t)));
-    //Pass 5:计数排序
-    Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT ,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+    // Pass 5:计数排序
+    Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                    &multiViewNodeSelection_.SortedCountBuffer, sizeof(uint32_t)));
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                    &multiViewNodeSelection_.SortedNodeBuffer,
@@ -8700,8 +8695,9 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
     // 更新最终选择描述符集
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(finalSelectionDescriptorWrites.size()), finalSelectionDescriptorWrites.data(), 0, nullptr);
 
+    // === Pass 5: 创建计数排序管线和描述符集 ===
     std::vector<VkDescriptorSetLayoutBinding> sortBinding{};
-    // Binding 0: candidateCountBuffer (read-only)
+    // Binding 0: inputnode
     VkDescriptorSetLayoutBinding inputNodeBinding{};
     inputNodeBinding.binding = 0;
     inputNodeBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -8709,7 +8705,7 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
     inputNodeBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     sortBinding.push_back(inputNodeBinding);
 
-    // Binding 1: candidateNodesBuffer (read-only)
+    // Binding 1: output
     VkDescriptorSetLayoutBinding outputNodeFinalBinding{};
     outputNodeFinalBinding.binding = 1;
     outputNodeFinalBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -8717,7 +8713,7 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
     outputNodeFinalBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     sortBinding.push_back(outputNodeFinalBinding);
 
-    // Binding 2: finalCountBuffer (write)
+    // Binding 2: input count
     VkDescriptorSetLayoutBinding nodeCountBinding{};
     nodeCountBinding.binding = 2;
     nodeCountBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -8734,10 +8730,40 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
     finalSelectionPipelineLayoutInfo.pSetLayouts = &multiViewNodeSelection_.SortingDescriptorSetLayout;
     finalSelectionPipelineLayoutInfo.pushConstantRangeCount = 0;
 
+    Tool::CheckResult(vkCreatePipelineLayout(m_device, &finalSelectionPipelineLayoutInfo, nullptr, &multiViewNodeSelection_.SortingPipelineLayout));
+
+    VkDescriptorSetAllocateInfo sortAllocInfo{};
+    sortAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    sortAllocInfo.descriptorPool = m_descriptorPool;
+    sortAllocInfo.descriptorSetCount = 1;
+    sortAllocInfo.pSetLayouts = &multiViewNodeSelection_.SortingDescriptorSetLayout;
+    Tool::CheckResult(vkAllocateDescriptorSets(m_device, &sortAllocInfo, &multiViewNodeSelection_.SortingDescriptorSet));
+
+    std::string sortShaderPath = Tool::GetShadersPath() + "MultiView/CountSort.Comp.spv";
+    VkShaderModule countSortShader = Tool::LoadShader(sortShaderPath.c_str(), m_device);
+    VkPipelineShaderStageCreateInfo countSortShaderStageInfo{};
+    countSortShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    countSortShaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    countSortShaderStageInfo.module = countSortShader;
+    countSortShaderStageInfo.pName = "main";
+    VkComputePipelineCreateInfo countSortPipelineInfo{};
+    countSortPipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    countSortPipelineInfo.layout = multiViewNodeSelection_.SortingPipelineLayout;
+    countSortPipelineInfo.stage = countSortShaderStageInfo;
     Tool::CheckResult(
-        vkCreatePipelineLayout(m_device, &finalSelectionPipelineLayoutInfo, nullptr, &multiViewNodeSelection_.SortingPipelineLayout));
+        vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &countSortPipelineInfo, nullptr, &multiViewNodeSelection_.SortingPipeline));
 
+    std::vector<VkWriteDescriptorSet> sortDescriptorWrites{
+        Init::writeDescriptorSet(multiViewNodeSelection_.SortingDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0,
+                                 &multiViewNodeSelection_.selectedNodesBuffer.descriptor),
+        Init::writeDescriptorSet(multiViewNodeSelection_.SortingDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
+                                 &multiViewNodeSelection_.SortedNodeBuffer.descriptor),
+        Init::writeDescriptorSet(multiViewNodeSelection_.SortingDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2,
+                                 &multiViewNodeSelection_.selectedCountBuffer.descriptor)
 
+    };
+    vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(sortDescriptorWrites.size()), sortDescriptorWrites.data(), 0, nullptr);
+    
     Log::Info("Solid Node Selection B resources initialized (multi-pass architecture with final selection)");
 }
 
@@ -8819,7 +8845,8 @@ void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
     // 应当从8x8x8开始选择, 直到base, 所以需要动态计算开始level.
     // 理想的base范围为[8,128]
 
-    for (int level = config_->Sdf.SampledLevel; level >= static_cast<int>(config_->Sdf.SampledLevel); --level)
+    int maxSampledLevel = m_gpuMipmapOctree->GetMaxLevel() -1;
+    for (int level = maxSampledLevel; level >= static_cast<int>(config_->Sdf.SampledLevel); --level)
     {
         // 设置当前level
         multiViewNodeSelection_.CollectionPushConstant.CurrentLevel = static_cast<uint32_t>(level);
@@ -8895,28 +8922,35 @@ void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.finalSelectionPipelineLayout, 0, 1,
                             &multiViewNodeSelection_.finalSelectionDescriptorSet, 0, nullptr);
 
-    // === 优化：动态读取候选节点数量来精确计算dispatch尺寸 ===
-
     // 同步以确保候选节点计数已完成
     VkMemoryBarrier candidateCountBarrier{};
     candidateCountBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     candidateCountBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    candidateCountBarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    candidateCountBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
 
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &candidateCountBarrier, 0, nullptr, 0,
-                         nullptr);
+
+
     vkCmdPushConstants(commandBuffer, multiViewNodeSelection_.finalSelectionPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
                        sizeof(MultiViewSolidNodeSelection::FinalSelectionPushConstantDesc), &multiViewNodeSelection_.FinalSelectionPushConstant);
     // 需要提交命令缓冲区并等待，以便读取候选节点数量
     // 为了优化，我们可以使用间接dispatch或保守估计
     // 这里先使用保守但更合理的估计：基于level数量
-    uint32_t optimizedDispatch = (config_->Sdf.MultiViewUsedCameraNum + 63) / 64;               // 约2个workgroup而不是16个
+    uint32_t optimizedDispatch = (config_->Sdf.MultiViewUsedCameraNum + 63) / 64; // 约2个workgroup而不是16个
 
     // printf("Optimized final selection dispatch: %u workgroups (estimated %u candidates)\n", optimizedDispatch, estimatedCandidates);
 
     vkCmdDispatch(commandBuffer, optimizedDispatch, 1, 1);
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &candidateCountBarrier, 0, nullptr, 0,
+                         nullptr);
 
-    // printf("Solid Node Selection B executed (multi-pass: 3 collection passes + 1 final selection pass)\n");
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.SortingPipeline);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.SortingPipelineLayout, 0, 1,
+                            &multiViewNodeSelection_.SortingDescriptorSet, 0, nullptr);
+    vkCmdDispatch(commandBuffer, 1, 1, 1);
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &candidateCountBarrier, 0, nullptr, 0,
+                         nullptr);
+
 }
 void Renderer::MultiViewSolidNodeSelection::cleanup(VkDevice device)
 {
@@ -8992,7 +9026,7 @@ void Renderer::ExecuteGPUDataPreparation(VkCommandBuffer cmd)
         glm::vec3 modelCenter;     // 模型中心，与voxelization一致
         float halfSizeWithMargin;  // 包含边距的半尺寸，与voxelization一致
     } cameraPC;
-    cameraPC.maxCameraCount = config_->Sdf.MultiViewUsedCameraNum;
+    cameraPC.maxCameraCount = 5;
     cameraPC.modelCenter = glm::vec3(0.0f);
     cameraPC.halfSizeWithMargin = 1.0f;
 
@@ -10028,9 +10062,9 @@ void Renderer::CreateCameraMatrixPreparationPipeline()
     // 5. 更新描述符集
     std::vector<VkWriteDescriptorSet> writes;
 
-    // 绑定Stage 3B的选中节点缓冲区
+    // 节点
     VkDescriptorBufferInfo selectedNodesBufferInfo{};
-    selectedNodesBufferInfo.buffer = multiViewNodeSelection_.selectedNodesBuffer.buffer;
+    selectedNodesBufferInfo.buffer = multiViewNodeSelection_.SortedNodeBuffer.buffer;
     selectedNodesBufferInfo.offset = 0;
     selectedNodesBufferInfo.range = VK_WHOLE_SIZE;
 

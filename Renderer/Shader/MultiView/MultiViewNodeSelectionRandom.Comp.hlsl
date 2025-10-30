@@ -120,7 +120,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 
 
     // 随机选择 10%
-    if(RandomInt(coord) > 55) {
+    if(RandomInt(coord) > 100) {
         return;
     }
     // Step 3: Create candidate node

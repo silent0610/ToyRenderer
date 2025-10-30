@@ -38,7 +38,7 @@
     "SdfConfig": {
         "WorldSize": 2.0,
         "Resolution": 128,
-        "MultiViewUsedCameraNum": 10,
+        "MultiViewUsedCameraNum": 256,
         "SdfMode": 1,
         "MultiViewDepthResolution": 64,
         "SampledLevel": 3,
@@ -46,7 +46,7 @@
         "MeshToSdfIteration": 16,
         "MeshToSdfDistanceMode": 1,
         "MeshToSdfQuality": 1,
-        "UseBruteForce": 1,
-        "UseRandomSelection": 0
+        "UseBruteForce": 0,
+        "UseRandomSelection": 1
     }
 }
