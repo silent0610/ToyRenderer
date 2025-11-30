@@ -4,14 +4,14 @@ module;
 export module IRenderPass;
 import DeviceMod;
 
-class IRenderPassBase
+export class IRenderPassBase
 {
 public:
-    IRenderPass(OldVulkanDevice *device) : device_(device) {}
-    virtual ~IRenderPass() = default;
+    IRenderPassBase(OldVulkanDevice *device) : device_(device) {}
+    virtual ~IRenderPassBase() = default;
     // 禁用拷贝和移动
-    IRenderPass(const IRenderPass &) = delete;
-    IRenderPass &operator=(const IRenderPass &) = delete;
+    IRenderPassBase(const IRenderPassBase &) = delete;
+    IRenderPassBase &operator=(const IRenderPassBase &) = delete;
 
     virtual void Setup() = 0;
 
@@ -21,4 +21,4 @@ public:
 
 private:
     OldVulkanDevice *device_{};
-}
+};

@@ -1,5 +1,4 @@
 // Voxelize.Frag.hlsl
-// Stage: Pixel Shader - 保守光栅化版本
 
 // Shared constants for the voxelization passes
 struct VoxelConstants {

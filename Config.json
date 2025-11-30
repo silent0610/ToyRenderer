@@ -46,7 +46,7 @@
         "MeshToSdfIteration": 16,
         "MeshToSdfDistanceMode": 1,
         "MeshToSdfQuality": 1,
-        "UseBruteForce": 0,
-        "UseRandomSelection": 1
+        "UseBruteForce": 1,
+        "UseRandomSelection": 0
     }
 }

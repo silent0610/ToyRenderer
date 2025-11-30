@@ -825,7 +825,7 @@ def main():
     # compare_sdfao_images("happy_15k_128_AO1.png","happy_15k_128_AO_brute1.png")
     # compare_sdf_data(data2,dataTrue,"meshtoSDf")
     # compare_sdf_data(data3,dataTrue,"Analytical")
-    compare_sdf_data(data4,dataTrue,"MultiView")
+    # compare_sdf_data(data4,dataTrue,"MultiView")
     # visualize_3d_isosurface(data4,resolution/2)
     Visualize(dataTrue,data2,data3,data4,resolution)
     # save_sdf_data(dataTrue,fileTrue)
