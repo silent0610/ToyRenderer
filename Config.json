@@ -41,12 +41,12 @@
         "MultiViewUsedCameraNum": 256,
         "SdfMode": 1,
         "MultiViewDepthResolution": 64,
-        "SampledLevel": 3,
+        "SampledLevel": 2,
         "MeshToSdfMode": 1,
-        "MeshToSdfIteration": 16,
-        "MeshToSdfDistanceMode": 1,
+        "MeshToSdfIteration": 64,
+        "MeshToSdfDistanceMode": 0,
         "MeshToSdfQuality": 1,
-        "UseBruteForce": 1,
+        "UseBruteForce": 0,
         "UseRandomSelection": 0
     }
 }

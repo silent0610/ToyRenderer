@@ -130,7 +130,7 @@ void main(uint3 id : SV_DispatchThreadID) {
     // // 结合复杂度和距离权重
     float w = lerp(0.8, 1.2, pow(distanceWeight, 1.5));  // 边缘更强
     uint finalComplexity = (uint)min(float(complexity) * w, 255);
-
+    if(finalComplexity<100) return;
 
     // // 复杂度选择
     // if(RandomInt(coord) > 2*finalComplexity) {

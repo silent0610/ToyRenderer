@@ -14,7 +14,7 @@ import BruteForceSdf;
 import Logger;
 const float PI = 3.1415929;
 
-Renderer::Renderer(Config* config) : config_(config)
+Renderer::Renderer(Config *config) : config_(config)
 {
     m_neededFeatures.validation = config->enableValidation;
     m_camera.type = Camera::CameraType::firstperson;
@@ -33,10 +33,10 @@ void Renderer::Run()
     Cleanup();
 }
 // 得到窗口大小改变的信息
-void Renderer::FramebufferResizeCallback(GLFWwindow* window, int width, int height)
+void Renderer::FramebufferResizeCallback(GLFWwindow *window, int width, int height)
 {
     // 得到从window传递的this指针
-    auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
+    auto app = reinterpret_cast<Renderer *>(glfwGetWindowUserPointer(window));
     app->m_framebufferResized = true;
 }
 /// @brief 初始化窗口
@@ -257,7 +257,7 @@ void Renderer::InitVulkan()
     }
 }
 // 从modelPath提取模型名称 (去除路径和扩展名)
-std::string Renderer::GetModelNameFromPath(const std::string& modelPath)
+std::string Renderer::GetModelNameFromPath(const std::string &modelPath)
 {
     std::string modelName = "unknown";
 
@@ -283,7 +283,7 @@ std::string Renderer::GetModelNameFromPath(const std::string& modelPath)
 }
 
 // 生成输出文件名: ModelName_Resolution_MethodName.raw
-std::string Renderer::GenerateSdfFileName(const std::string& methodName)
+std::string Renderer::GenerateSdfFileName(const std::string &methodName)
 {
     std::string modelName = GetModelNameFromPath(config_->modelPath);
     uint32_t resolution = config_->Sdf.Resolution;
@@ -548,7 +548,7 @@ uint32_t Renderer::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags pro
     }
     throw std::runtime_error("failed to find suitable memory type!");
 }
-VkResult Renderer::CreateBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, Buffer* buffer, VkDeviceSize size, void* data)
+VkResult Renderer::CreateBuffer(VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, Buffer *buffer, VkDeviceSize size, void *data)
 {
     buffer->device = m_device;
 
@@ -811,7 +811,7 @@ VkFormat Renderer::FindDepthFormat()
 /// @param tiling 图片在设备中的存储格式
 /// @param features 该格式需要支持的特性
 /// @return
-VkFormat Renderer::FindSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features)
+VkFormat Renderer::FindSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features)
 {
     for (VkFormat format : candidates)
     {
@@ -858,7 +858,7 @@ void Renderer::CreateSwapChainImageViews()
         m_swapChain.imageViews[i] = CreateImageView(m_swapChain.images[i], m_swapChain.colorFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
     }
 }
-VkExtent2D Renderer::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
+VkExtent2D Renderer::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities)
 {
     if (capabilities.currentExtent.width != UINT32_MAX)
     {
@@ -875,9 +875,9 @@ VkExtent2D Renderer::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabiliti
         return actualExtent;
     }
 };
-VkPresentModeKHR Renderer::ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes)
+VkPresentModeKHR Renderer::ChooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes)
 {
-    for (const auto& availablePresentMode : availablePresentModes)
+    for (const auto &availablePresentMode : availablePresentModes)
     {
         if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
         {
@@ -891,9 +891,9 @@ VkPresentModeKHR Renderer::ChooseSwapPresentMode(const std::vector<VkPresentMode
 /// @brief 选择合适的交换链格式
 /// @param availableFormats
 /// @return 合适的交换链格式
-VkSurfaceFormatKHR Renderer::ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats)
+VkSurfaceFormatKHR Renderer::ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats)
 {
-    for (const auto& availableFormat : availableFormats)
+    for (const auto &availableFormat : availableFormats)
     {
         if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
         {
@@ -1005,7 +1005,7 @@ void Renderer::CreateInstance()
 
         // 这里是动态创建，先创建实例，再创建调试回调函数，然后再创建将他们链接
         PopulateDebugMessengerCreateInfo(debugCreateInfo);
-        createIF.pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debugCreateInfo;
+        createIF.pNext = (VkDebugUtilsMessengerCreateInfoEXT *)&debugCreateInfo;
     }
     else
     {
@@ -1019,13 +1019,13 @@ void Renderer::CreateInstance()
     }
 }
 // 获取所需的 Vulkan 实例扩展。 包括所需的glfw扩展和可选的验证层扩展
-std::vector<const char*> Renderer::GetRequiredExtensions()
+std::vector<const char *> Renderer::GetRequiredExtensions()
 {
     uint32_t glfwExtensionCount = 0;
-    const char** glfwExtensions{nullptr};
+    const char **glfwExtensions{nullptr};
     glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
-    std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+    std::vector<const char *> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
     // 验证层本身不是扩展，但某些调试功能（如 VK_EXT_debug_utils）需要同时启用特定扩展才能工作！
     //  所以这里加入了 调试扩展
@@ -1052,10 +1052,10 @@ void Renderer::GetDeviceProperties()
                                        availableLayers.data()); // 实际填充 availableLayers 向量中的每个元素，每个元素包含一个Vulkan实例层的属性信息。
 
     uint32_t glfwExtensionCount = 0;
-    const char** glfwExtensions{nullptr};
+    const char **glfwExtensions{nullptr};
     glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
-    std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+    std::vector<const char *> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 }
 /// @brief 检查系统中是否支持验证层
 bool Renderer::CheckValidationLayerSupport()
@@ -1069,11 +1069,11 @@ bool Renderer::CheckValidationLayerSupport()
 
     // 检查 validationLayers 中的每个层是否都在 availableLayers 中
     // 验证层是否在所有可行层中
-    for (const char* layerName : m_validationLayers)
+    for (const char *layerName : m_validationLayers)
     {
         bool layerFound = false;
 
-        for (const auto& layerProperties : availableLayers)
+        for (const auto &layerProperties : availableLayers)
         {
             if (std::strcmp(layerName, layerProperties.layerName) == 0)
             {
@@ -1093,7 +1093,7 @@ bool Renderer::CheckValidationLayerSupport()
 
 /// @brief 设置 createInfo 的信息，包括回调函数
 /// @param createInfo
-void Renderer::PopulateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo)
+void Renderer::PopulateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo)
 {
     createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -1105,7 +1105,7 @@ void Renderer::PopulateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoE
 }
 VKAPI_ATTR VkBool32 VKAPI_CALL Renderer::DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
                                                        VkDebugUtilsMessageTypeFlagsEXT messageType,
-                                                       const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
+                                                       const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData)
 {
 
     std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
@@ -1126,8 +1126,8 @@ void Renderer::SetupDebugMessenger()
         throw std::runtime_error("failed to set up debug messenger!");
     }
 }
-VkResult Renderer::CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
-                                                const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger)
+VkResult Renderer::CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
+                                                const VkAllocationCallbacks *pAllocator, VkDebugUtilsMessengerEXT *pDebugMessenger)
 {
     // 这是做了cast？这个函数在扩展中提供，所以需要GetAddr
     auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
@@ -1198,7 +1198,7 @@ void Renderer::PickPhysicalDevice()
     vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
 
     // 选择合适的 device
-    for (const auto& device : devices)
+    for (const auto &device : devices)
     {
         if (IsDeviceSuitable(device))
         {
@@ -1234,7 +1234,7 @@ QueueFamilyIndices Renderer::FindQueueFamilies(VkPhysicalDevice device)
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
 
     VkBool32 presentSupport = false;
-    for (int i = 0; const auto& queueFamily : queueFamilies)
+    for (int i = 0; const auto &queueFamily : queueFamilies)
     {
         if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) // queueflags。按位与，如果有相同位为1，则true
         {
@@ -1272,7 +1272,7 @@ bool Renderer::CheckDeviceExtensionSupport(VkPhysicalDevice device)
     std::set<std::string> requiredExtensions(m_deviceExtensions.begin(), m_deviceExtensions.end());
 
     // 从需求的扩展中删除可用的扩展，如果结果为空，说明所有需求的扩展都可用
-    for (const auto& extension : availableExtensions)
+    for (const auto &extension : availableExtensions)
     {
         requiredExtensions.erase(extension.extensionName);
     }
@@ -1369,7 +1369,7 @@ SwapChainSupportDetails Renderer::QuerySwapChainSupport(VkPhysicalDevice device)
     return details;
 }
 
-void Renderer::DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator)
+void Renderer::DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks *pAllocator)
 {
     auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
     if (func != nullptr)
@@ -1390,7 +1390,7 @@ void Renderer::ExportSDFDataForVisualization()
     {
         std::string outputFileName = GenerateSdfFileName("Multview");
         std::string outputPath = Tool::GetAssetsPath() + "Sdf/" + outputFileName;
-        Texture* tex{GetMultiViewDepthSdfTexture()};
+        Texture *tex{GetMultiViewDepthSdfTexture()};
         ExportSDFDataForVisualization(tex, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, outputPath);
         delete tex;
     }
@@ -1401,12 +1401,12 @@ void Renderer::ExportMeshToSdfData()
     std::string outputPath = Tool::GetAssetsPath() + "Sdf/" + outputFileName;
     ExportSDFDataForVisualization(GetMeshToSdfOperator()->GetSdfTexture(), VK_IMAGE_LAYOUT_GENERAL, outputPath);
 }
-void Renderer::KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
+void Renderer::KeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
-    auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
+    auto app = reinterpret_cast<Renderer *>(glfwGetWindowUserPointer(window));
 
     // Check if ImGui wants to capture keyboard input
-    ImGuiIO& io = ImGui::GetIO();
+    ImGuiIO &io = ImGui::GetIO();
 
     if (action == GLFW_PRESS) // 按键按下
     {
@@ -1429,7 +1429,8 @@ void Renderer::KeyCallback(GLFWwindow* window, int key, int scancode, int action
             case GLFW_KEY_V:
                 app->TestBruteSdfAndSave();
                 break;
-            case GLFW_KEY_E: { // 按E键导出SDF数据用于Python可视化
+            case GLFW_KEY_E:
+            { // 按E键导出SDF数据用于Python可视化
                 printf("Exporting SDF data for visualization...\n");
                 app->ExportSDFDataForVisualization();
                 break;
@@ -1492,18 +1493,18 @@ void Renderer::KeyCallback(GLFWwindow* window, int key, int scancode, int action
     }
 }
 
-void Renderer::CharCallback(GLFWwindow* window, unsigned int codepoint)
+void Renderer::CharCallback(GLFWwindow *window, unsigned int codepoint)
 {
-    ImGuiIO& io = ImGui::GetIO();
+    ImGuiIO &io = ImGui::GetIO();
     io.AddInputCharacter(codepoint);
 }
 
-void Renderer::MouseCallback(GLFWwindow* window, double xpos, double ypos)
+void Renderer::MouseCallback(GLFWwindow *window, double xpos, double ypos)
 {
 
-    auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
-    auto& mouseState = app->m_mouseState;
-    auto& camera = app->m_camera;
+    auto app = reinterpret_cast<Renderer *>(glfwGetWindowUserPointer(window));
+    auto &mouseState = app->m_mouseState;
+    auto &camera = app->m_camera;
     int32_t dx = (int32_t)mouseState.Position.x - (int32_t)xpos;
     int32_t dy = (int32_t)mouseState.Position.y - (int32_t)ypos;
 
@@ -1526,11 +1527,11 @@ void Renderer::MouseCallback(GLFWwindow* window, double xpos, double ypos)
     }
     mouseState.Position = glm::vec2((float)xpos, (float)ypos);
 }
-void Renderer::MouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
+void Renderer::MouseButtonCallback(GLFWwindow *window, int button, int action, int mods)
 {
-    auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
+    auto app = reinterpret_cast<Renderer *>(glfwGetWindowUserPointer(window));
 
-    auto& mouseState = app->m_mouseState;
+    auto &mouseState = app->m_mouseState;
     if (button == GLFW_MOUSE_BUTTON_LEFT)
     {
         if (action == GLFW_PRESS)
@@ -1553,14 +1554,14 @@ void Renderer::MouseButtonCallback(GLFWwindow* window, int button, int action, i
             mouseState.Buttons.Middle = false;
     }
 }
-void Renderer::ScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
+void Renderer::ScrollCallback(GLFWwindow *window, double xoffset, double yoffset)
 {
-    auto app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
+    auto app = reinterpret_cast<Renderer *>(glfwGetWindowUserPointer(window));
     app->m_camera.translate(glm::vec3(0.0f, 0.0f, (float)yoffset * 0.1f));
     /*app->viewUpdated = true;*/
 }
 
-void Renderer::SetUI(UIOverlay* overlay)
+void Renderer::SetUI(UIOverlay *overlay)
 {
 
     if (overlay->Header("Settings"))
@@ -1875,7 +1876,7 @@ void Renderer::UpdateOverlay()
     // Update at max. rate of 30 fps
     m_UI.updateTimer = 1.0f / 30.0f;
 
-    ImGuiIO& io = ImGui::GetIO();
+    ImGuiIO &io = ImGui::GetIO();
 
     io.DisplaySize = ImVec2((float)m_width, (float)m_height);
     io.DeltaTime = m_frameTimer;
@@ -1980,7 +1981,7 @@ void Renderer::ResizeWindow()
     vkFreeMemory(m_device, m_depthStencil.memory, nullptr);
     CreateDepthResources();
 
-    for (auto& frameBuffer : m_finalFramebuffers)
+    for (auto &frameBuffer : m_finalFramebuffers)
     {
         vkDestroyFramebuffer(m_device, frameBuffer, nullptr);
     }
@@ -2596,7 +2597,7 @@ void Renderer::UpdateVoxelizationConstants()
     m_voxelizationPass.constants.voxelGridSize = glm::uvec3(config_->Sdf.Resolution);
 
     // 拷贝到GPU缓冲
-    void* data;
+    void *data;
     Tool::CheckResult(vkMapMemory(m_device, m_voxelizationPass.voxelUniformBuffer.memory, 0, sizeof(VoxelizationPass::VoxelConstants), 0, &data));
 
     memcpy(data, &m_voxelizationPass.constants, sizeof(VoxelizationPass::VoxelConstants));
@@ -2743,7 +2744,7 @@ void Renderer::VoxelizationFillPass(VkCommandBuffer cmd)
 
     EndDebugLabel(cmd);
 }
-void Renderer::SaveVoxelTextureWithValidation(const std::string& filename)
+void Renderer::SaveVoxelTextureWithValidation(const std::string &filename)
 {
     const uint32_t gridSize = config_->Sdf.Resolution;
     const VkDeviceSize imageSize = gridSize * gridSize * gridSize * 4; // RGBA
@@ -2831,11 +2832,11 @@ void Renderer::SaveVoxelTextureWithValidation(const std::string& filename)
     m_vulkanDevice->FlushCommandBuffer(copyCmd, m_queues.graphicsQueue, true);
 
     // 7. 映射内存并验证数据
-    void* mappedData;
+    void *mappedData;
     Tool::CheckResult(vkMapMemory(m_device, stagingBufferMemory, 0, imageSize, 0, &mappedData));
 
     // 8. 快速数据验证
-    uint8_t* byteData = static_cast<uint8_t*>(mappedData);
+    uint8_t *byteData = static_cast<uint8_t *>(mappedData);
     size_t nonZeroCount = 0;
     size_t totalBytes = imageSize;
 
@@ -2860,7 +2861,7 @@ void Renderer::SaveVoxelTextureWithValidation(const std::string& filename)
         return;
     }
 
-    file.write(static_cast<const char*>(mappedData), imageSize);
+    file.write(static_cast<const char *>(mappedData), imageSize);
     if (file.fail())
     {
         printf("Error: Failed to write data to file\n");
@@ -3063,7 +3064,7 @@ void Renderer::TestVoxelization()
         // Save voxel texture for validation
         // SaveVoxelTextureWithValidation("voxel_texture_validation.raw");
     }
-    catch (const std::exception& e)
+    catch (const std::exception &e)
     {
         printf("Error during voxelization test: %s\n", e.what());
     }
@@ -3105,11 +3106,11 @@ void Renderer::Cleanup()
     vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
     vkDestroyRenderPass(m_device, m_renderPass, nullptr);
 
-    for (auto& frameBuffer : m_frameBuffers)
+    for (auto &frameBuffer : m_frameBuffers)
     {
         vkDestroyFramebuffer(m_device, frameBuffer, nullptr);
     }
-    for (auto& shaderModule : m_shaderModules)
+    for (auto &shaderModule : m_shaderModules)
     {
         vkDestroyShaderModule(m_device, shaderModule, nullptr);
     }
@@ -3161,7 +3162,7 @@ void Renderer::Cleanup()
 void Renderer::CreateLogicalDevice()
 {
     // 设置队列属性 还没创建队列
-    QueueFamilyIndices& indices = m_indices;
+    QueueFamilyIndices &indices = m_indices;
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos{};
 
     // 某个显卡支持特定的队列族，某些队列族只支持渲染，某些只支持显示，某些两者都支持
@@ -3674,8 +3675,8 @@ void Renderer::RecordMainCommandBuffer()
         std::vector<VkBufferMemoryBarrier> bufferBarriers;
 
         VkBufferMemoryBarrier bufferBarrier = {
-            VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_READ_BIT,   0, m_index.graphics, m_index.compute,
-            m_compute.buffers.tiles.buffer,          0,       m_compute.buffers.tiles.size};
+            VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_READ_BIT, 0, m_index.graphics, m_index.compute,
+            m_compute.buffers.tiles.buffer, 0, m_compute.buffers.tiles.size};
         bufferBarriers.push_back(bufferBarrier);
         bufferBarrier = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
                          nullptr,
@@ -4031,7 +4032,7 @@ void Renderer::CreateBuffersDirLights()
     }
     {
 
-        for (auto& light : m_lights.DirLights)
+        for (auto &light : m_lights.DirLights)
         {
             if (light.castShadow == 1)
             {
@@ -4201,19 +4202,23 @@ void Renderer::AllocateDescriptorSetLighting()
         switch (Settings.AOSetting.UseAO)
         {
 
-        case 1: {
+        case 1:
+        {
             writeAO = Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 13, &texDescriptorSSAO);
             break;
         }
-        case 2: {
+        case 2:
+        {
             writeAO = Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 13, &texDescriptorHBAO);
             break;
         }
-        case 3: {
+        case 3:
+        {
             writeAO = Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 13, &texDescriptorGTAO);
             break;
         }
-        default: {
+        default:
+        {
             writeAO = Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 13,
                                                &m_defaultTextures.White.descriptor);
             break;
@@ -4318,23 +4323,28 @@ void Renderer::UpdateDescritporSetLighting()
         switch (Settings.AOSetting.UseAO)
         {
 
-        case 1: {
+        case 1:
+        {
             writeAO = Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 13, &texDescriptorSSAO);
             break;
         }
-        case 2: {
+        case 2:
+        {
             writeAO = Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 13, &texDescriptorHBAO);
             break;
         }
-        case 3: {
+        case 3:
+        {
             writeAO = Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 13, &texDescriptorGTAO);
             break;
         }
-        case 4: {
+        case 4:
+        {
             writeAO = Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 13, &texDescriptorSdfAO);
             break;
         }
-        default: {
+        default:
+        {
             writeAO = Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 13,
                                                &m_defaultTextures.White.descriptor);
             break;
@@ -5862,7 +5872,7 @@ void Renderer::CreateBuffersPointLights()
         stagingBuffer.Destroy();
     }
 
-    for (auto& light : m_lights.PointLights)
+    for (auto &light : m_lights.PointLights)
     {
         if (light.castShadow == 1)
         {
@@ -6232,7 +6242,7 @@ void Renderer::SetupPassShadowOmni()
     for (int i = 0; i < index.size(); ++i)
     {
         int curIndex = index[i];
-        glm::vec4& lightPos = m_lights.PointLights[curIndex].position;
+        glm::vec4 &lightPos = m_lights.PointLights[curIndex].position;
         glm::mat4x4 proj = glm::perspective((float)(PI / 2.0), 1.0f, m_camera.znear, m_camera.zfar);
         proj[1][1] *= -1;
         m_shadowOmniPass.CBufferData.emplace_back(proj, glm::mat4(1.0f),
@@ -6251,7 +6261,7 @@ void Renderer::SetupPassShadowOmni()
     // writeDescriptorSets = { Init::writeDescriptorSet(m_descriptorSets.composition, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10, &texDescriptor)
     // }; vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
-void Renderer::RenderToCube(const vkglTF::Model& model, const glm::vec3& pos, const std::string& savePath)
+void Renderer::RenderToCube(const vkglTF::Model &model, const glm::vec3 &pos, const std::string &savePath)
 {
     VkCommandBuffer cmdBuffer = m_vulkanDevice->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 
@@ -6322,7 +6332,7 @@ void Renderer::RenderToCube(const vkglTF::Model& model, const glm::vec3& pos, co
 
     SaveToImage(m_DepthCubePass.cubeMap.Tex, savePath);
 }
-void Renderer::SaveToImage(const Texture& tex, const std::string& savePath)
+void Renderer::SaveToImage(const Texture &tex, const std::string &savePath)
 {
     size_t pixelSize = 0;
     if (tex.format == VK_FORMAT_R32_SFLOAT)
@@ -6360,16 +6370,16 @@ void Renderer::SaveToImage(const Texture& tex, const std::string& savePath)
                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, // 转换回只读，以便后续使用
                          {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, tex.layerCount});
     m_vulkanDevice->FlushCommandBuffer(cmdBuffer, m_queues.graphicsQueue, true);
-    void* data;
+    void *data;
     vkMapMemory(m_device, stagingBuffer.memory, 0, bufferSize, 0, &data);
-    float* depthData = static_cast<float*>(data); // 假设是 VK_FORMAT_D32_SFLOAT
+    float *depthData = static_cast<float *>(data); // 假设是 VK_FORMAT_D32_SFLOAT
 
-    const uint32_t& imageWidth = tex.width;
-    const uint32_t& imageHeight = tex.height;
+    const uint32_t &imageWidth = tex.width;
+    const uint32_t &imageHeight = tex.height;
     for (uint32_t layer = 0; layer < tex.layerCount; ++layer)
     {
         std::string layerSavePath = savePath + "_face_" + std::to_string(layer) + ".png";
-        uint8_t* rgbaPixels = new uint8_t[imageWidth * imageHeight * 4]; // RGBA 8-bit
+        uint8_t *rgbaPixels = new uint8_t[imageWidth * imageHeight * 4]; // RGBA 8-bit
 
         for (uint32_t y = 0; y < imageHeight; ++y)
         {
@@ -6772,7 +6782,7 @@ void Renderer::PrepareLightCullingBuffers()
 
         VkBufferMemoryBarrier bufferBarrier = {
             VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER, nullptr, VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT, 0, m_index.graphics, m_index.compute,
-            m_compute.buffers.tiles.buffer,          0,       m_compute.buffers.tiles.size};
+            m_compute.buffers.tiles.buffer, 0, m_compute.buffers.tiles.size};
         bufferBarriers.push_back(bufferBarrier);
 
         bufferBarrier = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
@@ -6924,8 +6934,8 @@ void Renderer::BuildTileBasedLightingCommandBuffer()
     {
         std::vector<VkBufferMemoryBarrier> bufferBarriers;
         VkBufferMemoryBarrier bufferBarrier = {
-            VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT,  0, m_index.compute, m_index.graphics,
-            m_compute.buffers.tiles.buffer,          0,       m_compute.buffers.tiles.size};
+            VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER, nullptr, VK_ACCESS_SHADER_WRITE_BIT, 0, m_index.compute, m_index.graphics,
+            m_compute.buffers.tiles.buffer, 0, m_compute.buffers.tiles.size};
         bufferBarriers.push_back(bufferBarrier);
 
         bufferBarrier = {VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
@@ -7118,7 +7128,7 @@ void Renderer::LoadDebugUtilsFunctions()
 
     m_vkCmdEndDebugUtilsLabelEXT = reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(vkGetDeviceProcAddr(m_device, "vkCmdEndDebugUtilsLabelEXT"));
 }
-void Renderer::BeginDebugLabel(VkCommandBuffer cmd, const char* name, float r, float g, float b, float a)
+void Renderer::BeginDebugLabel(VkCommandBuffer cmd, const char *name, float r, float g, float b, float a)
 {
     if (!m_vkCmdBeginDebugUtilsLabelEXT)
         return;
@@ -7170,8 +7180,8 @@ void Renderer::CreateDefaultTextures()
     const uint32_t noiseTexHeight = 1;
     const VkFormat noiseTexFormat = VK_FORMAT_R8_UNORM;
 
-    unsigned char* white = new unsigned char;
-    unsigned char* black = new unsigned char;
+    unsigned char *white = new unsigned char;
+    unsigned char *black = new unsigned char;
     // unsigned char* white2 = new unsigned char[8];
     memset(white, 1.0f, 1);
     memset(black, 0.0f, 1);
@@ -7316,7 +7326,7 @@ void Renderer::UpdateCascades()
                 float d = cascadeSplitLambda * (log - uniform) + uniform;
                 cascadeSplits[i] = (d - nearClip) / clipRange; // 得到当前层的 深度
             }
-            glm::mat4& invCam = m_cameraInfosData.invProjView;
+            glm::mat4 &invCam = m_cameraInfosData.invProjView;
             glm::vec3 lightDir = normalize(-m_lights.DirLights[x].pos);
             glm::mat4 vulkanClip = glm::mat4(1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, // Y 轴反转
                                              0.0f, 0.0f, 0.5f, 0.0f,                          // Z 从 [-1,1] -> [0,1]
@@ -7329,8 +7339,14 @@ void Renderer::UpdateCascades()
                 float splitDist = cascadeSplits[i];
                 // 视锥体 的 八个角（六面体）
                 glm::vec3 frustumCorners[8] = {
-                    glm::vec3(-1.0f, 1.0f, 0.0f), glm::vec3(1.0f, 1.0f, 0.0f), glm::vec3(1.0f, -1.0f, 0.0f), glm::vec3(-1.0f, -1.0f, 0.0f),
-                    glm::vec3(-1.0f, 1.0f, 1.0f), glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(1.0f, -1.0f, 1.0f), glm::vec3(-1.0f, -1.0f, 1.0f),
+                    glm::vec3(-1.0f, 1.0f, 0.0f),
+                    glm::vec3(1.0f, 1.0f, 0.0f),
+                    glm::vec3(1.0f, -1.0f, 0.0f),
+                    glm::vec3(-1.0f, -1.0f, 0.0f),
+                    glm::vec3(-1.0f, 1.0f, 1.0f),
+                    glm::vec3(1.0f, 1.0f, 1.0f),
+                    glm::vec3(1.0f, -1.0f, 1.0f),
+                    glm::vec3(-1.0f, -1.0f, 1.0f),
                 };
 
                 // Project frustum corners into world space
@@ -7717,7 +7733,7 @@ void Renderer::GenerateNoiseTextureHBAO()
     const VkFormat NoiseTexFormat = VK_FORMAT_R8G8_UNORM;
 
     std::vector<uint16_t> noiseTexData(NoiseTexWidth * NoiseTexHeight);
-    for (auto& data : noiseTexData)
+    for (auto &data : noiseTexData)
     {
         float stepBias = glm::linearRand(0.6f, 1.0f);
         float dirBias = glm::linearRand(0.0f, 1.0f);
@@ -7842,7 +7858,7 @@ void Renderer::GenerateNoiseTextureGTAO()
     const VkFormat NoiseTexFormat = VK_FORMAT_R8G8_UNORM;
 
     std::vector<uint16_t> noiseTexData(NoiseTexWidth * NoiseTexHeight);
-    for (auto& data : noiseTexData)
+    for (auto &data : noiseTexData)
     {
         float stepBias = glm::linearRand(0.6f, 1.0f);
         float dirBias = glm::linearRand(0.0f, 1.0f);
@@ -8763,7 +8779,7 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
 
     };
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(sortDescriptorWrites.size()), sortDescriptorWrites.data(), 0, nullptr);
-    
+
     Log::Info("Solid Node Selection B resources initialized (multi-pass architecture with final selection)");
 }
 
@@ -8845,7 +8861,7 @@ void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
     // 应当从8x8x8开始选择, 直到base, 所以需要动态计算开始level.
     // 理想的base范围为[8,128]
 
-    int maxSampledLevel = m_gpuMipmapOctree->GetMaxLevel() -1;
+    int maxSampledLevel = m_gpuMipmapOctree->GetMaxLevel() - 1;
     for (int level = maxSampledLevel; level >= static_cast<int>(config_->Sdf.SampledLevel); --level)
     {
         // 设置当前level
@@ -8928,8 +8944,6 @@ void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
     candidateCountBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     candidateCountBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
 
-
-
     vkCmdPushConstants(commandBuffer, multiViewNodeSelection_.finalSelectionPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
                        sizeof(MultiViewSolidNodeSelection::FinalSelectionPushConstantDesc), &multiViewNodeSelection_.FinalSelectionPushConstant);
     // 需要提交命令缓冲区并等待，以便读取候选节点数量
@@ -8943,14 +8957,12 @@ void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &candidateCountBarrier, 0, nullptr, 0,
                          nullptr);
 
-
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.SortingPipeline);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.SortingPipelineLayout, 0, 1,
                             &multiViewNodeSelection_.SortingDescriptorSet, 0, nullptr);
     vkCmdDispatch(commandBuffer, 1, 1, 1);
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &candidateCountBarrier, 0, nullptr, 0,
                          nullptr);
-
 }
 void Renderer::MultiViewSolidNodeSelection::cleanup(VkDevice device)
 {
@@ -9012,7 +9024,7 @@ void Renderer::InitializeMultiViewDepthSDFResources()
 
 void Renderer::ExecuteGPUDataPreparation(VkCommandBuffer cmd)
 {
-    auto& gpuPrep = m_multiViewDepthSDF4C.gpuPreparation;
+    auto &gpuPrep = m_multiViewDepthSDF4C.gpuPreparation;
 
     // === Phase 1: 相机矩阵准备 ===
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, gpuPrep.cameraMatrixPipeline);
@@ -9026,7 +9038,7 @@ void Renderer::ExecuteGPUDataPreparation(VkCommandBuffer cmd)
         glm::vec3 modelCenter;     // 模型中心，与voxelization一致
         float halfSizeWithMargin;  // 包含边距的半尺寸，与voxelization一致
     } cameraPC;
-    cameraPC.maxCameraCount = 5;
+    cameraPC.maxCameraCount = 20;
     cameraPC.modelCenter = glm::vec3(0.0f);
     cameraPC.halfSizeWithMargin = 1.0f;
 
@@ -9687,7 +9699,7 @@ void Renderer::ValidateSolidNodeSelectionResults()
 {
     // 读取counterBuffer中的节点计数
     analyticalNodeSelection_.counterBuffer.Map();
-    uint32_t* counterData = static_cast<uint32_t*>(analyticalNodeSelection_.counterBuffer.mapped);
+    uint32_t *counterData = static_cast<uint32_t *>(analyticalNodeSelection_.counterBuffer.mapped);
     uint32_t selectedNodeCount = counterData[0];
     analyticalNodeSelection_.counterBuffer.Unmap();
 
@@ -9706,8 +9718,8 @@ void Renderer::ValidateSolidNodeSelectionResults()
         {
             // 读取solidNodeBuffer来检查节点分布
             analyticalNodeSelection_.solidNodeBuffer.Map();
-            const AnalyticalSolidNodeSelection::SolidNode* nodes =
-                static_cast<const AnalyticalSolidNodeSelection::SolidNode*>(analyticalNodeSelection_.solidNodeBuffer.mapped);
+            const AnalyticalSolidNodeSelection::SolidNode *nodes =
+                static_cast<const AnalyticalSolidNodeSelection::SolidNode *>(analyticalNodeSelection_.solidNodeBuffer.mapped);
 
             // Show first 20 selected nodes and count by level
             printf("First 64 selected nodes:\n");
@@ -9807,7 +9819,7 @@ void Renderer::LoadModelStaticData4C()
 {
     printf("Loading model static data for MultiViewDepthSDF4C...\n");
 
-    auto& staticData = m_multiViewDepthSDF4C.staticData;
+    auto &staticData = m_multiViewDepthSDF4C.staticData;
 
     // 1. 直接使用现有的顶点和索引缓冲区
     staticData.modelVertexBuffer.buffer = m_glTFModel.vertices.buffer;
@@ -9823,11 +9835,11 @@ void Renderer::LoadModelStaticData4C()
     staticData.totalPartCount = 0;
 
     // 遍历所有节点和原语来构建子部件信息
-    for (auto* node : m_glTFModel.linearNodes)
+    for (auto *node : m_glTFModel.linearNodes)
     {
         if (node->mesh)
         {
-            for (auto* primitive : node->mesh->primitives)
+            for (auto *primitive : node->mesh->primitives)
             {
                 MultiViewDepthSDF4C::ModelPartInfo partInfo;
                 partInfo.indexCount = primitive->indexCount;
@@ -9859,7 +9871,7 @@ void Renderer::LoadModelStaticData4C()
 /// @brief 创建模型子部件信息缓冲区
 void Renderer::CreateModelPartInfos4C()
 {
-    auto& staticData = m_multiViewDepthSDF4C.staticData;
+    auto &staticData = m_multiViewDepthSDF4C.staticData;
 
     if (staticData.partInfos.empty())
     {
@@ -9880,7 +9892,7 @@ void Renderer::CreateModelPartInfos4C()
 /// @brief 创建模型矩阵缓冲区
 void Renderer::CreateModelMatrices4C()
 {
-    auto& staticData = m_multiViewDepthSDF4C.staticData;
+    auto &staticData = m_multiViewDepthSDF4C.staticData;
 
     if (staticData.totalPartCount == 0)
     {
@@ -9892,14 +9904,14 @@ void Renderer::CreateModelMatrices4C()
     std::vector<glm::mat4> modelMatrices(staticData.totalPartCount);
 
     size_t partIndex = 0;
-    for (auto* node : m_glTFModel.linearNodes)
+    for (auto *node : m_glTFModel.linearNodes)
     {
         if (node->mesh)
         {
             // 获取节点的变换矩阵
             glm::mat4 nodeMatrix = node->getMatrix();
 
-            for (auto* primitive : node->mesh->primitives)
+            for (auto *primitive : node->mesh->primitives)
             {
                 if (partIndex < modelMatrices.size())
                 {
@@ -9947,7 +9959,7 @@ void Renderer::InitializeGPUDataPreparation4C()
 {
     printf("Initializing GPU data preparation resources...\n");
 
-    auto& gpuPrep = m_multiViewDepthSDF4C.gpuPreparation;
+    auto &gpuPrep = m_multiViewDepthSDF4C.gpuPreparation;
 
     // 创建相机矩阵缓冲区 (host-visible for CPU updates)
     VkDeviceSize cameraBufferSize = sizeof(glm::vec4) * config_->Sdf.MultiViewUsedCameraNum; // CameraMatrix{float4 cameraPosition;}
@@ -10001,7 +10013,7 @@ void Renderer::InitializeSDFFusion4C()
 {
     printf("Initializing SDF fusion resources...\n");
 
-    auto& sdfFusionPass = m_multiViewDepthSDF4C.sdfFusionPass;
+    auto &sdfFusionPass = m_multiViewDepthSDF4C.sdfFusionPass;
 
     // Create all SDF fusion resources and initialize descriptor sets
     InitializeSDFFusionPass();
@@ -10012,7 +10024,7 @@ void Renderer::InitializeSDFFusion4C()
 /// @brief 创建相机矩阵准备计算管线
 void Renderer::CreateCameraMatrixPreparationPipeline()
 {
-    auto& gpuPrep = m_multiViewDepthSDF4C.gpuPreparation;
+    auto &gpuPrep = m_multiViewDepthSDF4C.gpuPreparation;
 
     // 1. 创建描述符集布局
     std::vector<VkDescriptorSetLayoutBinding> bindings;
@@ -10102,7 +10114,7 @@ void Renderer::CreateCameraMatrixPreparationPipeline()
 /// @brief 创建间接命令生成计算管线
 void Renderer::CreateIndirectCommandGenerationPipeline()
 {
-    auto& gpuPrep = m_multiViewDepthSDF4C.gpuPreparation;
+    auto &gpuPrep = m_multiViewDepthSDF4C.gpuPreparation;
 
     // 1. 创建描述符集布局
     std::vector<VkDescriptorSetLayoutBinding> bindings;
@@ -10182,8 +10194,8 @@ void Renderer::CreateIndirectCommandGenerationPipeline()
 /// @brief 创建深度立方体贴图数组
 void Renderer::CreateDepthCubemapArray()
 {
-    auto& depthPass = m_multiViewDepthSDF4C.depthRendering;
-    auto& gpuPrep = m_multiViewDepthSDF4C.gpuPreparation;
+    auto &depthPass = m_multiViewDepthSDF4C.depthRendering;
+    auto &gpuPrep = m_multiViewDepthSDF4C.gpuPreparation;
 
     // 获取活跃相机数量，如果为0则使用默认值
     uint32_t cameraCount = gpuPrep.activeCameraCount;
@@ -10250,7 +10262,7 @@ void Renderer::CreateDepthCubemapArray()
 /// @brief Create multiview depth render pass
 void Renderer::CreateMultiViewDepthRenderPass()
 {
-    auto& depthPass = m_multiViewDepthSDF4C.depthRendering;
+    auto &depthPass = m_multiViewDepthSDF4C.depthRendering;
 
     // 1. Define color attachment (depth values output)
     VkAttachmentDescription colorAttachment{};
@@ -10364,7 +10376,7 @@ void Renderer::CreateMultiViewDepthRenderPass()
 /// @brief 创建多视角深度渲染管线
 void Renderer::CreateMultiViewDepthPipeline()
 {
-    auto& depthPass = m_multiViewDepthSDF4C.depthRendering;
+    auto &depthPass = m_multiViewDepthSDF4C.depthRendering;
 
     // 1. 创建描述符集布局
     std::vector<VkDescriptorSetLayoutBinding> bindings;
@@ -10523,9 +10535,9 @@ void Renderer::CreateMultiViewDepthPipeline()
 /// @brief Execute multiview depth rendering using indirect rendering - true multiview implementation
 void Renderer::ExecuteMultiViewDepthRendering(VkCommandBuffer cmd)
 {
-    auto& depthPass = m_multiViewDepthSDF4C.depthRendering;
-    auto& gpuPrep = m_multiViewDepthSDF4C.gpuPreparation;
-    auto& staticData = m_multiViewDepthSDF4C.staticData;
+    auto &depthPass = m_multiViewDepthSDF4C.depthRendering;
+    auto &gpuPrep = m_multiViewDepthSDF4C.gpuPreparation;
+    auto &staticData = m_multiViewDepthSDF4C.staticData;
 
     // 0. Transition depth cubemap array to color attachment layout
     VkImageMemoryBarrier preRenderBarrier{};
@@ -10825,7 +10837,7 @@ void Renderer::InitializeSDFFusionPass()
 
     // Step 4: Verify image layout for SDF fusion (debug)
     printf("SDF Fusion: Using existing depth cubemap sampling view (image: %p, view: %p)\n",
-           (void*)m_multiViewDepthSDF4C.depthRendering.depthCubemapArray, (void*)m_multiViewDepthSDF4C.depthRendering.depthCubemapSamplingView);
+           (void *)m_multiViewDepthSDF4C.depthRendering.depthCubemapArray, (void *)m_multiViewDepthSDF4C.depthRendering.depthCubemapSamplingView);
 
     // Step 5: Update descriptor set
     std::array<VkWriteDescriptorSet, 5> descriptorWrites{};
@@ -10965,7 +10977,7 @@ void Renderer::ExecuteSDFFusion(VkCommandBuffer cmd)
                          0, 0, nullptr, 0, nullptr, 1, &sdfLayoutTransition);
 }
 
-void Renderer::ExportSDFDataForVisualization(Texture* texture, VkImageLayout oldLayout, const std::string fileName)
+void Renderer::ExportSDFDataForVisualization(Texture *texture, VkImageLayout oldLayout, const std::string fileName)
 {
     // 确保所有GPU工作完成
     vkDeviceWaitIdle(m_device);
@@ -11055,10 +11067,10 @@ void Renderer::ExportSDFDataForVisualization(Texture* texture, VkImageLayout old
     m_vulkanDevice->FlushCommandBuffer(commandBuffer, m_queues.graphicsQueue, true);
 
     // 3. 映射内存并保存到文件
-    void* data;
+    void *data;
     Tool::CheckResult(vkMapMemory(m_device, stagingBufferMemory, 0, dataSize, 0, &data));
 
-    float* sdfData = static_cast<float*>(data);
+    float *sdfData = static_cast<float *>(data);
 
     // 统计数值分布
     int negCount = 0, posCount = 0, zeroCount = 0;
@@ -11077,7 +11089,7 @@ void Renderer::ExportSDFDataForVisualization(Texture* texture, VkImageLayout old
     }
     printf("数值分布: 负值=%d, 正值=%d, 零值=%d, 范围=[%.3f, %.3f]\n", negCount, posCount, zeroCount, minVal, maxVal);
 
-    FILE* file = fopen(fileName.c_str(), "wb");
+    FILE *file = fopen(fileName.c_str(), "wb");
     if (file)
     {
         fwrite(data, sizeof(float), totalVoxels, file);
@@ -11263,7 +11275,7 @@ void Renderer::PreparePipelineSdfAO()
 
     Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &sdfAOPass_.pipeline));
 }
-MeshToSdf* Renderer::GetMeshToSdfOperator()
+MeshToSdf *Renderer::GetMeshToSdfOperator()
 {
     return meshToSdfOperator_;
 };
@@ -11466,12 +11478,12 @@ void Renderer::ExportAOData()
     m_vulkanDevice->FlushCommandBuffer(cmdBuffer, m_queues.graphicsQueue, true);
 
     // 4. 映射内存并读取数据
-    void* data;
+    void *data;
     vkMapMemory(m_device, stagingBuffer.memory, 0, bufferSize, 0, &data);
-    float* aoData = static_cast<float*>(data); // RGBA32F数据
+    float *aoData = static_cast<float *>(data); // RGBA32F数据
 
     // 5. 转换为8位灰度PNG格式 (只取R通道,因为AO是单通道数据)
-    uint8_t* pngPixels = new uint8_t[width * height];
+    uint8_t *pngPixels = new uint8_t[width * height];
     for (uint32_t y = 0; y < height; ++y)
     {
         for (uint32_t x = 0; x < width; ++x)
@@ -11611,7 +11623,8 @@ void Renderer::PrintPerformanceStatistics()
         return;
     }
 
-    auto calculateStats = [](const std::vector<float>& times) {
+    auto calculateStats = [](const std::vector<float> &times)
+    {
         struct Stats
         {
             float mean, stddev, min, max, median, p95, p99;
@@ -11680,7 +11693,7 @@ void Renderer::PrintPerformanceStatistics()
     // 可选：保存到文件
     std::string modelName = GetModelNameFromPath(config_->modelPath);
     std::string logPath = Tool::GetAssetsPath() + "Sdf/" + modelName + "_gpu_perf.txt";
-    FILE* f = fopen(logPath.c_str(), "w");
+    FILE *f = fopen(logPath.c_str(), "w");
     if (f)
     {
         fprintf(f, "GPU Performance Statistics\n");

@@ -797,7 +797,7 @@ def main():
     # meshToSdf = "duck_4k_64_JumpFlood.raw"
     # multiViewSdf = "duck_4k_64_Multview.raw"
     
-    modelName = "happy_15k_"
+    modelName = "rock_"
     resolution = 128
     modelName = modelName + str(resolution) +"_"
     methodName1 = "BruteSdf"
@@ -806,29 +806,30 @@ def main():
     methodName4 = "Multview"
     appendix = ".raw"
 
+    default = "duck_4k_64_Multview.raw"
     fileTrue = modelName+ methodName1 + appendix
     file2 = modelName +methodName2 + appendix
     file3 = modelName +methodName3 + appendix
     file4 = modelName +methodName4 + appendix
     # file4 = "happy_15k_128_Multview.raw"
-    dataTrue = load_sdf_data(fileTrue,resolution=resolution,flip_z=True)
-    data2 = load_sdf_data(file2,resolution=resolution,flip_x=True,flip_y=True)
-    data3 = load_sdf_data(file3,resolution=resolution)
+    dataTrue = load_sdf_data(default,resolution=resolution,flip_z=True)
+    data2 = load_sdf_data(file2,resolution=resolution,flip_z=True,flip_y =True,flip_x = True)
+    data3 = load_sdf_data(default,resolution=resolution)
     data3 = abs_sdf(data3)
     data4 = load_sdf_data(file4,resolution=resolution,flip_z=True)
     data4 = abs_sdf(data4)
-    diffSdf = data4 - dataTrue
+    # diffSdf = data4 - dataTrue
     # visualize_error_distribution(diffSdf)
     # visualize_2d_slices(dataTrue,[0.5,0.5,0.5])
     # visualize_2d_slices(data4,[0.5,0.5,0.5])
     # visualize_error_slices(diffSdf,[0.25,0.5,0.75])
     # compare_sdfao_images("happy_15k_128_AO1.png","happy_15k_128_AO_brute1.png")
-    # compare_sdf_data(data2,dataTrue,"meshtoSDf")
+    # compare_sdf_data(dataTrue,data4,"meshtoSDf")
     # compare_sdf_data(data3,dataTrue,"Analytical")
     # compare_sdf_data(data4,dataTrue,"MultiView")
     # visualize_3d_isosurface(data4,resolution/2)
     Visualize(dataTrue,data2,data3,data4,resolution)
-    # save_sdf_data(dataTrue,fileTrue)
+    # save_sdf_data(data2,file2)
 
 
 
