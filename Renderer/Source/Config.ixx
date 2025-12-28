@@ -35,6 +35,13 @@ export struct Config
 		float DirNum;
 	} HBAO;
 
+	enum class SdfKind : uint32_t
+    {
+        BruteForce = 0,
+        Analytical = 1,
+        MultiView = 2,
+        JFA = 3
+    };
 	struct SdfConfig
 	{
 		float WorldSize{2.0f};
@@ -44,11 +51,12 @@ export struct Config
 		uint32_t MeshToSdfMode{1}; // floodfill:0, jump:1
 		uint32_t AnalyticalUsedPointNum{512};
 		uint32_t MultiViewUsedCameraNum{10};
+        uint32_t MaxCameraNum{30};
 		uint32_t MultiViewDepthResolution{128};
 		uint32_t MeshToSdfIteration{10};
 		uint32_t MeshToSdfDistanceMode{1}; // unsigned:0, signed:1
 		uint32_t MeshToSdfQuality{0};	   // normal:0, ultra:1
-		uint32_t UseBruteForce{0};		   //
+        SdfKind SdfAoUseSdfKind{SdfKind::MultiView};       //
         uint32_t UseRandomSelection{1};
 	};
 	SdfConfig Sdf;

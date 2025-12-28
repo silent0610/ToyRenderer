@@ -16,7 +16,7 @@ int main(int argc, char *argv[])
 	// 高性能logging + std::format格式化
 	Log::Info("Starting MyToyRenderer application [ASYNC MODE]");
 
-	Config *config = new Config{Tool::GetProjectPath() + "/Config.json"};
+	Config *config = new Config{Tool::GetProjectPath() + "/Config.json5"};
 
 	if (argc == 1)
 	{

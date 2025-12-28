@@ -40,9 +40,14 @@ void BruteForceSdf::GenerateGroundTruth(std::vector<float> &sdfData)
             {
                 for (int x = 0; x < params_.voxelResolution.x; ++x)
                 {
-                    glm::vec3 worldPos = GetVoxelWorldPosition(x, y, z);
+                    int sampleZ = params_.voxelResolution.z - 1 - z; // 翻转 Z (对应 Python flip_x)
+                    int sampleY = params_.voxelResolution.y - 1 - y; // 翻转 Y (对应 Python flip_y)
+                    int sampleX = x;                                 // X 保持不变 (对应 Python flip_z=False)
+                                                                     // 使用翻转后的坐标获取世界位置进行计算
+                    glm::vec3 worldPos = GetVoxelWorldPosition(sampleX, sampleY, sampleZ);
                     float distance = FindClosestDistance(worldPos);
 
+                    // 写入索引保持原始顺序 (x, y, z)，确保内存是线性写入的
                     size_t index = GetVoxelIndex(x, y, z);
                     sdfData[index] = distance;
                 }

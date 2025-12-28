@@ -9,7 +9,7 @@ using Json = nlohmann::json;
 Config::Config(std::string configPath)
 {
     std::ifstream f(configPath);
-    Json config = Json::parse(f);
+    Json config = Json::parse(f, nullptr, true, true);
     f.close();
 
     enableValidation = config["enableValidation"];
@@ -39,12 +39,13 @@ Config::Config(std::string configPath)
         Sdf.MultiViewDepthResolution = sdfConfig.value("MultiViewDepthResolution", 128);
         Sdf.MultiViewUsedCameraNum = sdfConfig.value("MultiViewUsedCameraNum", 10);
         Sdf.SdfMode = sdfConfig.value("SdfMode", 1);
+        Sdf.MaxCameraNum = sdfConfig.value("MaxCameraNum", 30);
         Sdf.MeshToSdfMode = sdfConfig.value("MeshToSdfMode", 1);
         Sdf.MeshToSdfIteration = sdfConfig.value("MeshToSdfIteration", 10);
         Sdf.MeshToSdfDistanceMode = sdfConfig.value("MeshToSdfDistanceMode", 1);
         Sdf.MeshToSdfQuality = sdfConfig.value("MeshToSdfQuality", 1);
         Sdf.SampledLevel = sdfConfig.value("SampledLevel", 1);
-        Sdf.UseBruteForce = sdfConfig.value("UseBruteForce", 1);
+        Sdf.SdfAoUseSdfKind = static_cast<SdfKind>(sdfConfig.value("UseSdfKind", 2));
         Sdf.UseRandomSelection = sdfConfig.value("UseRandomSelection", 1);
     }
     spdlog::info("config loadded");

@@ -15,6 +15,8 @@ void MeshToSdf::Initialize(OldVulkanDevice* device, VkQueue queue, VkDescriptorP
     queue_ = queue;
     currentMesh_ = mesh;
     worldToLocal_ = currentMesh_->GetModelToStandardTransform();
+    glm::mat4 flipMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, -1.0f, -1.0f));
+    worldToLocal_ = flipMatrix * worldToLocal_;
     this->sdfParam_ = param;
     // 纹理资源
     CreateSdfResource();
@@ -41,6 +43,7 @@ void MeshToSdf::GenerateSdf(VkCommandBuffer cmd)
     // 准备push constant数据
     MeshToSDFConstant constants{};
     constants.worldToLocal = worldToLocal_;
+
     constants.voxelResolution = glm::ivec4(sdfParam_.voxelResolution, sdfParam_.voxelResolution, sdfParam_.voxelResolution,
                                            sdfParam_.voxelResolution * sdfParam_.voxelResolution * sdfParam_.voxelResolution);
 

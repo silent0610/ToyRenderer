@@ -812,11 +812,11 @@ def main():
     file3 = modelName +methodName3 + appendix
     file4 = modelName +methodName4 + appendix
     # file4 = "happy_15k_128_Multview.raw"
-    dataTrue = load_sdf_data(default,resolution=resolution,flip_z=True)
-    data2 = load_sdf_data(file2,resolution=resolution,flip_z=True,flip_y =True,flip_x = True)
+    dataTrue = load_sdf_data(fileTrue,resolution=resolution) 
+    data2 = load_sdf_data(file2,resolution=resolution,flip_x=True,flip_y=True)
     data3 = load_sdf_data(default,resolution=resolution)
     data3 = abs_sdf(data3)
-    data4 = load_sdf_data(file4,resolution=resolution,flip_z=True)
+    data4 = load_sdf_data(file4,resolution=resolution)
     data4 = abs_sdf(data4)
     # diffSdf = data4 - dataTrue
     # visualize_error_distribution(diffSdf)
@@ -826,10 +826,10 @@ def main():
     # compare_sdfao_images("happy_15k_128_AO1.png","happy_15k_128_AO_brute1.png")
     # compare_sdf_data(dataTrue,data4,"meshtoSDf")
     # compare_sdf_data(data3,dataTrue,"Analytical")
-    # compare_sdf_data(data4,dataTrue,"MultiView")
+    compare_sdf_data(data4,dataTrue,"MultiView")
     # visualize_3d_isosurface(data4,resolution/2)
     Visualize(dataTrue,data2,data3,data4,resolution)
-    # save_sdf_data(data2,file2)
+    #save_sdf_data(dataTrue,fileTrue)
 
 
 

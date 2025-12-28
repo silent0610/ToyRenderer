@@ -230,6 +230,8 @@ void Renderer::InitVulkan()
 
     PrepareUniformBuffers();
     SetupDescriptors();
+
+    InitializeMeshToSdfOperator();
     AllocateDescriptorSets(); // 4
 
     PreparePipelines(); // 5
@@ -253,7 +255,7 @@ void Renderer::InitVulkan()
         // OffscreenWork();
 
         // MeshToSdf
-        InitializeMeshToSdfOperator();
+        
     }
 }
 // 从modelPath提取模型名称 (去除路径和扩展名)
@@ -9038,7 +9040,7 @@ void Renderer::ExecuteGPUDataPreparation(VkCommandBuffer cmd)
         glm::vec3 modelCenter;     // 模型中心，与voxelization一致
         float halfSizeWithMargin;  // 包含边距的半尺寸，与voxelization一致
     } cameraPC;
-    cameraPC.maxCameraCount = 20;
+    cameraPC.maxCameraCount = config_->Sdf.MaxCameraNum;
     cameraPC.modelCenter = glm::vec3(0.0f);
     cameraPC.halfSizeWithMargin = 1.0f;
 
@@ -11158,7 +11160,7 @@ void Renderer::AllocateDescriptorSetSdfAO()
 
     // Decide which SDF to use based on config
     VkDescriptorImageInfo sdfDescriptor;
-    if (config_->Sdf.UseBruteForce)
+    if (config_->Sdf.SdfAoUseSdfKind==Config::SdfKind::BruteForce)
     {
         // Load brute force SDF from raw file
         std::string sdfFileName = GenerateSdfFileName("BruteSdf");
@@ -11185,11 +11187,15 @@ void Renderer::AllocateDescriptorSetSdfAO()
             sdfDescriptor = m_multiViewDepthSDF4C.sdfFusionPass.finalSDFDescriptor;
         }
     }
-    else
+    else if (config_->Sdf.SdfAoUseSdfKind == Config::SdfKind::MultiView)
     {
         // Use runtime generated SDF
         Log::Info("Using runtime generated SDF for SDFAO");
         sdfDescriptor = m_multiViewDepthSDF4C.sdfFusionPass.finalSDFDescriptor;
+    }
+    else if (config_->Sdf.SdfAoUseSdfKind == Config::SdfKind::JFA)
+    {
+        sdfDescriptor =  meshToSdfOperator_->GetSdfTexture()->descriptor;
     }
 
     std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings{
@@ -11500,7 +11506,7 @@ void Renderer::ExportAOData()
     std::string modelName = GetModelNameFromPath(config_->modelPath);
     uint32_t resolution = config_->Sdf.Resolution;
     modelName = modelName + "_" + std::to_string(resolution) + "_" + "AO";
-    if (config_->Sdf.UseBruteForce)
+    if (config_->Sdf.SdfAoUseSdfKind== Config::SdfKind::BruteForce)
     {
         modelName += "_brute";
     }
