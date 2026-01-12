@@ -1,6 +1,6 @@
 {
     "modelPath": [
-        "Models/rock/rock.gltf"
+        "Models/happy_15k.gltf"
     ],
     "shaderPath": [
         "BlinnPhong/Basic.Vert.spv",
@@ -10,13 +10,13 @@
     "enableValidation": false,
     "camera": {
         "pos": [
-            0.0,
-            0.0,
-            -5.0
+            -0.90,
+            0.7,
+            1.250
         ],
         "Rotation": [
-            0.0,
-            0.0,
+            -30.0,
+            -150.0,
             0.0
         ],
         "type": "lookat",
@@ -37,12 +37,12 @@
     },
     "SdfConfig": {
         "WorldSize": 2.0,
-        "Resolution": 128,
+        "Resolution": 64,
         "MultiViewUsedCameraNum": 256, // 没有用了
-        "MaxCameraNum": 16, // 允许的最大相机数
-        "SdfMode": 1, // Multiview
+        "MaxCameraNum": 10, // 允许的最大相机数
+        "SdfMode": 1, // 1 Multiview, 0 
         "MultiViewDepthResolution": 64,
-        "SampledLevel": 3,  // 最低到哪一层, 如6,5,4,3
+        "SampledLevel": 2,  // 最低到哪一层, 如6,5,4,3
         "MeshToSdfMode": 1, // 1 JFA, 0 Linear
         "MeshToSdfIteration": 64, // 只适用于 Linear 模式
         "MeshToSdfDistanceMode": 0, // 只有在Linear模式有效, JFA默认无符号

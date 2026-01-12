@@ -797,8 +797,8 @@ def main():
     # meshToSdf = "duck_4k_64_JumpFlood.raw"
     # multiViewSdf = "duck_4k_64_Multview.raw"
     
-    modelName = "rock_"
-    resolution = 128
+    modelName = "happy_15k_"
+    resolution = 32
     modelName = modelName + str(resolution) +"_"
     methodName1 = "BruteSdf"
     methodName2 = "JumpFlood"
@@ -812,13 +812,15 @@ def main():
     file3 = modelName +methodName3 + appendix
     file4 = modelName +methodName4 + appendix
     # file4 = "happy_15k_128_Multview.raw"
-    dataTrue = load_sdf_data(fileTrue,resolution=resolution) 
-    data2 = load_sdf_data(file2,resolution=resolution,flip_x=True,flip_y=True)
-    data3 = load_sdf_data(default,resolution=resolution)
-    data3 = abs_sdf(data3)
-    data4 = load_sdf_data(file4,resolution=resolution)
-    data4 = abs_sdf(data4)
+    # dataTrue = load_sdf_data(fileTrue,resolution=resolution) 
+    # data2 = load_sdf_data(file2,resolution=resolution)
+    # data3 = load_sdf_data(default,resolution=resolution)
+    # data3 = abs_sdf(data3)
+    # data4 = load_sdf_data(file4,resolution=resolution)
+    # data4 = abs_sdf(data4)
     # diffSdf = data4 - dataTrue
+    data = load_sdf_data("bunny_s",resolution=128)
+
     # visualize_error_distribution(diffSdf)
     # visualize_2d_slices(dataTrue,[0.5,0.5,0.5])
     # visualize_2d_slices(data4,[0.5,0.5,0.5])
@@ -826,9 +828,9 @@ def main():
     # compare_sdfao_images("happy_15k_128_AO1.png","happy_15k_128_AO_brute1.png")
     # compare_sdf_data(dataTrue,data4,"meshtoSDf")
     # compare_sdf_data(data3,dataTrue,"Analytical")
-    compare_sdf_data(data4,dataTrue,"MultiView")
-    # visualize_3d_isosurface(data4,resolution/2)
-    Visualize(dataTrue,data2,data3,data4,resolution)
+    # compare_sdf_data(data4,dataTrue,"MultiView")
+    visualize_3d_isosurface(data,64)
+    # Visualize(dataTrue,data2,data3,data4,resolution)
     #save_sdf_data(dataTrue,fileTrue)
 
 

@@ -258,8 +258,8 @@ void GPUMipmapOctree::CreateComputePipeline(uint32_t mode)
     std::ifstream file(shaderPath, std::ios::ate | std::ios::binary);
     if (!file.is_open())
     {
-        Log::Error(std::format("cant open shader file {}", shaderPath));
-        throw std::runtime_error("cant open shader file");
+        std::string err = "Failed to open shader file: " + shaderPath;
+        throw std::runtime_error(err);
         return;
     }
 

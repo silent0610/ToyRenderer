@@ -17,7 +17,7 @@ Config::Config(std::string configPath)
     shadersPath.push_back(config["shaderPath"][1]);
     modelPath = std::string(config["modelPath"][0]);
     camera.pos = glm::vec3(config["camera"]["pos"][0], config["camera"]["pos"][1], config["camera"]["pos"][2]);
-    camera.Rotation = glm::vec3(config["camera"]["pos"][0], config["camera"]["pos"][1], config["camera"]["pos"][2]);
+    camera.Rotation = glm::vec3(config["camera"]["Rotation"][0], config["camera"]["Rotation"][1], config["camera"]["Rotation"][2]);
     camera.movementSpeed = config["camera"]["movementSpeed"];
     camera.znear = config["camera"]["znear"];
     camera.zfar = config["camera"]["zfar"];

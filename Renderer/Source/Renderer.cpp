@@ -10594,7 +10594,7 @@ void Renderer::ExecuteMultiViewDepthRendering(VkCommandBuffer cmd)
     // Use MAX_CAMERAS to ensure consistent behavior (no GPU readback)
 
     depthPass.renderParams.ModelMatrix = m_glTFModel.GetModelToStandardTransform();
-    depthPass.renderParams.projectionMatrix = glm::perspective(glm::radians(90.0f), 1.0f, 0.001f, 2.0f); // 降低远平面到50
+    depthPass.renderParams.projectionMatrix = glm::perspective(glm::radians(90.0f), 1.0f, 0.001f, 2.0f); // 
     depthPass.renderParams.totalPartCount = 1;                                                           // Only use first part
 
     vkCmdPushConstants(cmd, depthPass.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
