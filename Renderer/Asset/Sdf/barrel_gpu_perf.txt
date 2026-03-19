@@ -1,0 +1,6 @@
+GPU Performance Statistics
+Frames: 1000
+
+MeshToSdf: 8.118 ± 1.238 ms (median: 8.199, P95: 8.556, P99: 12.131)
+UnifiedPipeline: 0.686 ± 0.003 ms (median: 0.685, P95: 0.689, P99: 0.698)
+Total: 8.804 ms

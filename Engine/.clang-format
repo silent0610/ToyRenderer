@@ -1,0 +1,24 @@
+# 基础版本
+BasedOnStyle: Microsoft
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 150   # 一行最多字符数（可调，建议 100~120）
+AccessModifierOffset: -4
+PointerAlignment: Left
+NamespaceIndentation: All
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+
+InsertBraces: true
+
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: true        # [关键] 强制 switch case 后的 { 换行
+  AfterClass: true            # [保持 Microsoft 风格] 类名后换行
+  AfterControlStatement: true # [保持 Microsoft 风格] if/for/while 后换行
+  AfterEnum: true             # [保持 Microsoft 风格] enum 后换行
+  AfterFunction: true         # [保持 Microsoft 风格] 函数名后换行
+  AfterNamespace: true        # [保持 Microsoft 风格] namespace 后换行
+  AfterStruct: true           # [保持 Microsoft 风格] struct 后换行
+  BeforeElse: true            # [保持 Microsoft 风格] else 前换行

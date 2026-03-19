@@ -29,8 +29,8 @@ Config::Config(std::string configPath)
     {
         const auto &sdfConfig{config["SdfConfig"]};
         Sdf.WorldSize = sdfConfig.value("WorldSize", 2.0f); // 默认值
-        Sdf.Resolution = sdfConfig.value("Resolution", 64);
-        if (Sdf.Resolution < 8)
+        Sdf.VoxelResolution = sdfConfig.value("VoxelResolution", 64);
+        if (Sdf.VoxelResolution < 8)
         {
             Log::Error("SDF Resolution must be at least 8");
             throw std::runtime_error("SDF Resolution must be at least 8");
@@ -47,6 +47,7 @@ Config::Config(std::string configPath)
         Sdf.SampledLevel = sdfConfig.value("SampledLevel", 1);
         Sdf.SdfAoUseSdfKind = static_cast<SdfKind>(sdfConfig.value("UseSdfKind", 2));
         Sdf.UseRandomSelection = sdfConfig.value("UseRandomSelection", 1);
+        Sdf.SdfResolution = sdfConfig.value("SdfResolution", 64);
     }
     spdlog::info("config loadded");
 }

@@ -241,25 +241,25 @@ def visualize_error_distribution(error_volume):
 
     # 1. 误差直方图
     axes[0].hist(error_flat, bins=100, edgecolor='black', alpha=0.7)
-    axes[0].set_xlabel('绝对误差')
-    axes[0].set_ylabel('体素数量')
-    axes[0].set_title('误差分布直方图')
+    axes[0].set_xlabel('Absolute')
+    axes[0].set_ylabel('Voxel Num')
+    axes[0].set_title('Error Distrubtion')
     axes[0].grid(True, alpha=0.3)
 
     # 添加统计信息
     mean_err = error_flat.mean()
     median_err = np.median(error_flat)
-    axes[0].axvline(mean_err, color='r', linestyle='--', label=f'平均: {mean_err:.4f}')
-    axes[0].axvline(median_err, color='g', linestyle='--', label=f'中位数: {median_err:.4f}')
+    axes[0].axvline(mean_err, color='r', linestyle='--', label=f'Mean: {mean_err:.4f}')
+    axes[0].axvline(median_err, color='g', linestyle='--', label=f'Median: {median_err:.4f}')
     axes[0].legend()
 
     # 2. 累积分布函数 (CDF)
     sorted_errors = np.sort(error_flat)
     cumulative = np.arange(1, len(sorted_errors) + 1) / len(sorted_errors)
     axes[1].plot(sorted_errors, cumulative, linewidth=2)
-    axes[1].set_xlabel('绝对误差')
-    axes[1].set_ylabel('累积概率')
-    axes[1].set_title('累积分布函数 (CDF)')
+    axes[1].set_xlabel('Absolute Error')
+    axes[1].set_ylabel('Accumulate Probality')
+    axes[1].set_title('CDF')
     axes[1].grid(True, alpha=0.3)
 
     # 标记百分位点
@@ -270,80 +270,124 @@ def visualize_error_distribution(error_volume):
 
     # 3. 对数尺度直方图 (查看尾部分布)
     axes[2].hist(error_flat, bins=100, edgecolor='black', alpha=0.7)
-    axes[2].set_xlabel('绝对误差')
-    axes[2].set_ylabel('体素数量 (对数尺度)')
-    axes[2].set_title('误差分布 (对数尺度)')
+    axes[2].set_xlabel('Absolute Error')
+    axes[2].set_ylabel('Voxel Num(log)')
+    axes[2].set_title('Error Dis (Log)')
     axes[2].set_yscale('log')
     axes[2].grid(True, alpha=0.3)
 
     plt.tight_layout()
     plt.show()
-def visualize_3d_isosurface(sdf_volume, voxel_half_extent=32, iso_value=0.0):
-    """3D等值面可视化 — 显示完整体素范围 [-extent, extent]^3"""
+def visualize_3d_isosurface(sdf_volume, 
+                            voxel_half_extent=32, 
+                            iso_value=0.0, 
+                            camera_config=None, 
+                            save_path=None,
+                            show_interactive=True):
+    """
+    3D等值面可视化 (稳定版: 修复 RuntimeError 和 Warning)
+    """
     if not HAS_PYVISTA:
         print("跳过3D可视化 (需要安装PyVista)")
         return
 
     try:
-        # 翻转坐标系（按需修改）
+        # --- 1. 数据准备 ---
+        # 翻转逻辑保持不变
         sdf = np.flip(np.flip(sdf_volume.copy(), axis=0), axis=1)
-
         nx, ny, nz = sdf.shape
         origin = (-voxel_half_extent, -voxel_half_extent, -voxel_half_extent)
-        spacing = (
-            (2.0 * voxel_half_extent) / (nx - 1),
-            (2.0 * voxel_half_extent) / (ny - 1),
-            (2.0 * voxel_half_extent) / (nz - 1),
-        )
+        spacing = ((2.0 * voxel_half_extent) / (nx - 1),) * 3
 
-        # 旧版本用 ImageData
         grid = pv.ImageData()
         grid.dimensions = (nx, ny, nz)
         grid.origin = origin
         grid.spacing = spacing
-
-        # 保证数据对应到坐标
         grid.point_data["sdf"] = sdf.ravel(order="F")
 
-        # 提取等值面
+        # --- 2. 提取等值面 ---
+        # 优先尝试目标 iso_value
+        iso_candidates = [iso_value]
+        # 如果是 0，增加一些容错值
+        if abs(iso_value) < 1e-6:
+            iso_candidates += [0.05, 0.1, -0.1]
+            
+        surface = None
+        used_iso = iso_value
 
-        for iso_try in [0.05, 0.1, 0.2, 0.5, 1.0]:
-            surface = grid.contour(isosurfaces=[iso_try], scalars="sdf")
-            if surface.n_points > 0:
-                print(f"使用等值面 SDF={iso_try}")
-                break
+        for iso_try in iso_candidates:
+            try:
+                temp_surf = grid.contour(isosurfaces=[iso_try], scalars="sdf")
+                if temp_surf.n_points > 0:
+                    surface = temp_surf
+                    used_iso = iso_try
+                    break
+            except:
+                continue
+        
+        if surface is None or surface.n_points == 0:
+            print("警告: 无法提取等值面，跳过绘制。")
+            return
 
-        # 绘制
-        plotter = pv.Plotter(window_size=[1000, 700])
-        plotter.add_mesh(surface, color="lightblue", show_edges=False)
-
-        # 显示完整边界框
-        bbox = pv.Cube(center=(0.0, 0.0, 0.0),
-                       x_length=2 * voxel_half_extent,
-                       y_length=2 * voxel_half_extent,
-                       z_length=2 * voxel_half_extent)
+        # --- 3. 初始化 Plotter ---
+        # 关键修复点: off_screen 参数决定了渲染窗口的生命周期
+        # - 如果 show_interactive=True -> off_screen=False (窗口模式)
+        # - 如果 show_interactive=False -> off_screen=True (后台模式)
+        plotter = pv.Plotter(window_size=[1000, 700], off_screen=not show_interactive)
+        
+        plotter.add_mesh(surface, color="lightblue", show_edges=False, smooth_shading=True, opacity=1.0)
+        
+        # 辅助元素
+        bbox = pv.Cube(center=(0,0,0), x_length=2*voxel_half_extent, y_length=2*voxel_half_extent, z_length=2*voxel_half_extent)
         plotter.add_mesh(bbox, style="wireframe", color="black", line_width=2)
-
         plotter.add_axes()
-        plotter.show_bounds(all_edges=True, location="outer")
+        plotter.show_bounds(all_edges=True, location="outer", color="black")
         plotter.set_background("white")
 
-        plotter.enable_parallel_projection() 
-    
-        # 相机调整，确保全范围可见
-        plotter.view_zx()
-        plotter.camera.SetViewUp(-1.0, 0.0, 0.0) 
-        # plotter.camera.Azimuth(90)
-        # plotter.camera.SetViewUp((0, 0, 1))
-        #cam.SetClippingRange(0.1, max(1.0, 2 * voxel_half_extent) * 10.0)
-  
-        print("3D可视化窗口已打开（完整范围 [-extent,extent]^3 可见）")
-        plotter.show()
+        # --- 4. 设置相机 ---
+        if camera_config:
+            if isinstance(camera_config, str):
+                if camera_config == 'iso': plotter.view_isometric()
+                elif hasattr(plotter, f'view_{camera_config}'): getattr(plotter, f'view_{camera_config}')()
+            elif isinstance(camera_config, (list, tuple)):
+                plotter.camera_position = camera_config
+        else:
+            plotter.enable_parallel_projection()
+            plotter.view_xy()
+            plotter.camera.SetViewUp(0.0, 1.0, 0.0)
+        plotter.enable_parallel_projection()
+        print(f"3D可视化准备就绪: ISO={used_iso}, Points={surface.n_points}")
+
+        # --- 5. 显示与保存 (关键逻辑分支) ---
+        if show_interactive:
+            # [交互模式]
+            # 必须使用 .show(screenshot=...)。
+            # 只有在 .show() 内部，窗口创建后、阻塞前，截图才能成功。
+            # auto_close=False 避免用户关闭窗口后 PyVista 抛出 "窗口已销毁" 的警告
+            plotter.show(screenshot=save_path, auto_close=False)
+            
+            # 手动清理资源，忽略 "窗口已销毁" 错误
+            try:
+                plotter.close()
+            except Exception:
+                pass
+            
+            if save_path:
+                print(f"截图已保存至: {save_path}")
+
+        else:
+            # [后台模式] (off_screen=True)
+            # 此时不需要 show()，直接 screenshot() 即可，因为渲染器在后台是活跃的
+            if save_path:
+                plotter.screenshot(save_path)
+                print(f"截图已保存至: {save_path}")
+            
+            plotter.close()
 
     except Exception as e:
-        print(f"3D可视化失败: {e}")
-
-
+        import traceback
+        traceback.print_exc()
+        print(f"3D可视化遇到错误: {e}")
 
 
 
@@ -797,41 +841,48 @@ def main():
     # meshToSdf = "duck_4k_64_JumpFlood.raw"
     # multiViewSdf = "duck_4k_64_Multview.raw"
     
-    modelName = "happy_15k_"
-    resolution = 32
+    modelName = "barrel_"
+    resolution = 128
     modelName = modelName + str(resolution) +"_"
     methodName1 = "BruteSdf"
     methodName2 = "JumpFlood"
     methodName3 = "Analytical"
     methodName4 = "Multview"
+    methodName5 = "NGP"
+    methodName6 = "Heat"
     appendix = ".raw"
 
-    default = "duck_4k_64_Multview.raw"
+    # default = "duck_4k_64_Multview.raw"
     fileTrue = modelName+ methodName1 + appendix
     file2 = modelName +methodName2 + appendix
-    file3 = modelName +methodName3 + appendix
+    # file3 = modelName +methodName3 + appendix
     file4 = modelName +methodName4 + appendix
-    # file4 = "happy_15k_128_Multview.raw"
-    # dataTrue = load_sdf_data(fileTrue,resolution=resolution) 
-    # data2 = load_sdf_data(file2,resolution=resolution)
-    # data3 = load_sdf_data(default,resolution=resolution)
-    # data3 = abs_sdf(data3)
-    # data4 = load_sdf_data(file4,resolution=resolution)
-    # data4 = abs_sdf(data4)
-    # diffSdf = data4 - dataTrue
-    data = load_sdf_data("bunny_s",resolution=128)
+    file5 = modelName +methodName5 + appendix
+    file6 = modelName +methodName6 + appendix
 
-    # visualize_error_distribution(diffSdf)
-    # visualize_2d_slices(dataTrue,[0.5,0.5,0.5])
-    # visualize_2d_slices(data4,[0.5,0.5,0.5])
-    # visualize_error_slices(diffSdf,[0.25,0.5,0.75])
-    # compare_sdfao_images("happy_15k_128_AO1.png","happy_15k_128_AO_brute1.png")
-    # compare_sdf_data(dataTrue,data4,"meshtoSDf")
-    # compare_sdf_data(data3,dataTrue,"Analytical")
-    # compare_sdf_data(data4,dataTrue,"MultiView")
-    visualize_3d_isosurface(data,64)
+    dataTrue = load_sdf_data(fileTrue,resolution=resolution) 
+    data2 = load_sdf_data(file2,resolution=resolution,flip_x=True,flip_y=True)
+    # # data3 = load_sdf_data(default,resolution=resolution)
+    # # data3 = abs_sdf(data3)
+    data4 = load_sdf_data(file4,resolution=resolution)
+    data4 = abs_sdf(data4)
+    # # diffSdf = data4 - dataTrue
+    # data5 = load_sdf_data(file5,resolution=resolution)
+    # data5 = abs_sdf(data5) # NGP
+
+    # data6 = load_sdf_data(file6,resolution=resolution)
+    # data6 = abs_sdf(data6) # HEat
+    # diffSdf = data4 - dataTrue
+   
+    # visualize_2d_slices(diffSdf,[0.5,0.5,0.5])
+    # # visualize_2d_slices(data4,[0.5,0.5,0.5])
+    # # visualize_error_slices(diffSdf,[0.25,0.5,0.75])
+    # # compare_sdfao_images("happy_15k_128_AO1.png","happy_15k_128_AO_brute1.png")
+    # # compare_sdf_data(data3,dataTrue,"Analytical")
+    compare_sdf_data(data4,dataTrue,"heat")
+    visualize_3d_isosurface(data4,resolution/2,save_path="SDFAO/"+modelName +methodName4+".png")
     # Visualize(dataTrue,data2,data3,data4,resolution)
-    #save_sdf_data(dataTrue,fileTrue)
+    # save_sdf_data(data6,file6)
 
 
 

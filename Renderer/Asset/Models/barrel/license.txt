@@ -1,0 +1,11 @@
+Model Information:
+* title:	Oil Barrel
+* source:	https://sketchfab.com/3d-models/oil-barrel-ceb8c73105f24e18a87ccbca89ce3776
+* author:	Oscar Söderholm (https://sketchfab.com/oscar.soderholm)
+
+Model License:
+* license type:	CC-BY-NC-4.0 (http://creativecommons.org/licenses/by-nc/4.0/)
+* requirements:	Author must be credited. No commercial use.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Oil Barrel" (https://sketchfab.com/3d-models/oil-barrel-ceb8c73105f24e18a87ccbca89ce3776) by Oscar Söderholm (https://sketchfab.com/oscar.soderholm) licensed under CC-BY-NC-4.0 (http://creativecommons.org/licenses/by-nc/4.0/)

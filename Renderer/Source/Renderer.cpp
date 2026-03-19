@@ -243,7 +243,7 @@ void Renderer::InitVulkan()
 
         if (!m_gpuMipmapOctree)
         {
-            m_gpuMipmapOctree = std::make_unique<GPUMipmapOctree>(m_vulkanDevice, config_->Sdf.SdfMode, config_->Sdf.Resolution, false);
+            m_gpuMipmapOctree = std::make_unique<GPUMipmapOctree>(m_vulkanDevice, config_->Sdf.SdfMode, config_->Sdf.VoxelResolution, false);
         }
         // SetupGpuOctreePass();
         SetupVoxelizationPass();
@@ -288,7 +288,7 @@ std::string Renderer::GetModelNameFromPath(const std::string &modelPath)
 std::string Renderer::GenerateSdfFileName(const std::string &methodName)
 {
     std::string modelName = GetModelNameFromPath(config_->modelPath);
-    uint32_t resolution = config_->Sdf.Resolution;
+    uint32_t resolution = config_->Sdf.SdfResolution;
     return modelName + "_" + std::to_string(resolution) + "_" + methodName + ".raw";
 }
 
@@ -300,7 +300,7 @@ void Renderer::TestBruteSdfAndSave()
     BruteForceSdf::SdfParameters sdfParams{};
 
     // 从Config读取参数
-    const uint32_t resolution = config_->Sdf.Resolution;
+    const uint32_t resolution = config_->Sdf.VoxelResolution;
     const float worldSize = config_->Sdf.WorldSize;
 
     // 设置SDF参数
@@ -349,9 +349,9 @@ void Renderer::InitializeMeshToSdfOperator()
     sdfParams.FloodFillQuality = static_cast<MeshToSdf::FloodFillQuality>(config_->Sdf.MeshToSdfQuality);
     sdfParams.floodMode = static_cast<MeshToSdf::FloodMode>(config_->Sdf.MeshToSdfMode);
     sdfParams.floodIterations = static_cast<int>(config_->Sdf.MeshToSdfIteration);
-    sdfParams.offset = 0.0f;
+    sdfParams.offset = 0.043f;
     sdfParams.size = config_->Sdf.WorldSize;
-    sdfParams.voxelResolution = static_cast<int>(config_->Sdf.Resolution);
+    sdfParams.voxelResolution = static_cast<int>(config_->Sdf.VoxelResolution);
     // meshToSdfOperator_->SetSdfParams(sdfParams);
     meshToSdfOperator_->Initialize(m_vulkanDevice, m_queues.graphicsQueue, m_descriptorPool, &m_glTFModel, sdfParams);
 
@@ -2198,9 +2198,9 @@ void Renderer::InitVoxelizationTextures()
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_3D;
-    imageInfo.extent.width = config_->Sdf.Resolution;
-    imageInfo.extent.height = config_->Sdf.Resolution;
-    imageInfo.extent.depth = config_->Sdf.Resolution;
+    imageInfo.extent.width = config_->Sdf.VoxelResolution;
+    imageInfo.extent.height = config_->Sdf.VoxelResolution;
+    imageInfo.extent.depth = config_->Sdf.VoxelResolution;
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.format = VK_FORMAT_R32_SINT;
@@ -2596,7 +2596,7 @@ void Renderer::UpdateVoxelizationConstants()
     m_voxelizationPass.constants.view = glm::mat4(1.0f);
 
     m_voxelizationPass.constants.projection = glm::ortho(-1.0f, 1.0f, 1.0f, -1.0f, -1.0f, 1.0f);
-    m_voxelizationPass.constants.voxelGridSize = glm::uvec3(config_->Sdf.Resolution);
+    m_voxelizationPass.constants.voxelGridSize = glm::uvec3(config_->Sdf.VoxelResolution);
 
     // 拷贝到GPU缓冲
     void *data;
@@ -2656,7 +2656,7 @@ void Renderer::VoxelizationMarkPass(VkCommandBuffer cmd)
 
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    renderingInfo.renderArea = {{0, 0}, {config_->Sdf.Resolution, config_->Sdf.Resolution}};
+    renderingInfo.renderArea = {{0, 0}, {config_->Sdf.VoxelResolution, config_->Sdf.VoxelResolution}};
     renderingInfo.layerCount = 1;
     renderingInfo.colorAttachmentCount = 0; // 无颜色附件
     renderingInfo.pColorAttachments = nullptr;
@@ -2666,15 +2666,15 @@ void Renderer::VoxelizationMarkPass(VkCommandBuffer cmd)
     vkCmdBeginRendering(cmd, &renderingInfo); //
 
     VkViewport viewport = {};
-    viewport.width = static_cast<float>(config_->Sdf.Resolution);
-    viewport.height = static_cast<float>(config_->Sdf.Resolution);
+    viewport.width = static_cast<float>(config_->Sdf.VoxelResolution);
+    viewport.height = static_cast<float>(config_->Sdf.VoxelResolution);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
     VkRect2D scissor = {};
     scissor.offset = {0, 0};
-    scissor.extent = {config_->Sdf.Resolution, config_->Sdf.Resolution};
+    scissor.extent = {config_->Sdf.VoxelResolution, config_->Sdf.VoxelResolution};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_voxelizationPass.markPassPipeline);
@@ -2740,15 +2740,15 @@ void Renderer::VoxelizationFillPass(VkCommandBuffer cmd)
     // Dispatch compute shader
     uint32_t groupSizeX = 8;
     uint32_t groupSizeY = 8;
-    uint32_t dispatchX = (config_->Sdf.Resolution + groupSizeX - 1) / groupSizeX;
-    uint32_t dispatchY = (config_->Sdf.Resolution + groupSizeY - 1) / groupSizeY;
+    uint32_t dispatchX = (config_->Sdf.VoxelResolution + groupSizeX - 1) / groupSizeX;
+    uint32_t dispatchY = (config_->Sdf.VoxelResolution + groupSizeY - 1) / groupSizeY;
     vkCmdDispatch(cmd, dispatchX, dispatchY, 1);
 
     EndDebugLabel(cmd);
 }
 void Renderer::SaveVoxelTextureWithValidation(const std::string &filename)
 {
-    const uint32_t gridSize = config_->Sdf.Resolution;
+    const uint32_t gridSize = config_->Sdf.VoxelResolution;
     const VkDeviceSize imageSize = gridSize * gridSize * gridSize * 4; // RGBA
 
     printf("Starting voxel texture save: %dx%dx%d (%llu bytes)\n", gridSize, gridSize, gridSize, imageSize);
@@ -8121,7 +8121,7 @@ void Renderer::UpdateCBufferCBF()
 }
 bool Renderer::ReadFinalVoxelStateTextureToCPU_Staging()
 {
-    const uint32_t gridSize = config_->Sdf.Resolution;
+    const uint32_t gridSize = config_->Sdf.VoxelResolution;
     const VkDeviceSize imageSize = gridSize * gridSize * gridSize * sizeof(uint8_t);
 
     voxelData_.resize(imageSize);
@@ -8858,7 +8858,7 @@ void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.collectionPipelineLayout, 0, 1,
                             &multiViewNodeSelection_.collectionDescriptorSet, 0, nullptr);
 
-    multiViewNodeSelection_.CollectionPushConstant.BaseSize = config_->Sdf.Resolution;
+    multiViewNodeSelection_.CollectionPushConstant.BaseSize = config_->Sdf.VoxelResolution;
     // 执行Level max,... 0
     // 应当从8x8x8开始选择, 直到base, 所以需要动态计算开始level.
     // 理想的base范围为[8,128]
@@ -8872,7 +8872,7 @@ void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
                            sizeof(MultiViewSolidNodeSelection::CollectionPushConstantDesc), &multiViewNodeSelection_.CollectionPushConstant);
 
         // 计算dispatch尺寸（使用GRID_SIZE=32作为基础）
-        uint32_t gridSize = config_->Sdf.Resolution >> static_cast<uint32_t>(level); // Level 3: 4, Level 2: 8, Level 1: 16
+        uint32_t gridSize = config_->Sdf.VoxelResolution >> static_cast<uint32_t>(level); // Level 3: 4, Level 2: 8, Level 1: 16
         uint32_t dispatchX = (gridSize + 3) / 4;                                     // 4x4x4 workgroup
         uint32_t dispatchY = (gridSize + 3) / 4;
         uint32_t dispatchZ = (gridSize + 3) / 4;
@@ -9100,9 +9100,9 @@ void Renderer::InitializeAnalyticalSDFGenerationResources()
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_3D;
-    imageInfo.extent.width = config_->Sdf.Resolution;
-    imageInfo.extent.height = config_->Sdf.Resolution;
-    imageInfo.extent.depth = config_->Sdf.Resolution;
+    imageInfo.extent.width = config_->Sdf.VoxelResolution;
+    imageInfo.extent.height = config_->Sdf.VoxelResolution;
+    imageInfo.extent.depth = config_->Sdf.VoxelResolution;
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.format = VK_FORMAT_R32_SFLOAT;
@@ -9152,8 +9152,8 @@ void Renderer::InitializeAnalyticalSDFGenerationResources()
     // 设置基本属性
     m_analyticalSDFGeneration.sdfTexture.device = m_vulkanDevice;
     m_analyticalSDFGeneration.sdfTexture.format = VK_FORMAT_R16_SFLOAT;
-    m_analyticalSDFGeneration.sdfTexture.width = config_->Sdf.Resolution;
-    m_analyticalSDFGeneration.sdfTexture.height = config_->Sdf.Resolution;
+    m_analyticalSDFGeneration.sdfTexture.width = config_->Sdf.VoxelResolution;
+    m_analyticalSDFGeneration.sdfTexture.height = config_->Sdf.VoxelResolution;
     m_analyticalSDFGeneration.sdfTexture.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
     // 注意：图像布局转换将在执行时处理
@@ -9457,13 +9457,13 @@ void Renderer::ExecuteAnalyticalNodeSelection(VkCommandBuffer cmd)
 
     AnalyticalSolidNodeSelection::SolidNodeSelectionPushConstant pushConstants;
     pushConstants.SampledLevel = config_->Sdf.SampledLevel;
-    pushConstants.BaseSize = config_->Sdf.Resolution; // 64
+    pushConstants.BaseSize = config_->Sdf.VoxelResolution; // 64
     pushConstants.modelCenter = glm::vec3(0.0f, 0.0f, 0.0f);
     pushConstants.halfSizeWithMargin = 1.0f;
 
     vkCmdPushConstants(cmd, analyticalNodeSelection_.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pushConstants), &pushConstants);
 
-    uint32_t levelSize = config_->Sdf.Resolution >> config_->Sdf.SampledLevel;
+    uint32_t levelSize = config_->Sdf.VoxelResolution >> config_->Sdf.SampledLevel;
     uint32_t groupSize = 4;
     uint32_t groupCountX = (levelSize + groupSize - 1) / groupSize;
     uint32_t groupCountY = (levelSize + groupSize - 1) / groupSize;
@@ -9480,7 +9480,7 @@ void Renderer::ExecuteVoxelizationMarkPass(VkCommandBuffer cmd)
     // === 开始Dynamic Rendering ===
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    renderingInfo.renderArea = {{0, 0}, {config_->Sdf.Resolution, config_->Sdf.Resolution}};
+    renderingInfo.renderArea = {{0, 0}, {config_->Sdf.VoxelResolution, config_->Sdf.VoxelResolution}};
     renderingInfo.layerCount = 1;
     renderingInfo.colorAttachmentCount = 0;
     renderingInfo.pColorAttachments = nullptr;
@@ -9493,15 +9493,15 @@ void Renderer::ExecuteVoxelizationMarkPass(VkCommandBuffer cmd)
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = static_cast<float>(config_->Sdf.Resolution);
-    viewport.height = static_cast<float>(config_->Sdf.Resolution);
+    viewport.width = static_cast<float>(config_->Sdf.VoxelResolution);
+    viewport.height = static_cast<float>(config_->Sdf.VoxelResolution);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
     VkRect2D scissor = {};
     scissor.offset = {0, 0};
-    scissor.extent = {config_->Sdf.Resolution, config_->Sdf.Resolution};
+    scissor.extent = {config_->Sdf.VoxelResolution, config_->Sdf.VoxelResolution};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     // === 绑定管线和描述符集 ===
@@ -9526,7 +9526,7 @@ void Renderer::ExecuteVoxelizationFillPass(VkCommandBuffer cmd)
 
     // === 执行Compute Shader ===
     // 方案要求：64x64个线程，每个线程沿Z轴扫描VoxelCounterTexture
-    uint32_t groupSize = (config_->Sdf.Resolution + 7) / 8; // 8x8 线程组 (XY平面)
+    uint32_t groupSize = (config_->Sdf.VoxelResolution + 7) / 8; // 8x8 线程组 (XY平面)
     vkCmdDispatch(cmd, groupSize, groupSize, 1);            // Z轴扫描，因此Z维度为1
 }
 
@@ -9776,15 +9776,15 @@ void Renderer::ExecuteAnalyticalSDFGeneration(VkCommandBuffer cmd)
 
     // 绑定管线和描述符集
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_analyticalSDFGeneration.pipeline);
-    vkCmdPushConstants(cmd, m_analyticalSDFGeneration.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t), &config_->Sdf.Resolution);
+    vkCmdPushConstants(cmd, m_analyticalSDFGeneration.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t), &config_->Sdf.VoxelResolution);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_analyticalSDFGeneration.pipelineLayout, 0, 1,
                             &m_analyticalSDFGeneration.descriptorSet, 0, nullptr);
 
     // 分发compute工作：64x64x64的线程网格，每个线程计算一个SDF体素
     // Shader使用4x4x4的工作组
-    uint32_t groupCountX = (config_->Sdf.Resolution + 3) / 4; // 16 groups
-    uint32_t groupCountY = (config_->Sdf.Resolution + 3) / 4; // 16 groups
-    uint32_t groupCountZ = (config_->Sdf.Resolution + 3) / 4; // 16 groups
+    uint32_t groupCountX = (config_->Sdf.VoxelResolution + 3) / 4; // 16 groups
+    uint32_t groupCountY = (config_->Sdf.VoxelResolution + 3) / 4; // 16 groups
+    uint32_t groupCountZ = (config_->Sdf.VoxelResolution + 3) / 4; // 16 groups
     vkCmdDispatch(cmd, groupCountX, groupCountY, groupCountZ);
 
     printf("  Analytical SDF Generation: Dispatched %dx%dx%d compute groups (262144 total threads)\n", groupCountX, groupCountY, groupCountZ);
@@ -10624,7 +10624,7 @@ void Renderer::CreateFinalSDFTexture()
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_3D;
     imageInfo.format = VK_FORMAT_R32_SFLOAT; // Single-channel 32-bit float for SDF values
-    imageInfo.extent = {config_->Sdf.Resolution, config_->Sdf.Resolution, config_->Sdf.Resolution};
+    imageInfo.extent = {config_->Sdf.SdfResolution, config_->Sdf.SdfResolution, config_->Sdf.SdfResolution};
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -10674,8 +10674,8 @@ void Renderer::CreateFinalSDFTexture()
         throw std::runtime_error("Failed to create SDF texture view!");
     }
 
-    printf("Final SDF texture created: %ux%ux%u R32_SFLOAT 3D storage texture\n", config_->Sdf.Resolution, config_->Sdf.Resolution,
-           config_->Sdf.Resolution);
+    printf("Final SDF texture created: %ux%ux%u R32_SFLOAT 3D storage texture\n", config_->Sdf.VoxelResolution, config_->Sdf.VoxelResolution,
+           config_->Sdf.VoxelResolution);
 }
 
 void Renderer::CreateDepthCubemapSampler()
@@ -10909,7 +10909,7 @@ void Renderer::InitializeSDFFusionPass()
     // Step 5: Initialize push constants
     // Note: SDF fusion should read actual camera count from GPU buffer, not from push constants
     // This is for compatibility, the actual count will come from cameraMatricesBuffer binding
-    m_multiViewDepthSDF4C.sdfFusionPass.pushConstants.BaseSize = config_->Sdf.Resolution; // 64³ SDF grid
+    m_multiViewDepthSDF4C.sdfFusionPass.pushConstants.BaseSize = config_->Sdf.VoxelResolution; // 64³ SDF grid
     m_multiViewDepthSDF4C.sdfFusionPass.pushConstants.activeCameraCount = config_->Sdf.MultiViewUsedCameraNum;
     m_multiViewDepthSDF4C.sdfFusionPass.pushConstants.maxDistance = 10.0f; // 10 units maximum SDF distance
 }
@@ -10940,6 +10940,7 @@ void Renderer::ExecuteSDFFusion(VkCommandBuffer cmd)
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_multiViewDepthSDF4C.sdfFusionPass.pipelineLayout, 0, 1,
                             &m_multiViewDepthSDF4C.sdfFusionPass.descriptorSet, 0, nullptr);
 
+    m_multiViewDepthSDF4C.sdfFusionPass.pushConstants.BaseSize = config_->Sdf.SdfResolution;
     // Step 3: Push constants
     vkCmdPushConstants(cmd, m_multiViewDepthSDF4C.sdfFusionPass.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
                        sizeof(m_multiViewDepthSDF4C.sdfFusionPass.pushConstants), &m_multiViewDepthSDF4C.sdfFusionPass.pushConstants);
@@ -10947,7 +10948,7 @@ void Renderer::ExecuteSDFFusion(VkCommandBuffer cmd)
     // Step 4: Dispatch compute shader
     // SDF grid is 64³, compute shader uses 8×8×8 thread groups
     // Therefore we need (64/8)³ = 8³ work groups
-    const uint32_t workGroupsPerDim = config_->Sdf.Resolution / 4; // 64 / 8 = 8
+    const uint32_t workGroupsPerDim = config_->Sdf.VoxelResolution / 4; // 64 / 8 = 8
     vkCmdDispatch(cmd, workGroupsPerDim, workGroupsPerDim, workGroupsPerDim);
 
     // Step 5: Memory barrier for compute write completion
@@ -11147,7 +11148,7 @@ void Renderer::UpdateCBufferSdfAO()
     // sdfAOPass_.buffers.cBufferData.maxDistance = 0.3f;
     // sdfAOPass_.buffers.cBufferData.falloffPower = 2.0f;
     sdfAOPass_.buffers.cBufferData.voxelSize = 1.0f;
-    sdfAOPass_.buffers.cBufferData.sdfTextureSize = config_->Sdf.Resolution;
+    sdfAOPass_.buffers.cBufferData.sdfTextureSize = config_->Sdf.VoxelResolution;
     sdfAOPass_.buffers.cBufferData.minBounds = glm::vec4(-1.f, 1.f, 1.f, 1.0f);
     sdfAOPass_.buffers.cBufferData.maxBounds = glm::vec4(1.f, -1.f, -1.f, 1.0f);
     sdfAOPass_.buffers.cBufferData.noiseScale = glm::vec2(1.0f, 1.0f);
@@ -11171,7 +11172,7 @@ void Renderer::AllocateDescriptorSetSdfAO()
         // Check if file exists
         if (Tool::CheckFileExists(sdfFilePath))
         {
-            uint32_t resolution = config_->Sdf.Resolution;
+            uint32_t resolution = config_->Sdf.SdfResolution;
             sdfAOPass_.bruteForceSdfTexture.LoadFromRawFile(sdfFilePath, resolution, resolution, resolution, VK_FORMAT_R32_SFLOAT, m_vulkanDevice,
                                                             m_queues.graphicsQueue, VK_IMAGE_USAGE_SAMPLED_BIT,
                                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -11197,7 +11198,44 @@ void Renderer::AllocateDescriptorSetSdfAO()
     {
         sdfDescriptor =  meshToSdfOperator_->GetSdfTexture()->descriptor;
     }
+    else if (config_->Sdf.SdfAoUseSdfKind == Config::SdfKind::Ngp)
+    {
+        std::string sdfFileName = GenerateSdfFileName("NGP");
+        std::string sdfFilePath = Tool::GetAssetsPath() + "Sdf/" + sdfFileName;
+        if (Tool::CheckFileExists(sdfFilePath))
+        {
+            uint32_t resolution = config_->Sdf.SdfResolution;
+            sdfAOPass_.bruteForceSdfTexture.LoadFromRawFile(sdfFilePath, resolution, resolution, resolution, VK_FORMAT_R32_SFLOAT, m_vulkanDevice,
+                                                            m_queues.graphicsQueue, VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
+            sdfDescriptor = sdfAOPass_.bruteForceSdfTexture.descriptor;
+            Log::Info("Successfully loaded Ngp SDF for SDFAO");
+        }
+        else
+        {
+            throw std::runtime_error(std::format("Ngp SDF file not found: {}", sdfFilePath));
+        }
+    }
+    else if (config_->Sdf.SdfAoUseSdfKind == Config::SdfKind::Heat)
+    {
+        std::string sdfFileName = GenerateSdfFileName("Heat");
+        std::string sdfFilePath = Tool::GetAssetsPath() + "Sdf/" + sdfFileName;
+        if (Tool::CheckFileExists(sdfFilePath))
+        {
+            uint32_t resolution = config_->Sdf.SdfResolution;
+            sdfAOPass_.bruteForceSdfTexture.LoadFromRawFile(sdfFilePath, resolution, resolution, resolution, VK_FORMAT_R32_SFLOAT, m_vulkanDevice,
+                                                            m_queues.graphicsQueue, VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+            sdfDescriptor = sdfAOPass_.bruteForceSdfTexture.descriptor;
+            Log::Info("Successfully loaded Heat SDF for SDFAO");
+        }
+        else
+        {
+            throw std::runtime_error(std::format("Heat SDF file not found: {}", sdfFilePath));
+        }
+    }
     std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings{
         // camera
         Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 0),
@@ -11504,7 +11542,7 @@ void Renderer::ExportAOData()
     }
 
     std::string modelName = GetModelNameFromPath(config_->modelPath);
-    uint32_t resolution = config_->Sdf.Resolution;
+    uint32_t resolution = config_->Sdf.VoxelResolution;
     modelName = modelName + "_" + std::to_string(resolution) + "_" + "AO";
     if (config_->Sdf.SdfAoUseSdfKind== Config::SdfKind::BruteForce)
     {

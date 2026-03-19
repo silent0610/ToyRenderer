@@ -40,12 +40,14 @@ export struct Config
         BruteForce = 0,
         Analytical = 1,
         MultiView = 2,
-        JFA = 3
+        JFA = 3,
+		Ngp = 4,
+		Heat = 5
     };
 	struct SdfConfig
 	{
 		float WorldSize{2.0f};
-		uint32_t Resolution{64};
+		uint32_t VoxelResolution{64};
 		uint32_t SdfMode{1}; // Analytical:0, Multiview:1
 		uint32_t SampledLevel{1};
 		uint32_t MeshToSdfMode{1}; // floodfill:0, jump:1
@@ -58,6 +60,7 @@ export struct Config
 		uint32_t MeshToSdfQuality{0};	   // normal:0, ultra:1
         SdfKind SdfAoUseSdfKind{SdfKind::MultiView};       //
         uint32_t UseRandomSelection{1};
+        uint32_t SdfResolution{64};
 	};
 	SdfConfig Sdf;
 };

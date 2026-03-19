@@ -27,7 +27,7 @@ void JumpSample(int3 centerCoord, int3 offset, inout float bestDistance, inout i
     int voxelSampleIndex = GetVoxelJump(sampleCoord);
     // 邻居点内保存的最近种子点的体素3D坐标, 单位是体素
     int3 voxelSampleCoord = GetVoxelCoords(voxelSampleIndex);
-    // 计算当前点到目标种子点的距离, 取最小者
+    // 计算当前点到目标种子点体素中心的距离, 取最小者
     float dist = length(centerCoord - voxelSampleCoord);
     if (voxelSampleIndex != 0 && dist < bestDistance)
     {

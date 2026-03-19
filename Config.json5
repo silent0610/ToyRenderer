@@ -1,6 +1,6 @@
 {
     "modelPath": [
-        "Models/happy_15k.gltf"
+        "Models/barrel/barrel.gltf"
     ],
     "shaderPath": [
         "BlinnPhong/Basic.Vert.spv",
@@ -9,22 +9,14 @@
     "pipelineType": "basic",
     "enableValidation": false,
     "camera": {
-        "pos": [
-            -0.90,
-            0.7,
-            1.250
-        ],
-        "Rotation": [
-            -30.0,
-            -150.0,
-            0.0
-        ],
+        "pos": [-0.4, 1.0, -1.0],
+        "Rotation": [ -38, -24, 0.0],
         "type": "lookat",
         "flipY": true,
         "fov": 90.0,
         "znear": 0.1,
         "zfar": 50.0,
-        "movementSpeed": 10.0
+        "movementSpeed": 3.0
     },
     "light": {
         "pos": [],
@@ -37,17 +29,18 @@
     },
     "SdfConfig": {
         "WorldSize": 2.0,
-        "Resolution": 64,
+        "VoxelResolution": 128, // 同样是暴力法和JFA的SDF分辨率
+        "SdfResolution":128,
         "MultiViewUsedCameraNum": 256, // 没有用了
-        "MaxCameraNum": 10, // 允许的最大相机数
+        "MaxCameraNum": 20, // 允许的最大相机数
         "SdfMode": 1, // 1 Multiview, 0 
         "MultiViewDepthResolution": 64,
-        "SampledLevel": 2,  // 最低到哪一层, 如6,5,4,3
+        "SampledLevel": 4,  // 最低到哪一层, 如6,5,4,3
         "MeshToSdfMode": 1, // 1 JFA, 0 Linear
         "MeshToSdfIteration": 64, // 只适用于 Linear 模式
         "MeshToSdfDistanceMode": 0, // 只有在Linear模式有效, JFA默认无符号
         "MeshToSdfQuality": 1, // 1 Ultra
-        "UseSdfKind": 2, // SDFAO, 0 BruteForce, 2 Multiview, 3 JFA
+        "UseSdfKind": 2, // SDFAO, 0 BruteForce, 2 Multiview, 3 JFA , 4 NGP, 5 Heat
         "UseRandomSelection": 0
     }
 }

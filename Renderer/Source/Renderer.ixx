@@ -742,7 +742,7 @@ private:
 		VkPipelineLayout pipelineLayout{nullptr};
 		VkPipeline pipeline{nullptr};
 		Texture2D noiseTexture;
-		Texture3D bruteForceSdfTexture; // Brute force SDF loaded from raw file
+		Texture3D bruteForceSdfTexture; // Brute force SDF loaded from raw file or other SDf
 		struct CBufferDesc
 		{
             alignas(4) uint32_t sampleCount{10};
@@ -1224,7 +1224,7 @@ private:
 
 	Texture *GetAnalyticalSdfTexture()
 	{
-		m_analyticalSDFGeneration.sdfTexture.dimZ = config_->Sdf.Resolution;
+		m_analyticalSDFGeneration.sdfTexture.dimZ = config_->Sdf.VoxelResolution;
 		return &m_analyticalSDFGeneration.sdfTexture;
 	}
 	Texture *GetMultiViewDepthSdfTexture()
@@ -1232,7 +1232,7 @@ private:
 		// return m_multiViewDepthSDF4C.sdfFusionPass.finalSDFTexture
 		Texture *sdfTex{new Texture};
 		sdfTex->image = m_multiViewDepthSDF4C.sdfFusionPass.finalSDFTexture;
-		sdfTex->dimZ = config_->Sdf.Resolution;
+		sdfTex->dimZ = config_->Sdf.SdfResolution;
 		return sdfTex;
 	}
 	// 阶段四 (版本B): 多视角深度渲染与融合 (Multi-View Depth SDF)

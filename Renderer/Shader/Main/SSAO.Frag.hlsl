@@ -102,7 +102,7 @@ float4 main(float4 pos:SV_Position, [[vk::location(0)]] float2 uv : TEXCOORD0):S
 
         float2 sampleUV = saturate(float2(samplePosProj.x, samplePosProj.y) * 0.5f + 0.5f);
 
-        float sceneDepth = length(GetWorldPos(sampleUV).xyz - CBCamera.CameraPos.xyz)+0.01; //nmmmd草擦操哦曹操凹槽从，妈的，恶心我四五个个小时，，原来是直接采uv，所以都是子阴影，畜生啊
+        float sceneDepth = length(GetWorldPos(sampleUV).xyz - CBCamera.CameraPos.xyz)+0.01;
 
         float rangeCheck = step(abs(sampleDepth - sceneDepth), 1); 
         occlusion += step(sceneDepth, sampleDepth) * rangeCheck;

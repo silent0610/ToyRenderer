@@ -82,7 +82,7 @@ float SampleSDF(float3 worldPos) {
 
     // 采样SDF距离场 (负值表示内部，正值表示外部)
     float sdfDistance = sdfTexture.SampleLevel(sdfSampler, sdfUV, 0).r;
-    return sdfDistance;
+    return abs(sdfDistance);
 }
 
 // cosine-weighted 半球采样（切线空间） -> 转换到世界空间（使用传入的 tangent/bitangent/normal）
