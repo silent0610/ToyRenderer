@@ -50,9 +50,7 @@ public:
     // Build mipmap octree with semaphore optimization (parallel levels)
     void BuildFromVoxelTextureOptimized(VkCommandBuffer commandBuffer, Texture *voxelTexture, VkQueue computeQueue, VkCommandPool computeCommandPool);
 
-    // Debug and validation functions
-    void ValidateResults();
-    void PrintOctreeStatistics();
+
     std::vector<uint32_t> ReadMipLevel(uint32_t level);
 
     // Getters
@@ -100,8 +98,6 @@ private:
 
     // GPU building steps
     void BuildMipLevel(VkCommandBuffer commandBuffer, uint32_t level);
-    void BuildMipLevelsBatch(VkCommandBuffer commandBuffer);               // OPTIMIZED: Batch dispatch version
-    void BuildMipLevelFast(VkCommandBuffer commandBuffer, uint32_t level); // Fast version without barriers
     void InsertMemoryBarrier(VkCommandBuffer commandBuffer, uint32_t level);
     void InsertBatchBarrier(VkCommandBuffer commandBuffer, uint32_t startLevel, uint32_t endLevel);
 
@@ -110,10 +106,6 @@ private:
     glm::vec3 CalculateNodeCenter(glm::uvec3 position, uint32_t level) const;
     float CalculateNodeSize(uint32_t level) const;
 
-    // Data readback helpers
-    void CreateStagingBuffer(VkDeviceSize size, VkBuffer &buffer, VkDeviceMemory &memory);
-    void CopyImageToBuffer(uint32_t level, VkBuffer stagingBuffer, uint32_t size);
-    void WaitForTransferComplete();
     void ClearAllMipLevels();
     
 };

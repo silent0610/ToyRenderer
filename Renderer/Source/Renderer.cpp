@@ -226,6 +226,7 @@ void Renderer::InitVulkan()
     SetupFinalPass();
     SetupBloomPass();
     SetupToneMappingPass();
+    SetupCameraOverlayPass();
     InitUI();
 
     PrepareUniformBuffers();
@@ -237,7 +238,6 @@ void Renderer::InitVulkan()
     PreparePipelines(); // 5
 
     BuildFinalCommandBuffer();
-    RecordMainCommandBuffer();
 
     {
 
@@ -255,8 +255,9 @@ void Renderer::InitVulkan()
         // OffscreenWork();
 
         // MeshToSdf
-        
     }
+
+    RecordMainCommandBuffer();
 }
 // 从modelPath提取模型名称 (去除路径和扩展名)
 std::string Renderer::GetModelNameFromPath(const std::string &modelPath)
@@ -3088,6 +3089,27 @@ void Renderer::Cleanup()
     m_analyticalSDFGeneration.cleanup(m_device);
     m_multiViewDepthSDF4C.cleanup(m_device); // 新的多视角深度SDF方案清理
 
+    if (m_pipelines.cameraOverlay != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(m_device, m_pipelines.cameraOverlay, nullptr);
+        m_pipelines.cameraOverlay = VK_NULL_HANDLE;
+    }
+    if (m_pipelineLayouts.cameraOverlay != nullptr)
+    {
+        vkDestroyPipelineLayout(m_device, m_pipelineLayouts.cameraOverlay, nullptr);
+        m_pipelineLayouts.cameraOverlay = nullptr;
+    }
+    if (m_descriptorSetLayouts.cameraOverlay != nullptr)
+    {
+        vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayouts.cameraOverlay, nullptr);
+        m_descriptorSetLayouts.cameraOverlay = nullptr;
+    }
+    if (m_framebuffers.CameraOverlay != nullptr)
+    {
+        delete m_framebuffers.CameraOverlay;
+        m_framebuffers.CameraOverlay = nullptr;
+    }
+
     // cmd buffer
     vkDestroyCommandPool(m_device, m_commandPool, nullptr);
 
@@ -3671,6 +3693,25 @@ void Renderer::RecordMainCommandBuffer()
     vkCmdEndRenderPass(m_offScreenCmdBuffer);
     EndDebugLabel(m_offScreenCmdBuffer);
 
+    // Camera overlay pass
+    renderPassBeginInfo.renderPass = m_framebuffers.CameraOverlay->renderPass;
+    renderPassBeginInfo.framebuffer = m_framebuffers.CameraOverlay->framebuffer;
+    renderPassBeginInfo.clearValueCount = 1;
+    BeginDebugLabel(m_offScreenCmdBuffer, "Camera Overlay Pass", 0.0f, 0.5f, 1.0f);
+    vkCmdBeginRenderPass(m_offScreenCmdBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+    viewport = Init::viewport((float)m_framebuffers.CameraOverlay->width, (float)m_framebuffers.CameraOverlay->height, 0.0f, 1.0f);
+    scissor = Init::rect2D(m_framebuffers.CameraOverlay->width, m_framebuffers.CameraOverlay->height, 0, 0);
+    vkCmdSetViewport(m_offScreenCmdBuffer, 0, 1, &viewport);
+    vkCmdSetScissor(m_offScreenCmdBuffer, 0, 1, &scissor);
+    vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.cameraOverlay);
+    vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.cameraOverlay, 0, 1,
+                            &m_descriptorSets.cameraOverlay, 0, NULL);
+    vkCmdPushConstants(m_offScreenCmdBuffer, m_pipelineLayouts.cameraOverlay, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                       sizeof(CameraOverlayPass::PushConstants), &m_cameraOverlayPass.pushConstants);
+    vkCmdDraw(m_offScreenCmdBuffer, 3, 1, 0, 0);
+    vkCmdEndRenderPass(m_offScreenCmdBuffer);
+    EndDebugLabel(m_offScreenCmdBuffer);
+
     // Release barrier
     if (m_index.graphics != m_index.compute)
     {
@@ -3790,6 +3831,24 @@ void Renderer::SetupToneMappingPass()
     // Create sampler to sample from the color attachments
     Tool::CheckResult(m_framebuffers.ToneMapping->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
     Tool::CheckResult(m_framebuffers.ToneMapping->CreateRenderPass());
+}
+
+void Renderer::SetupCameraOverlayPass()
+{
+    m_framebuffers.CameraOverlay = new FramebufferManager(m_vulkanDevice);
+    m_framebuffers.CameraOverlay->width = m_width;
+    m_framebuffers.CameraOverlay->height = m_height;
+
+    AttachmentCreateInfo attachmentCI{};
+    attachmentCI.width = m_framebuffers.CameraOverlay->width;
+    attachmentCI.height = m_framebuffers.CameraOverlay->height;
+    attachmentCI.layerCount = 1;
+    attachmentCI.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    attachmentCI.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    m_framebuffers.CameraOverlay->AddAttachment(attachmentCI);
+
+    Tool::CheckResult(m_framebuffers.CameraOverlay->CreateSampler(VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE));
+    Tool::CheckResult(m_framebuffers.CameraOverlay->CreateRenderPass());
 }
 void Renderer::SetupBloomPass()
 {
@@ -4413,6 +4472,19 @@ void Renderer::SetupDescriptors()
     descriptorLayoutCI.bindingCount = 3;
     Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.toneMapping));
 
+    setLayoutBindings = {
+        // Binding 0: Camera info UBO
+        Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 0),
+        // Binding 1: Previous pass color buffer
+        Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1),
+        // Binding 2: GPU camera list (positions)
+        Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 2),
+        // Binding 3: Active camera count
+        Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 3),
+    };
+    descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
+    Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.cameraOverlay));
+
     // Sets
     std::vector<VkWriteDescriptorSet> writeDescriptorSets;
     VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.composition, 1);
@@ -4443,8 +4515,8 @@ void Renderer::SetupDescriptors()
     //		m_framebuffers.shadow->attachments[0].view,
     //		VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
 
-    VkDescriptorImageInfo texDescriptorToneMapping = Init::descriptorImageInfo(
-        m_framebuffers.ToneMapping->sampler, m_framebuffers.ToneMapping->attachments[0].view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    VkDescriptorImageInfo texDescriptorCameraOverlay = Init::descriptorImageInfo(
+        m_framebuffers.CameraOverlay->sampler, m_framebuffers.CameraOverlay->attachments[0].view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     VkDescriptorImageInfo texDescriptorSkyBox = Init::descriptorImageInfo(m_framebuffers.SkyBox->sampler, m_framebuffers.SkyBox->attachments[0].view,
                                                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -4462,7 +4534,7 @@ void Renderer::SetupDescriptors()
     allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.FXAA, 1);
     Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.FXAA));
     writeDescriptorSets = {Init::writeDescriptorSet(m_descriptorSets.FXAA, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_uniformBuffers.FXAA.descriptor),
-                           Init::writeDescriptorSet(m_descriptorSets.FXAA, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &texDescriptorToneMapping)};
+                           Init::writeDescriptorSet(m_descriptorSets.FXAA, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &texDescriptorCameraOverlay)};
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 
     // offscreen
@@ -4537,6 +4609,42 @@ void Renderer::SetupBlurDescriptorSets()
                                  &m_uniformBuffers.blurParams.descriptor), // Binding 0: Fragment shader uniform buffer
         Init::writeDescriptorSet(m_descriptorSets.blurHorz, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
                                  &texDescriptorVert), // Binding 1: Fragment shader texture sampler
+    };
+    vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+}
+void Renderer::AllocateDescriptorSetCameraOverlay()
+{
+    if (m_descriptorSetLayouts.cameraOverlay == nullptr)
+    {
+        return;
+    }
+
+    if (m_descriptorSets.cameraOverlay == nullptr)
+    {
+        VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.cameraOverlay, 1);
+        Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.cameraOverlay));
+    }
+
+    UpdateCameraOverlayDescriptorSet();
+}
+
+void Renderer::UpdateCameraOverlayDescriptorSet()
+{
+    if (m_descriptorSets.cameraOverlay == nullptr || m_framebuffers.ToneMapping == nullptr || m_framebuffers.CameraOverlay == nullptr)
+    {
+        return;
+    }
+
+    VkDescriptorImageInfo sourceColor = Init::descriptorImageInfo(
+        m_framebuffers.ToneMapping->sampler, m_framebuffers.ToneMapping->attachments[0].view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
+        Init::writeDescriptorSet(m_descriptorSets.cameraOverlay, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_sharedBuffers.ConstBufferCamera.descriptor),
+        Init::writeDescriptorSet(m_descriptorSets.cameraOverlay, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &sourceColor),
+        Init::writeDescriptorSet(m_descriptorSets.cameraOverlay, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2,
+                                 &m_multiViewDepthSDF4C.gpuPreparation.cameraMatricesBuffer.descriptor),
+        Init::writeDescriptorSet(m_descriptorSets.cameraOverlay, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3,
+                                 &m_multiViewDepthSDF4C.gpuPreparation.activeCameraCountBuffer.descriptor),
     };
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
@@ -4663,6 +4771,8 @@ void Renderer::PreparePipelines()
     // post
     pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.toneMapping, 1);
     Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.toneMapping));
+
+    PreparePipelineCameraOverlay();
 
     // bloom
     pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.blur, 1);
@@ -4910,6 +5020,58 @@ void Renderer::PreparePipelineLighting()
     VkPipelineVertexInputStateCreateInfo emptyInputState = Init::pipelineVertexInputStateCreateInfo();
     pipelineCI.pVertexInputState = &emptyInputState;
     Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.composition));
+}
+void Renderer::PreparePipelineCameraOverlay()
+{
+    if (m_pipelineLayouts.cameraOverlay != nullptr)
+    {
+        vkDestroyPipelineLayout(m_device, m_pipelineLayouts.cameraOverlay, nullptr);
+        m_pipelineLayouts.cameraOverlay = nullptr;
+    }
+    if (m_pipelines.cameraOverlay != nullptr)
+    {
+        vkDestroyPipeline(m_device, m_pipelines.cameraOverlay, nullptr);
+        m_pipelines.cameraOverlay = nullptr;
+    }
+
+    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.cameraOverlay, 1);
+    VkPushConstantRange pushConstantRange =
+        Init::pushConstantRange(VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(CameraOverlayPass::PushConstants), 0);
+    pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+    pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
+    Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.cameraOverlay));
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssemblyState =
+        Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
+    VkPipelineRasterizationStateCreateInfo rasterizationState =
+        Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE, 0);
+    VkPipelineColorBlendAttachmentState blendAttachmentState = Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE);
+    VkPipelineColorBlendStateCreateInfo colorBlendState = Init::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
+    VkPipelineDepthStencilStateCreateInfo depthStencilState =
+        Init::pipelineDepthStencilStateCreateInfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL);
+    VkPipelineViewportStateCreateInfo viewportState = Init::pipelineViewportStateCreateInfo(1, 1, 0);
+    VkPipelineMultisampleStateCreateInfo multisampleState = Init::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_1_BIT, 0);
+    std::vector<VkDynamicState> dynamicStateEnables = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamicState = Init::pipelineDynamicStateCreateInfo(dynamicStateEnables);
+    std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
+
+    VkGraphicsPipelineCreateInfo pipelineCI = Init::pipelineCreateInfo(m_pipelineLayouts.cameraOverlay, m_framebuffers.CameraOverlay->renderPass);
+    pipelineCI.pInputAssemblyState = &inputAssemblyState;
+    pipelineCI.pRasterizationState = &rasterizationState;
+    pipelineCI.pColorBlendState = &colorBlendState;
+    pipelineCI.pMultisampleState = &multisampleState;
+    pipelineCI.pViewportState = &viewportState;
+    pipelineCI.pDepthStencilState = &depthStencilState;
+    pipelineCI.pDynamicState = &dynamicState;
+    pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
+    pipelineCI.pStages = shaderStages.data();
+
+    VkPipelineVertexInputStateCreateInfo emptyInputState = Init::pipelineVertexInputStateCreateInfo();
+    pipelineCI.pVertexInputState = &emptyInputState;
+
+    shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Post/ToneMapping.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+    shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Post/CameraOverlay.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+    Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.cameraOverlay));
 }
 /// @brief 全屏三角形->scene.textures.lutBrdf.image
 void Renderer::GenerateBRDFLUT()
@@ -7282,6 +7444,8 @@ void Renderer::UpdateCameraInfos()
     m_cameraInfosData.invProj = glm::inverse(m_camera.matrices.perspective);
     m_cameraInfosData.invProjView = glm::inverse(m_cameraInfosData.projView);
     m_cameraInfosData.cameraWorldPos = glm::vec4(m_camera.position * glm::vec3(-1.0f, 1.0f, -1.0f), 1.0f);
+    m_cameraInfosData.screenSize = glm::vec2(float(m_width), float(m_height));
+    m_cameraInfosData.invScreenSize = glm::vec2(1.0f / float(m_width), 1.0f / float(m_height));
     memcpy(m_sharedBuffers.ConstBufferCamera.mapped, &m_cameraInfosData, sizeof(CameraInfos));
 }
 
@@ -8873,7 +9037,7 @@ void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
 
         // 计算dispatch尺寸（使用GRID_SIZE=32作为基础）
         uint32_t gridSize = config_->Sdf.VoxelResolution >> static_cast<uint32_t>(level); // Level 3: 4, Level 2: 8, Level 1: 16
-        uint32_t dispatchX = (gridSize + 3) / 4;                                     // 4x4x4 workgroup
+        uint32_t dispatchX = (gridSize + 3) / 4;                                          // 4x4x4 workgroup
         uint32_t dispatchY = (gridSize + 3) / 4;
         uint32_t dispatchZ = (gridSize + 3) / 4;
 
@@ -9527,7 +9691,7 @@ void Renderer::ExecuteVoxelizationFillPass(VkCommandBuffer cmd)
     // === 执行Compute Shader ===
     // 方案要求：64x64个线程，每个线程沿Z轴扫描VoxelCounterTexture
     uint32_t groupSize = (config_->Sdf.VoxelResolution + 7) / 8; // 8x8 线程组 (XY平面)
-    vkCmdDispatch(cmd, groupSize, groupSize, 1);            // Z轴扫描，因此Z维度为1
+    vkCmdDispatch(cmd, groupSize, groupSize, 1);                 // Z轴扫描，因此Z维度为1
 }
 
 /// @brief 预录制统一GPU管线所有命令 - 只录制一次，提升性能
@@ -9988,6 +10152,8 @@ void Renderer::InitializeGPUDataPreparation4C()
 
     // 创建IndirectCommandGeneration计算管线
     CreateIndirectCommandGenerationPipeline();
+
+    AllocateDescriptorSetCameraOverlay();
 
     printf("GPU data preparation resources initialized\n");
 }
@@ -10594,7 +10760,7 @@ void Renderer::ExecuteMultiViewDepthRendering(VkCommandBuffer cmd)
     // Use MAX_CAMERAS to ensure consistent behavior (no GPU readback)
 
     depthPass.renderParams.ModelMatrix = m_glTFModel.GetModelToStandardTransform();
-    depthPass.renderParams.projectionMatrix = glm::perspective(glm::radians(90.0f), 1.0f, 0.001f, 2.0f); // 
+    depthPass.renderParams.projectionMatrix = glm::perspective(glm::radians(90.0f), 1.0f, 0.001f, 2.0f); //
     depthPass.renderParams.totalPartCount = 1;                                                           // Only use first part
 
     vkCmdPushConstants(cmd, depthPass.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
@@ -11161,7 +11327,7 @@ void Renderer::AllocateDescriptorSetSdfAO()
 
     // Decide which SDF to use based on config
     VkDescriptorImageInfo sdfDescriptor;
-    if (config_->Sdf.SdfAoUseSdfKind==Config::SdfKind::BruteForce)
+    if (config_->Sdf.SdfAoUseSdfKind == Config::SdfKind::BruteForce)
     {
         // Load brute force SDF from raw file
         std::string sdfFileName = GenerateSdfFileName("BruteSdf");
@@ -11196,7 +11362,7 @@ void Renderer::AllocateDescriptorSetSdfAO()
     }
     else if (config_->Sdf.SdfAoUseSdfKind == Config::SdfKind::JFA)
     {
-        sdfDescriptor =  meshToSdfOperator_->GetSdfTexture()->descriptor;
+        sdfDescriptor = meshToSdfOperator_->GetSdfTexture()->descriptor;
     }
     else if (config_->Sdf.SdfAoUseSdfKind == Config::SdfKind::Ngp)
     {
@@ -11544,7 +11710,7 @@ void Renderer::ExportAOData()
     std::string modelName = GetModelNameFromPath(config_->modelPath);
     uint32_t resolution = config_->Sdf.VoxelResolution;
     modelName = modelName + "_" + std::to_string(resolution) + "_" + "AO";
-    if (config_->Sdf.SdfAoUseSdfKind== Config::SdfKind::BruteForce)
+    if (config_->Sdf.SdfAoUseSdfKind == Config::SdfKind::BruteForce)
     {
         modelName += "_brute";
     }

@@ -1,6 +1,6 @@
 {
     "modelPath": [
-        "Models/barrel/barrel.gltf"
+        "Models/bud/rock.gltf"
     ],
     "shaderPath": [
         "BlinnPhong/Basic.Vert.spv",

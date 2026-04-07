@@ -136,6 +136,7 @@ struct Pipelines
 	VkPipeline shadow{VK_NULL_HANDLE};
 	VkPipeline skyBox{VK_NULL_HANDLE};
 	VkPipeline toneMapping{VK_NULL_HANDLE};
+	VkPipeline cameraOverlay{VK_NULL_HANDLE};
 	VkPipeline blurVert{VK_NULL_HANDLE};
 	VkPipeline blurHorz{VK_NULL_HANDLE};
 	VkPipeline FXAA{nullptr};
@@ -148,6 +149,7 @@ struct DescriptorSets
 	VkDescriptorSet shadow{VK_NULL_HANDLE};
 	VkDescriptorSet skyBox{VK_NULL_HANDLE};
 	VkDescriptorSet toneMapping{nullptr};
+	VkDescriptorSet cameraOverlay{nullptr};
 	VkDescriptorSet blurVert{nullptr};
 	VkDescriptorSet blurHorz{nullptr};
 	VkDescriptorSet FXAA{nullptr};
@@ -188,6 +190,7 @@ struct PipelineLayouts
 	VkPipelineLayout skyBox;
 	VkPipelineLayout shadow;
 	VkPipelineLayout toneMapping;
+	VkPipelineLayout cameraOverlay{nullptr};
 	VkPipelineLayout blur;
 	VkPipelineLayout FXAA;
 };
@@ -198,6 +201,7 @@ struct DescriptorSetLayouts
 	VkDescriptorSetLayout composition{nullptr};
 	VkDescriptorSetLayout skyBox{nullptr};
 	VkDescriptorSetLayout toneMapping{nullptr};
+	VkDescriptorSetLayout cameraOverlay{nullptr};
 	VkDescriptorSetLayout blur{nullptr};
 	VkDescriptorSetLayout FXAA{nullptr};
 };
@@ -211,6 +215,7 @@ struct Framebuffers
 	FramebufferManager *bloom{nullptr};
 	FramebufferManager *bloom1{nullptr};
 	FramebufferManager *ToneMapping{nullptr};
+	FramebufferManager *CameraOverlay{nullptr};
 	FramebufferManager *SkyBox{nullptr};
 };
 
@@ -447,6 +452,7 @@ private:
 	void SetupFinalPass();
 	void SetupBloomPass();
 	void SetupToneMappingPass();
+	void SetupCameraOverlayPass();
 
 	// PBR
 	void GenerateBRDFLUT();
@@ -455,6 +461,9 @@ private:
 	void UpdateUniformBufferPost();
 	void UpdateUniformBuffersBlur();
 	void UpdateUniformBufferFXAA();
+	void AllocateDescriptorSetCameraOverlay();
+	void UpdateCameraOverlayDescriptorSet();
+	void PreparePipelineCameraOverlay();
 	struct PostSettings
 	{
 		bool bloom{true};
@@ -689,6 +698,20 @@ private:
 		{
 		} CBufferData;
 	} m_toneMappingPass;
+
+	struct CameraOverlayPass
+	{
+		struct PushConstants
+		{
+			alignas(16) glm::vec4 markerColor{0.12f, 0.72f, 1.0f, 1.0f};
+			alignas(16) glm::vec4 highlightColor{1.0f, 1.0f, 1.0f, 1.0f};
+			// x: base radius in pixels at unit depth
+			// y: highlight strength
+			// z: shininess
+			// w: shape mode (0 = sphere, 1 = camera icon)
+			alignas(16) glm::vec4 params{22.0f, 0.95f, 32.0f, 0.0f};
+		} pushConstants;
+	} m_cameraOverlayPass;
 
 private:
 	struct BloomPass

@@ -1,5 +1,4 @@
 // SDFFusion.Comp.hlsl
-// Stage 4C SDF Fusion: Compute Shader for 3D reconstruction
 // Converts multi-view depth maps to 3D signed distance field
 
 // SDF Grid Configuration
@@ -22,7 +21,7 @@ struct PushConstants {
 };
 [[vk::push_constant]] PushConstants pushConsts;
 
-// Resource bindings (与其他compute shader一致的register语法)
+// Resource bindings
 SamplerState depthSampler : register(s0);                  // Binding 0: Sampler
 TextureCubeArray depthCubemapArray : register(t1);         // Binding 1: Sampled Image (Cube Array) 
 RWTexture3D<float> finalSDFTexture : register(u2);         // Binding 2: Storage Image (3D SDF output)

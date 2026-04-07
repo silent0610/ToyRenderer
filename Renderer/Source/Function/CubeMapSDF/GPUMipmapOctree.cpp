@@ -606,29 +606,7 @@ void GPUMipmapOctree::InsertMemoryBarrier(VkCommandBuffer commandBuffer, uint32_
                          &barrier);
 }
 
-// 清理：删除有问题的批量构建函数，回归原始的可靠实现
 
-// Fast version without per-level barriers
-void GPUMipmapOctree::BuildMipLevelFast(VkCommandBuffer commandBuffer, uint32_t level)
-{
-    uint32_t inputSize = (level == 0) ? m_baseSize : CalculateMipSize(level - 1);
-    uint32_t outputSize = CalculateMipSize(level);
-
-    // Update uniform buffer
-    LevelInfo levelInfo = {level, inputSize, outputSize, m_baseSize};
-    char* bufferPtr = static_cast<char*>(m_uniformBufferMapped);
-    memcpy(bufferPtr + (level * sizeof(LevelInfo)), &levelInfo, sizeof(LevelInfo));
-
-    // Bind descriptor set
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout, 0, 1, &m_descriptorSets[level], 0, nullptr);
-
-    // Dispatch compute shader
-    uint32_t groupsX = std::max(1u, (outputSize + 7) / 8);
-    uint32_t groupsY = std::max(1u, (outputSize + 7) / 8);
-    uint32_t groupsZ = std::max(1u, (outputSize + 7) / 8);
-
-    vkCmdDispatch(commandBuffer, groupsX, groupsY, groupsZ);
-}
 
 // Batch barrier for multiple levels
 void GPUMipmapOctree::InsertBatchBarrier(VkCommandBuffer commandBuffer, uint32_t startLevel, uint32_t endLevel)
@@ -829,92 +807,7 @@ std::vector<uint32_t> GPUMipmapOctree::ReadMipLevel(uint32_t level)
     return result;
 }
 
-// Data readback helper implementations
-void GPUMipmapOctree::CreateStagingBuffer(VkDeviceSize size, VkBuffer& buffer, VkDeviceMemory& memory)
-{
-    // Buffer creation
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = size;
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    if (vkCreateBuffer(m_device->logicalDevice, &bufferInfo, nullptr, &buffer) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create staging buffer");
-    }
-
-    // Memory allocation
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(m_device->logicalDevice, buffer, &memRequirements);
-
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex =
-        m_device->GetMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-    if (vkAllocateMemory(m_device->logicalDevice, &allocInfo, nullptr, &memory) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to allocate staging buffer memory");
-    }
-
-    vkBindBufferMemory(m_device->logicalDevice, buffer, memory, 0);
-}
-
-void GPUMipmapOctree::CopyImageToBuffer(uint32_t level, VkBuffer stagingBuffer, uint32_t size)
-{
-    VkCommandBuffer commandBuffer = m_device->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-
-    // Transition image layout to transfer source
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = m_mipLevels[level].image;
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
-    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-
-    // Copy image to buffer
-    VkBufferImageCopy region{};
-    region.bufferOffset = 0;
-    region.bufferRowLength = 0;
-    region.bufferImageHeight = 0;
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel = 0;
-    region.imageSubresource.baseArrayLayer = 0;
-    region.imageSubresource.layerCount = 1;
-    region.imageOffset = {0, 0, 0};
-    region.imageExtent = {size, size, size};
-
-    vkCmdCopyImageToBuffer(commandBuffer, m_mipLevels[level].image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1, &region);
-
-    // Transition back to general layout
-    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-
-    vkEndCommandBuffer(commandBuffer);
-}
-
-void GPUMipmapOctree::WaitForTransferComplete()
-{
-    // Simple implementation - just wait for device idle
-    // In a production system, you'd use more sophisticated synchronization
-    vkDeviceWaitIdle(m_device->logicalDevice);
-}
 
 void GPUMipmapOctree::ClearAllMipLevels()
 {

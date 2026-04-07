@@ -12,7 +12,7 @@ module;
 #define TINYGLTF_NO_STB_IMAGE_WRITE
 #include "vulkan/vulkan.h"
 #include "tiny_gltf.h"
-
+#include <cstdint>
 export module VkglTFModel;
 import DeviceMod;
 namespace vkglTF
