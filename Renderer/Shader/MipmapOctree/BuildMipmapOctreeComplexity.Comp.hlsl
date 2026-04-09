@@ -136,8 +136,8 @@ void main(uint3 id : SV_DispatchThreadID) {
 
     float localComplex = CalculateValue(solidCount,emptyCount,mixedCount);
     float inherited = parentComplexity / 8.0;  // 子层平均复杂度
-    float alpha = 0.75;                       // 局部占权重
-    float finalComplex =  localComplex +inherited;
+     
+    float finalComplex =  localComplex + inherited;
     
     uint complexity = uint(finalComplex);
 

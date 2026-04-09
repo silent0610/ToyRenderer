@@ -9200,7 +9200,7 @@ void Renderer::ExecuteGPUDataPreparation(VkCommandBuffer cmd)
     // 推送参数：相机数限制 + 坐标变换参数 (与voxelization一致)
     struct CameraMatrixPushConstants
     {
-        uint32_t maxCameraCount{}; // 最大相机数限制 (10)
+        uint32_t maxCameraCount{}; // 最大相机数限制 
         glm::vec3 modelCenter;     // 模型中心，与voxelization一致
         float halfSizeWithMargin;  // 包含边距的半尺寸，与voxelization一致
     } cameraPC;

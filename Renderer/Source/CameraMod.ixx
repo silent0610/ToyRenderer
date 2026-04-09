@@ -124,7 +124,7 @@ public:
 		{
 			matrices.perspective[1][1] *= -1.0f;
 		}
-		if (matrices.view != currentMatrix)
+		if (matrices.perspective != currentMatrix)
 		{
 			updated = true;
 		}

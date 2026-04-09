@@ -29,7 +29,7 @@ struct PushConstants {
 };
 [[vk::push_constant]] PushConstants pushConsts;
 
-[numthreads(32, 1, 1)]
+[numthreads(256, 1, 1)]
 void main(uint3 id : SV_DispatchThreadID) {
     uint nodeIndex = id.x;
     
