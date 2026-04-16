@@ -31,23 +31,24 @@ struct ModelMatrix {
     float4x4 matrix;        // 模型变换矩阵
 };
 
-// Vulkan右手坐标系的立方体贴图6个面的标准方向向量
+// Standard cubemap face order:
+// +X, -X, +Y, -Y, +Z, -Z
 static const float3 CUBE_DIRECTIONS[6] = {
-    float3(-1,  0,  0),  // +X面：看向-X方向（左）
-    float3(1,   0,  0),  // -X面：看向+X方向（右）
-    float3(0,   1,  0),  // +Y面：看向+Y方向（下，Vulkan Y向下）  
-    float3(0,  -1,  0),  // -Y面：看向-Y方向（上，Vulkan Y向下）
-    float3(0,   0, -1),  // +Z面：看向-Z方向（前）
-    float3(0,   0,  1)   // -Z面：看向+Z方向（后）
+    float3( 1,  0,  0),  // +X
+    float3(-1,  0,  0),  // -X
+    float3( 0,  1,  0),  // +Y
+    float3( 0, -1,  0),  // -Y
+    float3( 0,  0,  1),  // +Z
+    float3( 0,  0, -1)   // -Z
 };
 
 static const float3 CUBE_UP_VECTORS[6] = {
-    float3(0, -1,  0),   // +X面：向右看时，上方向为-Y（Vulkan坐标系Y向下）
-    float3(0, -1,  0),   // -X面：向左看时，上方向为-Y
-    float3(0,  0, -1),   // +Y面：向上看时，上方向为-Z（前方）
-    float3(0,  0,  1),   // -Y面：向下看时，上方向为+Z（后方）
-    float3(0, -1,  0),   // +Z面：向前看时，上方向为-Y
-    float3(0, -1,  0)    // -Z面：向后看时，上方向为-Y
+    float3(0, -1,  0),   // +X
+    float3(0, -1,  0),   // -X
+    float3(0,  0,  1),   // +Y
+    float3(0,  0, -1),   // -Y
+    float3(0, -1,  0),   // +Z
+    float3(0, -1,  0)    // -Z
 };
 
 // 资源绑定
@@ -115,6 +116,7 @@ VertexOutput main(VertexInput input, uint instanceID : SV_InstanceID) {
     float3 upDir = CUBE_UP_VECTORS[faceIndex];
 
     float4x4 viewMatrix = BuildLookAtMatrix(cameraPos, cameraPos + lookDir, upDir);
+
 
     // 5. 计算世界坐标
     float4 worldPos = mul(pushConsts.ModelMatrix, float4(input.position, 1.0));

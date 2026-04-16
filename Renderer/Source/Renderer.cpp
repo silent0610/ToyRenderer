@@ -26,6 +26,7 @@ Renderer::Renderer(Config *config) : config_(config)
     useCountSort_ = config_->Sdf.EnableCountSort != 0;
     m_enableCameraOverlay = config_->Sdf.EnableCameraOverlay != 0;
     m_showMultiviewIsoSurface = config_->Sdf.EnableMultiviewIsoSurface != 0;
+    m_enableSelectionScoreOctreePass = config_->Sdf.EnableSelectionScoreOctreePass != 0;
     m_sdfIsoSurfacePass.pushConstants.volumeMin = glm::vec4(-config_->Sdf.WorldSize * 0.5f, -config_->Sdf.WorldSize * 0.5f,
                                                             -config_->Sdf.WorldSize * 0.5f, 0.0f);
     m_sdfIsoSurfacePass.pushConstants.volumeMax = glm::vec4(config_->Sdf.WorldSize * 0.5f, config_->Sdf.WorldSize * 0.5f,
@@ -252,6 +253,7 @@ void Renderer::InitVulkan()
         if (!m_gpuMipmapOctree)
         {
             m_gpuMipmapOctree = std::make_unique<GPUMipmapOctree>(m_vulkanDevice, config_->Sdf.SdfMode, config_->Sdf.VoxelResolution, false);
+            m_gpuMipmapOctree->SetScorePassEnabled(m_enableSelectionScoreOctreePass);
         }
         // SetupGpuOctreePass();
         SetupVoxelizationPass();
@@ -1809,6 +1811,12 @@ void Renderer::SetUI(UIOverlay *overlay)
             {
                 SetCameraOverlayEnabled(cameraOverlayEnabled);
                 RecordMainCommandBuffer();
+            }
+
+            bool selectionScorePassEnabled = m_enableSelectionScoreOctreePass;
+            if (overlay->CheckBox("Enable S(n) Octree Pass", &selectionScorePassEnabled))
+            {
+                SetSelectionScoreOctreePassEnabled(selectionScorePassEnabled);
             }
 
             bool isoSurfaceEnabled = m_showMultiviewIsoSurface;
@@ -9840,6 +9848,25 @@ void Renderer::SetCameraOverlayEnabled(bool enabled)
     }
 }
 
+void Renderer::SetSelectionScoreOctreePassEnabled(bool enabled)
+{
+    if (m_enableSelectionScoreOctreePass != enabled)
+    {
+        m_enableSelectionScoreOctreePass = enabled;
+        if (m_gpuMipmapOctree)
+        {
+            m_gpuMipmapOctree->SetScorePassEnabled(enabled);
+        }
+
+        printf("Switched S(n) Octree Pass %s\n", enabled ? "Enabled" : "Disabled");
+        if (m_unifiedGPUPipeline.commandsRecorded)
+        {
+            m_unifiedGPUPipeline.commandsRecorded = false;
+            printf("Pipeline commands will be re-recorded with new S(n) octree mode\n");
+        }
+    }
+}
+
 /// @brief 执行阶段三：实体节点筛选
 /// @brief 更新SolidNodeSelection描述符集的mipmap纹理绑定
 void Renderer::UpdateSolidNodeSelectionDescriptorSet()
@@ -11073,7 +11100,7 @@ void Renderer::ExecuteMultiViewDepthRendering(VkCommandBuffer cmd)
     // Use MAX_CAMERAS to ensure consistent behavior (no GPU readback)
 
     depthPass.renderParams.ModelMatrix = m_glTFModel.GetModelToStandardTransform();
-    depthPass.renderParams.projectionMatrix = glm::perspective(glm::radians(90.0f), 1.0f, 0.001f, 2.0f); //
+    depthPass.renderParams.projectionMatrix = glm::perspective(glm::radians(90.0f), 1.0f, 0.0001f, 2.0f); //
     depthPass.renderParams.totalPartCount = 1;                                                           // Only use first part
 
     vkCmdPushConstants(cmd, depthPass.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,

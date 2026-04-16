@@ -174,7 +174,7 @@ def visualize_2d_slices(sdf_volume, slice_positions=[0.25, 0.5, 0.75]):
         axes = [axes]
 
     abs_max = np.max(np.abs(sdf_flipped))
-    vmin, vmax = -abs_max, abs_max
+    vmin, vmax = -1.0, 1.0
 
     for i, pos in enumerate(slice_positions):
         z_index = int(pos * resolution)
@@ -320,7 +320,7 @@ def visualize_3d_isosurface(sdf_volume,
         iso_candidates = [iso_value]
         # 如果是 0，增加一些容错值
         if abs(iso_value) < 1e-6:
-            iso_candidates += [0.05, 0.1, -0.1]
+            iso_candidates += [0.03, 0.05, 0.1, -0.1]
             
         surface = None
         used_iso = iso_value
@@ -363,7 +363,7 @@ def visualize_3d_isosurface(sdf_volume,
                 plotter.camera_position = camera_config
         else:
             plotter.enable_parallel_projection()
-            plotter.view_xy()
+            plotter.view_yz()
             plotter.camera.SetViewUp(0.0, 1.0, 0.0)
         plotter.enable_parallel_projection()
         print(f"3D可视化准备就绪: ISO={used_iso}, Points={surface.n_points}")
@@ -851,7 +851,7 @@ def main():
     # meshToSdf = "duck_4k_64_JumpFlood.raw"
     # multiViewSdf = "duck_4k_64_Multview.raw"
     
-    modelName = "bunny4k_"
+    modelName = "model1_"
     resolution = 128
     modelName = modelName + str(resolution) +"_"
     methodName1 = "BruteSdf"
@@ -884,14 +884,18 @@ def main():
     # data6 = abs_sdf(data6) # HEat
     diffSdf = data4 - dataTrue
    
-    visualize_2d_slices(diffSdf,[0.25,0.5,0.75])
-    # # visualize_2d_slices(data4,[0.5,0.5,0.5])
+    visualize_2d_slices(diffSdf,[0.25,0.51,0.75])
+    # visualize_2d_slices(diffSdf,[0.5,0.5,0.5])
     # visualize_error_slices(diffSdf,[0.25,0.5,0.75])
-    # # compare_sdfao_images("happy_15k_128_AO1.png","happy_15k_128_AO_brute1.png")
+    # compare_sdfao_images("happy_15k_128_AO1.png","happy_15k_128_AO_brute1.png")
     # # compare_sdf_data(data3,dataTrue,"Analytical")
-    compare_sdf_data(data4,dataTrue,"multiview")
+    # compare_sdf_data(data2,dataTrue,"multiview")
+    # compare_sdf_data(data4,dataTrue,"multiview")
+    # # visualize_3d_isosurface(dataTrue,resolution/2)
+    # # visualize_3d_isosurface(data2,resolution/2)
+    visualize_3d_isosurface(dataTrue,resolution/2)
+    visualize_3d_isosurface(data2,resolution/2)
     visualize_3d_isosurface(data4,resolution/2)
-    
     # Visualize(dataTrue,data2,data3,data4,resolution)
     # save_sdf_data(data6,file6)
 

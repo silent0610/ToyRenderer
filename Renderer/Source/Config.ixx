@@ -63,6 +63,7 @@ export struct Config
         uint32_t EnableCountSort{1};
         uint32_t EnableCameraOverlay{1};
         uint32_t EnableMultiviewIsoSurface{0};
+        uint32_t EnableSelectionScoreOctreePass{0};
         uint32_t SdfResolution{64};
 	};
 	SdfConfig Sdf;

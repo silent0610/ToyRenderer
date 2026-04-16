@@ -6,9 +6,9 @@ import Logger;
 
 MeshToSdf::MeshToSdf() : device_{nullptr}, queue_(VK_NULL_HANDLE), currentMesh_(nullptr), sdfTexture_(nullptr)
 {
-    //sdfParam_ = {};
+    // sdfParam_ = {};
 }
-void MeshToSdf::Initialize(OldVulkanDevice* device, VkQueue queue, VkDescriptorPool descriptorPool, vkglTF::Model* mesh, SdfParam& param)
+void MeshToSdf::Initialize(OldVulkanDevice *device, VkQueue queue, VkDescriptorPool descriptorPool, vkglTF::Model *mesh, SdfParam &param)
 {
     Log::Info("Initializing MeshToSdf");
     device_ = device;
@@ -142,7 +142,7 @@ void MeshToSdf::GenerateSdf(VkCommandBuffer cmd)
 
         // 计算跳跃步数
         int maxDim{sdfParam_.voxelResolution};
-        int jumpFloodStepCount{static_cast<int>(std::floor(std::log2(maxDim)) - 1)};
+        int jumpFloodStepCount{static_cast<int>(std::floor(std::log2(maxDim)))};
         bool bufferFlip{true};
         for (int i = 0; i < jumpFloodStepCount; ++i)
         {
@@ -217,7 +217,7 @@ void MeshToSdf::Cleanup()
     }
     // 销毁管线、布局、缓冲区、纹理等
 }
-Texture3D* MeshToSdf::GetSdfTexture() const
+Texture3D *MeshToSdf::GetSdfTexture() const
 {
     return sdfTexture_;
 }
@@ -358,7 +358,6 @@ void MeshToSdf::UpdateDescriptorSet()
     if (currentMesh_ && currentMesh_->vertices.buffer)
     {
 
-
         VkWriteDescriptorSet vertexBufferWrite =
             Init::writeDescriptorSet(descriptor_.NormalSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, &vertexBufferInfo);
         descriptorWrites.push_back(vertexBufferWrite);
@@ -367,7 +366,6 @@ void MeshToSdf::UpdateDescriptorSet()
     // 4: ByteAddressBuffer IndexBuffer : register(t4)
     if (currentMesh_ && currentMesh_->indices.buffer)
     {
-
 
         VkWriteDescriptorSet indexBufferWrite =
             Init::writeDescriptorSet(descriptor_.NormalSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2, &indexBufferInfo);
@@ -405,7 +403,7 @@ void MeshToSdf::UpdateDescriptorSet()
 
     vkUpdateDescriptorSets(device_->logicalDevice, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 }
-void MeshToSdf::CreateSingleComputePipeline(const std::string& shaderName, VkPipeline& pipeline)
+void MeshToSdf::CreateSingleComputePipeline(const std::string &shaderName, VkPipeline &pipeline)
 {
     VkPipelineShaderStageCreateInfo shaderStage = {};
     shaderStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;

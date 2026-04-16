@@ -67,8 +67,6 @@ void main(uint3 id : SV_DispatchThreadID) {
         // c. Use TextureCubeArray built-in sampling
         // Normalize direction vector for cubemap sampling
         float3 sampleDirection = normalize(vecToVoxel);
-        sampleDirection.z *= -1;
-        sampleDirection.x *= -1;
         // For TextureCubeArray: float4(direction.xyz, arrayIndex)
         // Hardware automatically determines face and UV coordinates
         float4 cubemapCoord = float4(sampleDirection, float(cameraIndex));

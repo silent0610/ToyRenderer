@@ -460,6 +460,7 @@ private:
 	void PreparePipelineSdfIsoSurface();
 	void AllocateDescriptorSetSdfIsoSurface();
 	void SetMultiviewIsoSurfaceEnabled(bool enabled);
+    void SetSelectionScoreOctreePassEnabled(bool enabled);
 
 	// PBR
 	void GenerateBRDFLUT();
@@ -1235,10 +1236,11 @@ private:
 	} multiViewNodeSelection_;
 
 	// 版本控制：选择使用阶段三的哪个版本
-	bool useMultiview_ = false;
+    bool useMultiview_ = false;
     bool useCountSort_ = true;
     bool m_enableCameraOverlay = true;
 	bool m_showMultiviewIsoSurface = false;
+    bool m_enableSelectionScoreOctreePass = false;
 
 	// 阶段四：解析式SDF生成 (Analytical SDF Generation)
 	struct AnalyticalSDFGeneration

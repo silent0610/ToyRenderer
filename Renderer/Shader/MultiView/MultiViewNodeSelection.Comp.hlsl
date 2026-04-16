@@ -90,17 +90,7 @@ uint ReadPrevLevelTexture(uint3 coord) {
         default: return 0;
     }
 }
-uint RandomInt(uint3 coord) {
-    uint hash = coord.x + coord.y * 5 + coord.z * 9;  // 基于线程ID创建种子
-    hash = (hash ^ 61) ^ (hash >> 16);  // 位操作混合
-    hash = hash + (hash << 3);  // 扩展哈希值
-    hash = hash ^ (hash >> 4);  // 进一步混合
-    hash = hash * 0x27d4eb2f;  // 常数乘法扰动
-    hash = hash ^ (hash >> 15);  // 最后的扰动
 
-    // 映射到 [0, 255] 范围
-    return hash % 256;  // 取模256，得到0到255之间的整数
-}
 // === Main Compute Shader ===
 [numthreads(4, 4, 4)]
 void main(uint3 id : SV_DispatchThreadID) {
@@ -115,8 +105,8 @@ void main(uint3 id : SV_DispatchThreadID) {
         return;
     }
     // Step 2: Read current position node value
-    uint nodeValue = ReadCurrentLevelTexture(coord).x;
-    if(nodeValue != SOLID) return;  // Only collect SOLID nodes
+    uint2 nodeValue = ReadCurrentLevelTexture(coord).xy;
+    if(nodeValue.x != SOLID) return;  // Only collect SOLID nodes
 
     // 根据权重进行选择
     uint3 coordPrev = coord/2;
@@ -128,14 +118,11 @@ void main(uint3 id : SV_DispatchThreadID) {
     float distanceWeight = (centerOffset.x + centerOffset.y + centerOffset.z) / 1.5f; // 归一化到[0,1]
 
     // // 结合复杂度和距离权重
-    float w = lerp(0.8, 1.2, pow(distanceWeight, 1.5));  // 边缘更强
-    uint finalComplexity = (uint)min(float(complexity) * w, 255);
+    float w = lerp(0.95, 1.05, pow(distanceWeight, 1.5));  // 边缘更强
+    uint finalComplexity = (uint)min(float(complexity+nodeValue.y)*w , 255);
     if(finalComplexity<100) return;
 
-    // // 复杂度选择
-    // if(RandomInt(coord) > 2*finalComplexity) {
-    //     return;
-    // }
+
     // Step 3: Create candidate node
     SolidNode candidate = CreateNode(coord, PushConstant.CurrentLevel);
     candidate.Complexity = finalComplexity;

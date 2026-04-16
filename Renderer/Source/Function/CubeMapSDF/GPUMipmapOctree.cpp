@@ -8,10 +8,12 @@ module GPUMipmapOctreeMod;
 import std;
 import ToolMod;
 import Logger;
-GPUMipmapOctree::GPUMipmapOctree(OldVulkanDevice* device, uint32_t mode, uint32_t baseSize, bool useRandom)
+GPUMipmapOctree::GPUMipmapOctree(OldVulkanDevice *device, uint32_t mode, uint32_t baseSize, bool useRandom)
     : m_device(device), m_baseSize(baseSize), m_maxLevel(0), m_sampler(VK_NULL_HANDLE), m_uniformBuffer(VK_NULL_HANDLE),
-      m_uniformBufferMemory(VK_NULL_HANDLE), m_uniformBufferMapped(nullptr), m_buildPipeline(VK_NULL_HANDLE), m_pipelineLayout(VK_NULL_HANDLE),
-      m_descriptorSetLayout(VK_NULL_HANDLE), m_descriptorPool(VK_NULL_HANDLE)
+      m_uniformBufferMemory(VK_NULL_HANDLE), m_uniformBufferMapped(nullptr), m_scoreUniformBuffer(VK_NULL_HANDLE),
+      m_scoreUniformBufferMemory(VK_NULL_HANDLE), m_scoreUniformBufferMapped(nullptr), m_buildPipeline(VK_NULL_HANDLE),
+      m_pipelineLayout(VK_NULL_HANDLE), m_descriptorSetLayout(VK_NULL_HANDLE), m_descriptorPool(VK_NULL_HANDLE), m_scorePipeline(VK_NULL_HANDLE),
+      m_scorePipelineLayout(VK_NULL_HANDLE), m_scoreDescriptorSetLayout(VK_NULL_HANDLE), m_scoreDescriptorPool(VK_NULL_HANDLE)
 {
     // Calculate number of mip levels
     uint32_t size = baseSize;
@@ -24,7 +26,7 @@ GPUMipmapOctree::GPUMipmapOctree(OldVulkanDevice* device, uint32_t mode, uint32_
     if (useRandom)
     {
         m_maxLevel = 0;
-        
+
         // Create sampler
         VkSamplerCreateInfo samplerInfo{};
         samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -50,10 +52,13 @@ GPUMipmapOctree::GPUMipmapOctree(OldVulkanDevice* device, uint32_t mode, uint32_
         }
         return;
     }
-    CreateMipLevels();           // This creates textures and sampler
-    CreateUniformBuffer();       // Create uniform buffer for LevelInfo
-    CreateDescriptorSets();      // Create descriptor set layout first
+    CreateMipLevels(); // This creates textures and sampler
+    CreateScoreMipLevels();
+    CreateUniformBuffer();  // Create uniform buffer for LevelInfo
+    CreateDescriptorSets(); // Create descriptor set layout first
+    CreateScoreDescriptorSets();
     CreateComputePipeline(mode); // Then create pipeline using the layout
+    CreateScoreComputePipeline();
 }
 
 GPUMipmapOctree::~GPUMipmapOctree()
@@ -68,6 +73,14 @@ GPUMipmapOctree::~GPUMipmapOctree()
     {
         vkDestroyPipelineLayout(m_device->logicalDevice, m_pipelineLayout, nullptr);
     }
+    if (m_scorePipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(m_device->logicalDevice, m_scorePipeline, nullptr);
+    }
+    if (m_scorePipelineLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineLayout(m_device->logicalDevice, m_scorePipelineLayout, nullptr);
+    }
 
     // Cleanup descriptor resources
     if (m_descriptorSetLayout != VK_NULL_HANDLE)
@@ -78,6 +91,14 @@ GPUMipmapOctree::~GPUMipmapOctree()
     if (m_descriptorPool != VK_NULL_HANDLE)
     {
         vkDestroyDescriptorPool(m_device->logicalDevice, m_descriptorPool, nullptr);
+    }
+    if (m_scoreDescriptorSetLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorSetLayout(m_device->logicalDevice, m_scoreDescriptorSetLayout, nullptr);
+    }
+    if (m_scoreDescriptorPool != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorPool(m_device->logicalDevice, m_scoreDescriptorPool, nullptr);
     }
 
     // Cleanup sampler
@@ -96,9 +117,22 @@ GPUMipmapOctree::~GPUMipmapOctree()
         vkDestroyBuffer(m_device->logicalDevice, m_uniformBuffer, nullptr);
         vkFreeMemory(m_device->logicalDevice, m_uniformBufferMemory, nullptr);
     }
+    if (m_scoreUniformBuffer != VK_NULL_HANDLE)
+    {
+        if (m_scoreUniformBufferMapped)
+        {
+            vkUnmapMemory(m_device->logicalDevice, m_scoreUniformBufferMemory);
+        }
+        vkDestroyBuffer(m_device->logicalDevice, m_scoreUniformBuffer, nullptr);
+        vkFreeMemory(m_device->logicalDevice, m_scoreUniformBufferMemory, nullptr);
+    }
 
     // Cleanup mip level textures
-    for (auto& texture : m_mipLevels)
+    for (auto &texture : m_mipLevels)
+    {
+        texture.Destroy();
+    }
+    for (auto &texture : m_scoreMipLevels)
     {
         texture.Destroy();
     }
@@ -193,6 +227,65 @@ void GPUMipmapOctree::CreateMipLevels()
     ClearAllMipLevels();
 }
 
+void GPUMipmapOctree::CreateScoreMipLevels()
+{
+    m_scoreMipLevels.resize(m_maxLevel);
+
+    for (uint32_t level = 0; level < m_maxLevel; level++)
+    {
+        uint32_t mipSize = CalculateMipSize(level);
+
+        VkImageCreateInfo imageInfo{};
+        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageInfo.imageType = VK_IMAGE_TYPE_3D;
+        imageInfo.format = VK_FORMAT_R32_UINT;
+        imageInfo.extent = {mipSize, mipSize, mipSize};
+        imageInfo.mipLevels = 1;
+        imageInfo.arrayLayers = 1;
+        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imageInfo.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        if (vkCreateImage(m_device->logicalDevice, &imageInfo, nullptr, &m_scoreMipLevels[level].image) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to create score mip level texture!");
+        }
+
+        VkMemoryRequirements memRequirements;
+        vkGetImageMemoryRequirements(m_device->logicalDevice, m_scoreMipLevels[level].image, &memRequirements);
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex = m_device->GetMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        if (vkAllocateMemory(m_device->logicalDevice, &allocInfo, nullptr, &m_scoreMipLevels[level].deviceMemory) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to allocate score mip level texture memory!");
+        }
+
+        vkBindImageMemory(m_device->logicalDevice, m_scoreMipLevels[level].image, m_scoreMipLevels[level].deviceMemory, 0);
+
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = m_scoreMipLevels[level].image;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_3D;
+        viewInfo.format = VK_FORMAT_R32_UINT;
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        viewInfo.subresourceRange.baseMipLevel = 0;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.baseArrayLayer = 0;
+        viewInfo.subresourceRange.layerCount = 1;
+
+        if (vkCreateImageView(m_device->logicalDevice, &viewInfo, nullptr, &m_scoreMipLevels[level].view) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to create score mip level image view!");
+        }
+    }
+}
+
 void GPUMipmapOctree::CreateUniformBuffer()
 {
 
@@ -202,43 +295,45 @@ void GPUMipmapOctree::CreateUniformBuffer()
     }
     // Align each LevelInfo to 64-byte boundary for uniform buffer offset alignment
     const VkDeviceSize alignment = 64; // minUniformBufferOffsetAlignment
-    const VkDeviceSize alignedLevelInfoSize = ((sizeof(LevelInfo) + alignment - 1) / alignment) * alignment;
-    VkDeviceSize bufferSize = alignedLevelInfoSize * m_maxLevel; // Space for all levels with proper alignment
+    m_alignedLevelInfoSize = ((sizeof(LevelInfo) + alignment - 1) / alignment) * alignment;
+    VkDeviceSize bufferSize = m_alignedLevelInfoSize * m_maxLevel;
 
-    // Create uniform buffer
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = bufferSize;
-    bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    auto createMappedUniformBuffer = [&](VkBuffer &buffer, VkDeviceMemory &memory, void *&mapped) {
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = bufferSize;
+        bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    if (vkCreateBuffer(m_device->logicalDevice, &bufferInfo, nullptr, &m_uniformBuffer) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to create uniform buffer!");
-    }
+        if (vkCreateBuffer(m_device->logicalDevice, &bufferInfo, nullptr, &buffer) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to create uniform buffer!");
+        }
 
-    // Allocate memory
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(m_device->logicalDevice, m_uniformBuffer, &memRequirements);
+        VkMemoryRequirements memRequirements;
+        vkGetBufferMemoryRequirements(m_device->logicalDevice, buffer, &memRequirements);
 
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex =
-        m_device->GetMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex =
+            m_device->GetMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-    if (vkAllocateMemory(m_device->logicalDevice, &allocInfo, nullptr, &m_uniformBufferMemory) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to allocate uniform buffer memory!");
-    }
+        if (vkAllocateMemory(m_device->logicalDevice, &allocInfo, nullptr, &memory) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to allocate uniform buffer memory!");
+        }
 
-    vkBindBufferMemory(m_device->logicalDevice, m_uniformBuffer, m_uniformBufferMemory, 0);
+        vkBindBufferMemory(m_device->logicalDevice, buffer, memory, 0);
 
-    // Map the memory persistently
-    if (vkMapMemory(m_device->logicalDevice, m_uniformBufferMemory, 0, bufferSize, 0, &m_uniformBufferMapped) != VK_SUCCESS)
-    {
-        throw std::runtime_error("Failed to map uniform buffer memory!");
-    }
+        if (vkMapMemory(m_device->logicalDevice, memory, 0, bufferSize, 0, &mapped) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to map uniform buffer memory!");
+        }
+    };
+
+    createMappedUniformBuffer(m_uniformBuffer, m_uniformBufferMemory, m_uniformBufferMapped);
+    createMappedUniformBuffer(m_scoreUniformBuffer, m_scoreUniformBufferMemory, m_scoreUniformBufferMapped);
 }
 
 void GPUMipmapOctree::CreateComputePipeline(uint32_t mode)
@@ -273,7 +368,7 @@ void GPUMipmapOctree::CreateComputePipeline(uint32_t mode)
     VkShaderModuleCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     createInfo.codeSize = shaderCode.size();
-    createInfo.pCode = reinterpret_cast<const uint32_t*>(shaderCode.data());
+    createInfo.pCode = reinterpret_cast<const uint32_t *>(shaderCode.data());
 
     VkShaderModule shaderModule;
     if (vkCreateShaderModule(m_device->logicalDevice, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
@@ -312,6 +407,65 @@ void GPUMipmapOctree::CreateComputePipeline(uint32_t mode)
     }
 
     // Cleanup shader module
+    vkDestroyShaderModule(m_device->logicalDevice, shaderModule, nullptr);
+}
+
+void GPUMipmapOctree::CreateScoreComputePipeline()
+{
+    std::string shaderPath = Tool::GetShadersPath() + "MipmapOctree/BuildMipmapOctreeSelectionScore.Comp.spv";
+
+    std::ifstream file(shaderPath, std::ios::ate | std::ios::binary);
+    if (!file.is_open())
+    {
+        Log::Warn(std::format("Optional score shader not found: {}", shaderPath));
+        return;
+    }
+
+    size_t fileSize = static_cast<size_t>(file.tellg());
+    std::vector<char> shaderCode(fileSize);
+    file.seekg(0);
+    file.read(shaderCode.data(), fileSize);
+    file.close();
+
+    VkShaderModuleCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    createInfo.codeSize = shaderCode.size();
+    createInfo.pCode = reinterpret_cast<const uint32_t *>(shaderCode.data());
+
+    VkShaderModule shaderModule;
+    if (vkCreateShaderModule(m_device->logicalDevice, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create score shader module!");
+    }
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &m_scoreDescriptorSetLayout;
+
+    if (vkCreatePipelineLayout(m_device->logicalDevice, &pipelineLayoutInfo, nullptr, &m_scorePipelineLayout) != VK_SUCCESS)
+    {
+        vkDestroyShaderModule(m_device->logicalDevice, shaderModule, nullptr);
+        throw std::runtime_error("Failed to create score pipeline layout!");
+    }
+
+    VkPipelineShaderStageCreateInfo shaderStageInfo{};
+    shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    shaderStageInfo.module = shaderModule;
+    shaderStageInfo.pName = "main";
+
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.layout = m_scorePipelineLayout;
+    pipelineInfo.stage = shaderStageInfo;
+
+    if (vkCreateComputePipelines(m_device->logicalDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_scorePipeline) != VK_SUCCESS)
+    {
+        vkDestroyShaderModule(m_device->logicalDevice, shaderModule, nullptr);
+        throw std::runtime_error("Failed to create score compute pipeline!");
+    }
+
     vkDestroyShaderModule(m_device->logicalDevice, shaderModule, nullptr);
 }
 
@@ -401,7 +555,80 @@ void GPUMipmapOctree::CreateDescriptorSets()
     }
 }
 
-void GPUMipmapOctree::BuildFromVoxelTexture(VkCommandBuffer commandBuffer, Texture* voxelTexture)
+void GPUMipmapOctree::CreateScoreDescriptorSets()
+{
+    std::vector<VkDescriptorSetLayoutBinding> bindings;
+
+    VkDescriptorSetLayoutBinding uniformBinding{};
+    uniformBinding.binding = 0;
+    uniformBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uniformBinding.descriptorCount = 1;
+    uniformBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    bindings.push_back(uniformBinding);
+
+    VkDescriptorSetLayoutBinding currentBinding{};
+    currentBinding.binding = 1;
+    currentBinding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    currentBinding.descriptorCount = 1;
+    currentBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    bindings.push_back(currentBinding);
+
+    VkDescriptorSetLayoutBinding parentBinding{};
+    parentBinding.binding = 2;
+    parentBinding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    parentBinding.descriptorCount = 1;
+    parentBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    bindings.push_back(parentBinding);
+
+    VkDescriptorSetLayoutBinding outputBinding{};
+    outputBinding.binding = 3;
+    outputBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    outputBinding.descriptorCount = 1;
+    outputBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    bindings.push_back(outputBinding);
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
+
+    if (vkCreateDescriptorSetLayout(m_device->logicalDevice, &layoutInfo, nullptr, &m_scoreDescriptorSetLayout) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create score descriptor set layout!");
+    }
+
+    std::vector<VkDescriptorPoolSize> poolSizes;
+    poolSizes.push_back({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, m_maxLevel});
+    poolSizes.push_back({VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, m_maxLevel * 2});
+    poolSizes.push_back({VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, m_maxLevel});
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
+    poolInfo.maxSets = m_maxLevel;
+
+    if (vkCreateDescriptorPool(m_device->logicalDevice, &poolInfo, nullptr, &m_scoreDescriptorPool) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create score descriptor pool!");
+    }
+
+    m_scoreDescriptorSets.resize(m_maxLevel);
+    std::vector<VkDescriptorSetLayout> layouts(m_maxLevel, m_scoreDescriptorSetLayout);
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_scoreDescriptorPool;
+    allocInfo.descriptorSetCount = m_maxLevel;
+    allocInfo.pSetLayouts = layouts.data();
+
+    if (vkAllocateDescriptorSets(m_device->logicalDevice, &allocInfo, m_scoreDescriptorSets.data()) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to allocate score descriptor sets!");
+    }
+}
+
+void GPUMipmapOctree::BuildFromVoxelTexture(VkCommandBuffer commandBuffer, Texture *voxelTexture)
 {
     if (m_maxLevel == 0)
     {
@@ -413,9 +640,12 @@ void GPUMipmapOctree::BuildFromVoxelTexture(VkCommandBuffer commandBuffer, Textu
         return;
     }
 
-    
     // Update descriptor sets with input voxel texture
     UpdateDescriptorSets(voxelTexture);
+    if (m_enableScorePass && m_scorePipeline != VK_NULL_HANDLE)
+    {
+        UpdateScoreDescriptorSets();
+    }
 
     // Input texture already in VK_IMAGE_LAYOUT_GENERAL, no transition needed
 
@@ -454,6 +684,22 @@ void GPUMipmapOctree::BuildFromVoxelTexture(VkCommandBuffer commandBuffer, Textu
             InsertMemoryBarrier(commandBuffer, level);
         }
     }
+
+    if (m_enableScorePass && m_scorePipeline != VK_NULL_HANDLE)
+    {
+        VkMemoryBarrier scoreReadBarrier{};
+        scoreReadBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        scoreReadBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        scoreReadBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &scoreReadBarrier, 0,
+                             nullptr, 0, nullptr);
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_scorePipeline);
+        for (uint32_t level = 0; level + 1 < m_maxLevel; level++)
+        {
+            BuildScoreMipLevel(commandBuffer, level);
+        }
+    }
 }
 
 uint32_t GPUMipmapOctree::CalculateMipSize(uint32_t level) const
@@ -473,7 +719,7 @@ float GPUMipmapOctree::CalculateNodeSize(uint32_t level) const
     return 1.0f * (1 << level); // Assuming base voxel size = 1.0
 }
 
-void GPUMipmapOctree::UpdateDescriptorSets(Texture* inputTexture)
+void GPUMipmapOctree::UpdateDescriptorSets(Texture *inputTexture)
 {
 
     for (uint32_t level = 0; level < m_maxLevel; level++)
@@ -483,7 +729,7 @@ void GPUMipmapOctree::UpdateDescriptorSets(Texture* inputTexture)
         // Binding 0: LevelInfo uniform buffer (each level gets its own offset)
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = m_uniformBuffer;
-        bufferInfo.offset = level * sizeof(LevelInfo); // Different offset for each level (64-byte aligned)
+        bufferInfo.offset = level * m_alignedLevelInfoSize;
         bufferInfo.range = sizeof(LevelInfo);
 
         VkWriteDescriptorSet uniformWrite{};
@@ -546,6 +792,69 @@ void GPUMipmapOctree::UpdateDescriptorSets(Texture* inputTexture)
     }
 }
 
+void GPUMipmapOctree::UpdateScoreDescriptorSets()
+{
+    for (uint32_t level = 0; level < m_maxLevel; level++)
+    {
+        std::vector<VkWriteDescriptorSet> descriptorWrites;
+
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = m_scoreUniformBuffer;
+        bufferInfo.offset = level * m_alignedLevelInfoSize;
+        bufferInfo.range = sizeof(LevelInfo);
+
+        VkWriteDescriptorSet uniformWrite{};
+        uniformWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        uniformWrite.dstSet = m_scoreDescriptorSets[level];
+        uniformWrite.dstBinding = 0;
+        uniformWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uniformWrite.descriptorCount = 1;
+        uniformWrite.pBufferInfo = &bufferInfo;
+        descriptorWrites.push_back(uniformWrite);
+
+        VkDescriptorImageInfo currentImageInfo{};
+        currentImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        currentImageInfo.imageView = m_mipLevels[level].view;
+
+        VkWriteDescriptorSet currentWrite{};
+        currentWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        currentWrite.dstSet = m_scoreDescriptorSets[level];
+        currentWrite.dstBinding = 1;
+        currentWrite.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        currentWrite.descriptorCount = 1;
+        currentWrite.pImageInfo = &currentImageInfo;
+        descriptorWrites.push_back(currentWrite);
+
+        VkDescriptorImageInfo parentImageInfo{};
+        parentImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        parentImageInfo.imageView = (level + 1 < m_maxLevel) ? m_mipLevels[level + 1].view : m_mipLevels[level].view;
+
+        VkWriteDescriptorSet parentWrite{};
+        parentWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        parentWrite.dstSet = m_scoreDescriptorSets[level];
+        parentWrite.dstBinding = 2;
+        parentWrite.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        parentWrite.descriptorCount = 1;
+        parentWrite.pImageInfo = &parentImageInfo;
+        descriptorWrites.push_back(parentWrite);
+
+        VkDescriptorImageInfo outputImageInfo{};
+        outputImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        outputImageInfo.imageView = m_scoreMipLevels[level].view;
+
+        VkWriteDescriptorSet outputWrite{};
+        outputWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        outputWrite.dstSet = m_scoreDescriptorSets[level];
+        outputWrite.dstBinding = 3;
+        outputWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        outputWrite.descriptorCount = 1;
+        outputWrite.pImageInfo = &outputImageInfo;
+        descriptorWrites.push_back(outputWrite);
+
+        vkUpdateDescriptorSets(m_device->logicalDevice, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+    }
+}
+
 void GPUMipmapOctree::BuildMipLevel(VkCommandBuffer commandBuffer, uint32_t level)
 {
     // Correct octree level mapping:
@@ -569,8 +878,8 @@ void GPUMipmapOctree::BuildMipLevel(VkCommandBuffer commandBuffer, uint32_t leve
     //           << " base_size=" << levelInfo.base_size << std::endl;
 
     // Write to the correct offset for this level
-    char* bufferPtr = static_cast<char*>(m_uniformBufferMapped);
-    memcpy(bufferPtr + (level * sizeof(LevelInfo)), &levelInfo, sizeof(LevelInfo));
+    char *bufferPtr = static_cast<char *>(m_uniformBufferMapped);
+    memcpy(bufferPtr + (level * m_alignedLevelInfoSize), &levelInfo, sizeof(LevelInfo));
 
     // Bind descriptor set for this level
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout, 0, 1, &m_descriptorSets[level], 0, nullptr);
@@ -583,6 +892,28 @@ void GPUMipmapOctree::BuildMipLevel(VkCommandBuffer commandBuffer, uint32_t leve
     vkCmdDispatch(commandBuffer, groupsX, groupsY, groupsZ);
 
     //              (groupsX * groupsY * groupsZ) << " work groups" << std::endl;
+}
+
+void GPUMipmapOctree::BuildScoreMipLevel(VkCommandBuffer commandBuffer, uint32_t level)
+{
+    uint32_t outputSize = CalculateMipSize(level);
+    uint32_t parentSize = CalculateMipSize(level + 1);
+    LevelInfo levelInfo = {
+        level,
+        parentSize,
+        outputSize,
+        m_baseSize,
+    };
+
+    char *bufferPtr = static_cast<char *>(m_scoreUniformBufferMapped);
+    memcpy(bufferPtr + (level * m_alignedLevelInfoSize), &levelInfo, sizeof(LevelInfo));
+
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_scorePipelineLayout, 0, 1, &m_scoreDescriptorSets[level], 0, nullptr);
+
+    uint32_t groupsX = std::max(1u, (outputSize + 7) / 8);
+    uint32_t groupsY = std::max(1u, (outputSize + 7) / 8);
+    uint32_t groupsZ = std::max(1u, (outputSize + 7) / 8);
+    vkCmdDispatch(commandBuffer, groupsX, groupsY, groupsZ);
 }
 
 void GPUMipmapOctree::InsertMemoryBarrier(VkCommandBuffer commandBuffer, uint32_t level)
@@ -605,8 +936,6 @@ void GPUMipmapOctree::InsertMemoryBarrier(VkCommandBuffer commandBuffer, uint32_
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
                          &barrier);
 }
-
-
 
 // Batch barrier for multiple levels
 void GPUMipmapOctree::InsertBatchBarrier(VkCommandBuffer commandBuffer, uint32_t startLevel, uint32_t endLevel)
@@ -765,14 +1094,14 @@ std::vector<uint32_t> GPUMipmapOctree::ReadMipLevel(uint32_t level)
         }
 
         // Map memory and copy data
-        void* mappedData;
+        void *mappedData;
         if (vkMapMemory(m_device->logicalDevice, stagingBufferMemory, 0, bufferSize, 0, &mappedData) != VK_SUCCESS)
         {
             throw std::runtime_error("Failed to map staging buffer memory");
         }
 
         // Convert from uint8_t to uint32_t correctly
-        uint8_t* uint8Data = static_cast<uint8_t*>(mappedData);
+        uint8_t *uint8Data = static_cast<uint8_t *>(mappedData);
         for (uint32_t i = 0; i < voxelCount; i++)
         {
             result[i] = static_cast<uint32_t>(uint8Data[i]);
@@ -780,7 +1109,7 @@ std::vector<uint32_t> GPUMipmapOctree::ReadMipLevel(uint32_t level)
 
         vkUnmapMemory(m_device->logicalDevice, stagingBufferMemory);
     }
-    catch (const std::exception& e)
+    catch (const std::exception &e)
     {
         std::cout << "ReadMipLevel error: " << e.what() << std::endl;
         // Return vector filled with zeros on error
@@ -806,8 +1135,6 @@ std::vector<uint32_t> GPUMipmapOctree::ReadMipLevel(uint32_t level)
 
     return result;
 }
-
-
 
 void GPUMipmapOctree::ClearAllMipLevels()
 {
@@ -894,6 +1221,16 @@ VkImageView GPUMipmapOctree::GetMipLevelView(uint32_t level) const
     }
 
     return m_mipLevels[level - 1].view;
+}
+
+VkImageView GPUMipmapOctree::GetScoreMipLevelView(uint32_t level) const
+{
+    if (level >= m_maxLevel)
+    {
+        throw std::runtime_error("Invalid score mip level");
+    }
+
+    return m_scoreMipLevels[level].view;
 }
 
 uint32_t GPUMipmapOctree::GetMaxLevel()

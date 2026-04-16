@@ -258,7 +258,6 @@ public:
 		{
 			updateViewMatrix();
 		}
-
 		return retVal;
 	}
 

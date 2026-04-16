@@ -50,6 +50,7 @@ Config::Config(std::string configPath)
         Sdf.EnableCountSort = sdfConfig.value("EnableCountSort", 1);
         Sdf.EnableCameraOverlay = sdfConfig.value("EnableCameraOverlay", 1);
         Sdf.EnableMultiviewIsoSurface = sdfConfig.value("EnableMultiviewIsoSurface", 0);
+        Sdf.EnableSelectionScoreOctreePass = sdfConfig.value("EnableSelectionScoreOctreePass", 0);
         Sdf.SdfResolution = sdfConfig.value("SdfResolution", 64);
     }
     spdlog::info("config loadded");

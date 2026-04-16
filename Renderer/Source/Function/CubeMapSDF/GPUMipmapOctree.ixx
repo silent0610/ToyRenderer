@@ -44,6 +44,7 @@ public:
     GPUMipmapOctree(OldVulkanDevice* device, uint32_t mode, uint32_t baseSize = 64, bool useRandom=false);
     ~GPUMipmapOctree();
     void SetVoxelTexture(VkImageView view);
+    void SetScorePassEnabled(bool enabled) { m_enableScorePass = enabled; }
     // Build mipmap octree from 3D binary texture
     void BuildFromVoxelTexture(VkCommandBuffer commandBuffer, Texture *voxelTexture);
 
@@ -52,6 +53,7 @@ public:
 
 
     std::vector<uint32_t> ReadMipLevel(uint32_t level);
+    VkImageView GetScoreMipLevelView(uint32_t level) const;
 
     // Getters
     uint32_t GetBaseSize() const { return m_baseSize; }
@@ -65,6 +67,7 @@ public:
 
 private:
     VkImageView voxelTextureView_{};
+    bool m_enableScorePass{false};
     // Device reference
     OldVulkanDevice *m_device{};
 
@@ -74,13 +77,17 @@ private:
     VkDeviceSize m_alignedLevelInfoSize; // Aligned size of LevelInfo for uniform buffer
 
     // GPU resources
-    std::vector<Texture> m_mipLevels; // Mipmap pyramid textures
-    VkSampler m_sampler;              // Sampler for texture reads
+    std::vector<Texture> m_mipLevels;      // Mipmap pyramid textures
+    std::vector<Texture> m_scoreMipLevels; // Selection score textures
+    VkSampler m_sampler;                   // Sampler for texture reads
 
     // Uniform buffer for level info
     VkBuffer m_uniformBuffer;
     VkDeviceMemory m_uniformBufferMemory;
     void *m_uniformBufferMapped;
+    VkBuffer m_scoreUniformBuffer;
+    VkDeviceMemory m_scoreUniformBufferMemory;
+    void *m_scoreUniformBufferMapped;
 
     // Compute pipeline
     VkPipeline m_buildPipeline;
@@ -88,16 +95,26 @@ private:
     VkDescriptorSetLayout m_descriptorSetLayout;
     VkDescriptorPool m_descriptorPool;
     std::vector<VkDescriptorSet> m_descriptorSets; // One per level
+    VkPipeline m_scorePipeline;
+    VkPipelineLayout m_scorePipelineLayout;
+    VkDescriptorSetLayout m_scoreDescriptorSetLayout;
+    VkDescriptorPool m_scoreDescriptorPool;
+    std::vector<VkDescriptorSet> m_scoreDescriptorSets; // One per level
 
     // Internal methods
     void CreateMipLevels();
+    void CreateScoreMipLevels();
     void CreateUniformBuffer();
     void CreateComputePipeline(uint32_t mode);
+    void CreateScoreComputePipeline();
     void CreateDescriptorSets();
+    void CreateScoreDescriptorSets();
     void UpdateDescriptorSets(Texture *inputTexture);
+    void UpdateScoreDescriptorSets();
 
     // GPU building steps
     void BuildMipLevel(VkCommandBuffer commandBuffer, uint32_t level);
+    void BuildScoreMipLevel(VkCommandBuffer commandBuffer, uint32_t level);
     void InsertMemoryBarrier(VkCommandBuffer commandBuffer, uint32_t level);
     void InsertBatchBarrier(VkCommandBuffer commandBuffer, uint32_t startLevel, uint32_t endLevel);
 
