@@ -23,6 +23,14 @@ Renderer::Renderer(Config *config) : config_(config)
     m_camera.setRotation(config->camera.Rotation);
     m_camera.setPerspective(config_->camera.fov, (float)m_width / (float)m_height, config->camera.znear, config->camera.zfar);
     m_camera.setMovementSpeed(config->camera.movementSpeed);
+    useCountSort_ = config_->Sdf.EnableCountSort != 0;
+    m_enableCameraOverlay = config_->Sdf.EnableCameraOverlay != 0;
+    m_showMultiviewIsoSurface = config_->Sdf.EnableMultiviewIsoSurface != 0;
+    m_sdfIsoSurfacePass.pushConstants.volumeMin = glm::vec4(-config_->Sdf.WorldSize * 0.5f, -config_->Sdf.WorldSize * 0.5f,
+                                                            -config_->Sdf.WorldSize * 0.5f, 0.0f);
+    m_sdfIsoSurfacePass.pushConstants.volumeMax = glm::vec4(config_->Sdf.WorldSize * 0.5f, config_->Sdf.WorldSize * 0.5f,
+                                                            config_->Sdf.WorldSize * 0.5f, 0.0f);
+    m_sdfIsoSurfacePass.pushConstants.gridParams.x = static_cast<float>(config_->Sdf.SdfResolution);
 }
 
 void Renderer::Run()
@@ -1788,6 +1796,72 @@ void Renderer::SetUI(UIOverlay *overlay)
                 }
             }
         }
+        if (overlay->Header("Multiview"))
+        {
+            bool countSortEnabled = useCountSort_;
+            if (overlay->CheckBox("Enable Count Sort", &countSortEnabled))
+            {
+                SetMultiViewCountSortEnabled(countSortEnabled);
+            }
+
+            bool cameraOverlayEnabled = m_enableCameraOverlay;
+            if (overlay->CheckBox("Show Camera Overlay", &cameraOverlayEnabled))
+            {
+                SetCameraOverlayEnabled(cameraOverlayEnabled);
+                RecordMainCommandBuffer();
+            }
+
+            bool isoSurfaceEnabled = m_showMultiviewIsoSurface;
+            if (overlay->CheckBox("Show Multiview IsoSurface", &isoSurfaceEnabled))
+            {
+                SetMultiviewIsoSurfaceEnabled(isoSurfaceEnabled);
+                RecordMainCommandBuffer();
+            }
+
+            if (m_showMultiviewIsoSurface)
+            {
+                int axis = static_cast<int>(m_sdfIsoSurfacePass.pushConstants.sliceParams.x);
+                if (overlay->ComboBox("Slice Axis", &axis, {"X", "Y", "Z"}))
+                {
+                    m_sdfIsoSurfacePass.pushConstants.sliceParams.x = static_cast<float>(glm::clamp(axis, 0, 2));
+                    RecordMainCommandBuffer();
+                }
+
+                uint32_t maxLayer = 0;
+                while ((1u << (maxLayer + 1)) <= config_->Sdf.SdfResolution)
+                {
+                    ++maxLayer;
+                }
+
+                int layer = static_cast<int>(m_sdfIsoSurfacePass.pushConstants.sliceParams.y);
+                if (overlay->SliderInt("Octree Layer", &layer, 0, static_cast<int>(maxLayer)))
+                {
+                    layer = glm::clamp(layer, 0, static_cast<int>(maxLayer));
+                    m_sdfIsoSurfacePass.pushConstants.sliceParams.y = static_cast<float>(layer);
+                    uint32_t sliceCount = std::max(1u, config_->Sdf.SdfResolution >> layer);
+                    int sliceIndex = static_cast<int>(m_sdfIsoSurfacePass.pushConstants.sliceParams.z);
+                    sliceIndex = glm::clamp(sliceIndex, 0, static_cast<int>(sliceCount) - 1);
+                    m_sdfIsoSurfacePass.pushConstants.sliceParams.z = static_cast<float>(sliceIndex);
+                    RecordMainCommandBuffer();
+                }
+
+                uint32_t sliceCount = std::max(1u, config_->Sdf.SdfResolution >> static_cast<uint32_t>(m_sdfIsoSurfacePass.pushConstants.sliceParams.y));
+                int sliceIndex = static_cast<int>(m_sdfIsoSurfacePass.pushConstants.sliceParams.z);
+                if (overlay->SliderInt("Slice Index", &sliceIndex, 0, static_cast<int>(sliceCount) - 1))
+                {
+                    sliceIndex = glm::clamp(sliceIndex, 0, static_cast<int>(sliceCount) - 1);
+                    m_sdfIsoSurfacePass.pushConstants.sliceParams.z = static_cast<float>(sliceIndex);
+                    RecordMainCommandBuffer();
+                }
+
+                float contourWidth = m_sdfIsoSurfacePass.pushConstants.sliceParams.w;
+                if (overlay->SliderFloat("Contour Width", &contourWidth, 0.001f, 0.05f))
+                {
+                    m_sdfIsoSurfacePass.pushConstants.sliceParams.w = contourWidth;
+                    RecordMainCommandBuffer();
+                }
+            }
+        }
         // Done
         if (overlay->Header("Post"))
         {
@@ -3104,6 +3178,21 @@ void Renderer::Cleanup()
         vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayouts.cameraOverlay, nullptr);
         m_descriptorSetLayouts.cameraOverlay = nullptr;
     }
+    if (m_pipelines.sdfIsoSurface != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(m_device, m_pipelines.sdfIsoSurface, nullptr);
+        m_pipelines.sdfIsoSurface = VK_NULL_HANDLE;
+    }
+    if (m_pipelineLayouts.sdfIsoSurface != nullptr)
+    {
+        vkDestroyPipelineLayout(m_device, m_pipelineLayouts.sdfIsoSurface, nullptr);
+        m_pipelineLayouts.sdfIsoSurface = nullptr;
+    }
+    if (m_descriptorSetLayouts.sdfIsoSurface != nullptr)
+    {
+        vkDestroyDescriptorSetLayout(m_device, m_descriptorSetLayouts.sdfIsoSurface, nullptr);
+        m_descriptorSetLayouts.sdfIsoSurface = nullptr;
+    }
     if (m_framebuffers.CameraOverlay != nullptr)
     {
         delete m_framebuffers.CameraOverlay;
@@ -3694,23 +3783,44 @@ void Renderer::RecordMainCommandBuffer()
     EndDebugLabel(m_offScreenCmdBuffer);
 
     // Camera overlay pass
-    renderPassBeginInfo.renderPass = m_framebuffers.CameraOverlay->renderPass;
-    renderPassBeginInfo.framebuffer = m_framebuffers.CameraOverlay->framebuffer;
-    renderPassBeginInfo.clearValueCount = 1;
-    BeginDebugLabel(m_offScreenCmdBuffer, "Camera Overlay Pass", 0.0f, 0.5f, 1.0f);
-    vkCmdBeginRenderPass(m_offScreenCmdBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-    viewport = Init::viewport((float)m_framebuffers.CameraOverlay->width, (float)m_framebuffers.CameraOverlay->height, 0.0f, 1.0f);
-    scissor = Init::rect2D(m_framebuffers.CameraOverlay->width, m_framebuffers.CameraOverlay->height, 0, 0);
-    vkCmdSetViewport(m_offScreenCmdBuffer, 0, 1, &viewport);
-    vkCmdSetScissor(m_offScreenCmdBuffer, 0, 1, &scissor);
-    vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.cameraOverlay);
-    vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.cameraOverlay, 0, 1,
-                            &m_descriptorSets.cameraOverlay, 0, NULL);
-    vkCmdPushConstants(m_offScreenCmdBuffer, m_pipelineLayouts.cameraOverlay, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                       sizeof(CameraOverlayPass::PushConstants), &m_cameraOverlayPass.pushConstants);
-    vkCmdDraw(m_offScreenCmdBuffer, 3, 1, 0, 0);
-    vkCmdEndRenderPass(m_offScreenCmdBuffer);
-    EndDebugLabel(m_offScreenCmdBuffer);
+    if (m_showMultiviewIsoSurface || m_enableCameraOverlay)
+    {
+        renderPassBeginInfo.renderPass = m_framebuffers.CameraOverlay->renderPass;
+        renderPassBeginInfo.framebuffer = m_framebuffers.CameraOverlay->framebuffer;
+        renderPassBeginInfo.clearValueCount = 1;
+        BeginDebugLabel(m_offScreenCmdBuffer, "Camera Overlay Pass", 0.0f, 0.5f, 1.0f);
+        if (m_showMultiviewIsoSurface)
+        {
+            clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+            renderPassBeginInfo.pClearValues = clearValues.data();
+        }
+        vkCmdBeginRenderPass(m_offScreenCmdBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+        viewport = Init::viewport((float)m_framebuffers.CameraOverlay->width, (float)m_framebuffers.CameraOverlay->height, 0.0f, 1.0f);
+        scissor = Init::rect2D(m_framebuffers.CameraOverlay->width, m_framebuffers.CameraOverlay->height, 0, 0);
+        vkCmdSetViewport(m_offScreenCmdBuffer, 0, 1, &viewport);
+        vkCmdSetScissor(m_offScreenCmdBuffer, 0, 1, &scissor);
+        if (m_showMultiviewIsoSurface)
+        {
+            vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.sdfIsoSurface);
+            vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.sdfIsoSurface, 0, 1,
+                                    &m_descriptorSets.sdfIsoSurface, 0, NULL);
+            vkCmdPushConstants(m_offScreenCmdBuffer, m_pipelineLayouts.sdfIsoSurface,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(SdfIsoSurfacePass::PushConstants), &m_sdfIsoSurfacePass.pushConstants);
+            vkCmdDraw(m_offScreenCmdBuffer, 6, 1, 0, 0);
+        }
+        else
+        {
+            vkCmdBindPipeline(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.cameraOverlay);
+            vkCmdBindDescriptorSets(m_offScreenCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayouts.cameraOverlay, 0, 1,
+                                    &m_descriptorSets.cameraOverlay, 0, NULL);
+            vkCmdPushConstants(m_offScreenCmdBuffer, m_pipelineLayouts.cameraOverlay, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(CameraOverlayPass::PushConstants), &m_cameraOverlayPass.pushConstants);
+            vkCmdDraw(m_offScreenCmdBuffer, 3, 1, 0, 0);
+        }
+        vkCmdEndRenderPass(m_offScreenCmdBuffer);
+        EndDebugLabel(m_offScreenCmdBuffer);
+    }
 
     // Release barrier
     if (m_index.graphics != m_index.compute)
@@ -4485,6 +4595,13 @@ void Renderer::SetupDescriptors()
     descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
     Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.cameraOverlay));
 
+    setLayoutBindings = {
+        Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0),
+        Init::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1),
+    };
+    descriptorLayoutCI = Init::descriptorSetLayoutCreateInfo(setLayoutBindings);
+    Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &descriptorLayoutCI, nullptr, &m_descriptorSetLayouts.sdfIsoSurface));
+
     // Sets
     std::vector<VkWriteDescriptorSet> writeDescriptorSets;
     VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.composition, 1);
@@ -4533,9 +4650,7 @@ void Renderer::SetupDescriptors()
     // FXAA
     allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.FXAA, 1);
     Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.FXAA));
-    writeDescriptorSets = {Init::writeDescriptorSet(m_descriptorSets.FXAA, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_uniformBuffers.FXAA.descriptor),
-                           Init::writeDescriptorSet(m_descriptorSets.FXAA, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &texDescriptorCameraOverlay)};
-    vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+    UpdateFXAADescriptorSet();
 
     // offscreen
     allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.deferedModel, 1);
@@ -4626,6 +4741,33 @@ void Renderer::AllocateDescriptorSetCameraOverlay()
     }
 
     UpdateCameraOverlayDescriptorSet();
+    UpdateFXAADescriptorSet();
+}
+
+void Renderer::AllocateDescriptorSetSdfIsoSurface()
+{
+    if (m_descriptorSetLayouts.sdfIsoSurface == nullptr)
+    {
+        return;
+    }
+    if (m_multiViewDepthSDF4C.sdfFusionPass.finalSDFTexture == VK_NULL_HANDLE ||
+        m_multiViewDepthSDF4C.sdfFusionPass.finalSDFSampler == VK_NULL_HANDLE)
+    {
+        return;
+    }
+
+    if (m_descriptorSets.sdfIsoSurface == nullptr)
+    {
+        VkDescriptorSetAllocateInfo allocInfo = Init::descriptorSetAllocateInfo(m_descriptorPool, &m_descriptorSetLayouts.sdfIsoSurface, 1);
+        Tool::CheckResult(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptorSets.sdfIsoSurface));
+    }
+
+    VkDescriptorImageInfo sdfDescriptor = m_multiViewDepthSDF4C.sdfFusionPass.finalSDFDescriptor;
+    std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
+        Init::writeDescriptorSet(m_descriptorSets.sdfIsoSurface, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_sharedBuffers.ConstBufferCamera.descriptor),
+        Init::writeDescriptorSet(m_descriptorSets.sdfIsoSurface, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &sdfDescriptor),
+    };
+    vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
 
 void Renderer::UpdateCameraOverlayDescriptorSet()
@@ -4647,6 +4789,83 @@ void Renderer::UpdateCameraOverlayDescriptorSet()
                                  &m_multiViewDepthSDF4C.gpuPreparation.activeCameraCountBuffer.descriptor),
     };
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+}
+
+void Renderer::UpdateFXAADescriptorSet()
+{
+    if (m_descriptorSets.FXAA == nullptr || m_framebuffers.ToneMapping == nullptr)
+    {
+        return;
+    }
+
+    const bool useCameraOverlay = m_enableCameraOverlay || m_showMultiviewIsoSurface;
+    if (useCameraOverlay && m_framebuffers.CameraOverlay == nullptr)
+    {
+        return;
+    }
+
+    VkDescriptorImageInfo sourceColor = Init::descriptorImageInfo(
+        useCameraOverlay ? m_framebuffers.CameraOverlay->sampler : m_framebuffers.ToneMapping->sampler,
+        useCameraOverlay ? m_framebuffers.CameraOverlay->attachments[0].view : m_framebuffers.ToneMapping->attachments[0].view,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
+        Init::writeDescriptorSet(m_descriptorSets.FXAA, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &m_uniformBuffers.FXAA.descriptor),
+        Init::writeDescriptorSet(m_descriptorSets.FXAA, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &sourceColor),
+    };
+    vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+}
+void Renderer::PreparePipelineSdfIsoSurface()
+{
+    if (m_pipelineLayouts.sdfIsoSurface != nullptr)
+    {
+        vkDestroyPipelineLayout(m_device, m_pipelineLayouts.sdfIsoSurface, nullptr);
+        m_pipelineLayouts.sdfIsoSurface = nullptr;
+    }
+    if (m_pipelines.sdfIsoSurface != nullptr)
+    {
+        vkDestroyPipeline(m_device, m_pipelines.sdfIsoSurface, nullptr);
+        m_pipelines.sdfIsoSurface = nullptr;
+    }
+
+    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.sdfIsoSurface, 1);
+    VkPushConstantRange pushConstantRange =
+        Init::pushConstantRange(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(SdfIsoSurfacePass::PushConstants), 0);
+    pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+    pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
+    Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.sdfIsoSurface));
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssemblyState =
+        Init::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
+    VkPipelineRasterizationStateCreateInfo rasterizationState =
+        Init::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE, 0);
+    VkPipelineColorBlendAttachmentState blendAttachmentState = Init::pipelineColorBlendAttachmentState(0xf, VK_FALSE);
+    VkPipelineColorBlendStateCreateInfo colorBlendState = Init::pipelineColorBlendStateCreateInfo(1, &blendAttachmentState);
+    VkPipelineDepthStencilStateCreateInfo depthStencilState =
+        Init::pipelineDepthStencilStateCreateInfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL);
+    VkPipelineViewportStateCreateInfo viewportState = Init::pipelineViewportStateCreateInfo(1, 1, 0);
+    VkPipelineMultisampleStateCreateInfo multisampleState = Init::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_1_BIT, 0);
+    std::vector<VkDynamicState> dynamicStateEnables = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamicState = Init::pipelineDynamicStateCreateInfo(dynamicStateEnables);
+    std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
+
+    VkGraphicsPipelineCreateInfo pipelineCI = Init::pipelineCreateInfo(m_pipelineLayouts.sdfIsoSurface, m_framebuffers.CameraOverlay->renderPass);
+    pipelineCI.pInputAssemblyState = &inputAssemblyState;
+    pipelineCI.pRasterizationState = &rasterizationState;
+    pipelineCI.pColorBlendState = &colorBlendState;
+    pipelineCI.pMultisampleState = &multisampleState;
+    pipelineCI.pViewportState = &viewportState;
+    pipelineCI.pDepthStencilState = &depthStencilState;
+    pipelineCI.pDynamicState = &dynamicState;
+    pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
+    pipelineCI.pStages = shaderStages.data();
+
+    VkPipelineVertexInputStateCreateInfo emptyInputState = Init::pipelineVertexInputStateCreateInfo();
+    pipelineCI.pVertexInputState = &emptyInputState;
+
+    shaderStages[0] = LoadShader(Tool::GetShadersPath() + "Post/SdfIsoSurface.Vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+    shaderStages[1] = LoadShader(Tool::GetShadersPath() + "Post/SdfIsoSurface.Frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
+    Tool::CheckResult(vkCreateGraphicsPipelines(m_device, m_pipelineCache, 1, &pipelineCI, nullptr, &m_pipelines.sdfIsoSurface));
 }
 void Renderer::PreparePipelineSkyBox()
 {
@@ -4773,6 +4992,7 @@ void Renderer::PreparePipelines()
     Tool::CheckResult(vkCreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &m_pipelineLayouts.toneMapping));
 
     PreparePipelineCameraOverlay();
+    PreparePipelineSdfIsoSurface();
 
     // bloom
     pipelineLayoutCreateInfo = Init::pipelineLayoutCreateInfo(&m_descriptorSetLayouts.blur, 1);
@@ -8934,6 +9154,22 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
     countSortPipelineInfo.stage = countSortShaderStageInfo;
     Tool::CheckResult(
         vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &countSortPipelineInfo, nullptr, &multiViewNodeSelection_.SortingPipeline));
+    vkDestroyShaderModule(m_device, countSortShader, nullptr);
+
+    std::string passthroughShaderPath = Tool::GetShadersPath() + "MultiView/CountSortPassthrough.Comp.spv";
+    VkShaderModule passthroughShader = Tool::LoadShader(passthroughShaderPath.c_str(), m_device);
+    VkPipelineShaderStageCreateInfo passthroughShaderStageInfo{};
+    passthroughShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    passthroughShaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    passthroughShaderStageInfo.module = passthroughShader;
+    passthroughShaderStageInfo.pName = "main";
+    VkComputePipelineCreateInfo passthroughPipelineInfo{};
+    passthroughPipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    passthroughPipelineInfo.layout = multiViewNodeSelection_.SortingPipelineLayout;
+    passthroughPipelineInfo.stage = passthroughShaderStageInfo;
+    Tool::CheckResult(vkCreateComputePipelines(m_device, VK_NULL_HANDLE, 1, &passthroughPipelineInfo, nullptr,
+                                               &multiViewNodeSelection_.SortingPassthroughPipeline));
+    vkDestroyShaderModule(m_device, passthroughShader, nullptr);
 
     std::vector<VkWriteDescriptorSet> sortDescriptorWrites{
         Init::writeDescriptorSet(multiViewNodeSelection_.SortingDescriptorSet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0,
@@ -9123,7 +9359,9 @@ void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &candidateCountBarrier, 0, nullptr, 0,
                          nullptr);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.SortingPipeline);
+    const VkPipeline sortPipeline = useCountSort_ ? multiViewNodeSelection_.SortingPipeline
+                                                  : multiViewNodeSelection_.SortingPassthroughPipeline;
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, sortPipeline);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.SortingPipelineLayout, 0, 1,
                             &multiViewNodeSelection_.SortingDescriptorSet, 0, nullptr);
     vkCmdDispatch(commandBuffer, 1, 1, 1);
@@ -9166,6 +9404,26 @@ void Renderer::MultiViewSolidNodeSelection::cleanup(VkDevice device)
         vkDestroyDescriptorSetLayout(device, finalSelectionDescriptorSetLayout, nullptr);
         finalSelectionDescriptorSetLayout = VK_NULL_HANDLE;
     }
+    if (SortingPipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(device, SortingPipeline, nullptr);
+        SortingPipeline = VK_NULL_HANDLE;
+    }
+    if (SortingPassthroughPipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(device, SortingPassthroughPipeline, nullptr);
+        SortingPassthroughPipeline = VK_NULL_HANDLE;
+    }
+    if (SortingPipelineLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineLayout(device, SortingPipelineLayout, nullptr);
+        SortingPipelineLayout = VK_NULL_HANDLE;
+    }
+    if (SortingDescriptorSetLayout != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorSetLayout(device, SortingDescriptorSetLayout, nullptr);
+        SortingDescriptorSetLayout = VK_NULL_HANDLE;
+    }
 
     // 清理缓冲区
     candidateNodesBuffer.Destroy();
@@ -9200,7 +9458,7 @@ void Renderer::ExecuteGPUDataPreparation(VkCommandBuffer cmd)
     // 推送参数：相机数限制 + 坐标变换参数 (与voxelization一致)
     struct CameraMatrixPushConstants
     {
-        uint32_t maxCameraCount{}; // 最大相机数限制 
+        uint32_t maxCameraCount{}; // 最大相机数限制
         glm::vec3 modelCenter;     // 模型中心，与voxelization一致
         float halfSizeWithMargin;  // 包含边距的半尺寸，与voxelization一致
     } cameraPC;
@@ -9537,6 +9795,51 @@ void Renderer::SetSolidNodeSelectionVersion(bool useVersionB)
     }
 }
 
+void Renderer::SetMultiViewCountSortEnabled(bool enabled)
+{
+    if (useCountSort_ != enabled)
+    {
+        useCountSort_ = enabled;
+        printf("Switched MultiView CountSort %s\n", enabled ? "Enabled" : "Disabled");
+
+        if (m_unifiedGPUPipeline.commandsRecorded)
+        {
+            m_unifiedGPUPipeline.commandsRecorded = false;
+            printf("Pipeline commands will be re-recorded with new count-sort mode\n");
+        }
+    }
+}
+
+void Renderer::SetMultiviewIsoSurfaceEnabled(bool enabled)
+{
+    if (m_showMultiviewIsoSurface != enabled)
+    {
+        m_showMultiviewIsoSurface = enabled;
+        printf("Switched Multiview IsoSurface %s\n", enabled ? "Enabled" : "Disabled");
+        UpdateFXAADescriptorSet();
+        if (m_unifiedGPUPipeline.commandsRecorded)
+        {
+            m_unifiedGPUPipeline.commandsRecorded = false;
+            printf("Pipeline commands will be re-recorded with new iso-surface mode\n");
+        }
+    }
+}
+
+void Renderer::SetCameraOverlayEnabled(bool enabled)
+{
+    if (m_enableCameraOverlay != enabled)
+    {
+        m_enableCameraOverlay = enabled;
+        printf("Switched Camera Overlay %s\n", enabled ? "Enabled" : "Disabled");
+        UpdateFXAADescriptorSet();
+        if (m_unifiedGPUPipeline.commandsRecorded)
+        {
+            m_unifiedGPUPipeline.commandsRecorded = false;
+            printf("Pipeline commands will be re-recorded with new camera-overlay mode\n");
+        }
+    }
+}
+
 /// @brief 执行阶段三：实体节点筛选
 /// @brief 更新SolidNodeSelection描述符集的mipmap纹理绑定
 void Renderer::UpdateSolidNodeSelectionDescriptorSet()
@@ -9834,8 +10137,18 @@ void Renderer::SubmitUnifiedGPUPipeline()
 {
     if (!m_unifiedGPUPipeline.resourcesInitialized || !m_unifiedGPUPipeline.commandsRecorded)
     {
-        printf("ERROR: Pipeline not ready for submission\n");
-        return;
+        if (!m_unifiedGPUPipeline.resourcesInitialized)
+        {
+            printf("ERROR: Pipeline not ready for submission\n");
+            return;
+        }
+
+        RecordUnifiedGPUPipelineCommands();
+        if (!m_unifiedGPUPipeline.commandsRecorded)
+        {
+            printf("ERROR: Pipeline not ready for submission\n");
+            return;
+        }
     }
 
     // 更新体素化常量（每帧可能变化的数据）
@@ -10785,6 +11098,11 @@ void Renderer::ExecuteMultiViewDepthRendering(VkCommandBuffer cmd)
 
 void Renderer::CreateFinalSDFTexture()
 {
+    if (m_multiViewDepthSDF4C.sdfFusionPass.finalSDFTexture != VK_NULL_HANDLE)
+    {
+        return;
+    }
+
     // Step 1: Create 3D storage texture for final SDF
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -10874,6 +11192,11 @@ void Renderer::CreateDepthCubemapSampler()
 
 void Renderer::CreateFinalSDFSampler()
 {
+    if (m_multiViewDepthSDF4C.sdfFusionPass.finalSDFSampler != VK_NULL_HANDLE)
+    {
+        return;
+    }
+
     // Create sampler for reading final SDF texture in SDF AO Pass
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -11114,7 +11437,7 @@ void Renderer::ExecuteSDFFusion(VkCommandBuffer cmd)
     // Step 4: Dispatch compute shader
     // SDF grid is 64³, compute shader uses 8×8×8 thread groups
     // Therefore we need (64/8)³ = 8³ work groups
-    const uint32_t workGroupsPerDim = config_->Sdf.VoxelResolution / 4; // 64 / 8 = 8
+    const uint32_t workGroupsPerDim = config_->Sdf.VoxelResolution / 4;
     vkCmdDispatch(cmd, workGroupsPerDim, workGroupsPerDim, workGroupsPerDim);
 
     // Step 5: Memory barrier for compute write completion
@@ -11444,6 +11767,8 @@ void Renderer::AllocateDescriptorSetSdfAO()
         Init::writeDescriptorSet(sdfAOPass_.set, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, &m_blueNoise.descriptor),
         Init::writeDescriptorSet(sdfAOPass_.set, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6, &m_sharedBuffers.ConstBufferCamera.descriptor)};
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+
+    AllocateDescriptorSetSdfIsoSurface();
 }
 
 void Renderer::PreparePipelineSdfAO()

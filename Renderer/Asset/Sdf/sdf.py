@@ -165,8 +165,6 @@ def analyze_sdf_quality(sdf_volume):
         print(f"警告: 发现{large_values}个可能异常的大值 (|SDF|>10)")
 
 def visualize_2d_slices(sdf_volume, slice_positions=[0.25, 0.5, 0.75]):
-    """2D切片可视化 - 应用Y和Z轴翻转"""
-    # 应用Y和Z轴翻转以匹配着色器坐标系
     sdf_flipped = sdf_volume.copy()
 
     resolution = sdf_flipped.shape[0]
@@ -175,17 +173,29 @@ def visualize_2d_slices(sdf_volume, slice_positions=[0.25, 0.5, 0.75]):
     if len(slice_positions) == 1:
         axes = [axes]
 
+    abs_max = np.max(np.abs(sdf_flipped))
+    vmin, vmax = -abs_max, abs_max
+
     for i, pos in enumerate(slice_positions):
         z_index = int(pos * resolution)
         slice_data = sdf_flipped[:, :, z_index]
 
-        im = axes[i].imshow(slice_data, cmap='RdBu_r', origin='lower')
-        axes[i].set_title(f'Z切片 {z_index}/{resolution} (pos={pos:.2f}) [Y,Z翻转]')
+        im = axes[i].imshow(
+            slice_data,
+            cmap='RdBu_r',
+            origin='lower',
+            vmin=vmin,
+            vmax=vmax
+        )
+        axes[i].set_title(f'Z slice {z_index}/{resolution} (pos={pos:.2f})')
         axes[i].set_xlabel('X')
-        axes[i].set_ylabel('Y ')
-        plt.colorbar(im, ax=axes[i])
+        axes[i].set_ylabel('Y')
 
-    plt.tight_layout()
+    plt.subplots_adjust(right=0.85)
+
+    fig.colorbar(im, ax=axes, location='right', pad=0.02)
+
+    
     plt.show()
 
 def visualize_error_slices(error_volume, slice_positions=[0.25, 0.5, 0.75], title_prefix="误差"):
@@ -841,12 +851,12 @@ def main():
     # meshToSdf = "duck_4k_64_JumpFlood.raw"
     # multiViewSdf = "duck_4k_64_Multview.raw"
     
-    modelName = "happy_291k_"
+    modelName = "bunny4k_"
     resolution = 128
     modelName = modelName + str(resolution) +"_"
     methodName1 = "BruteSdf"
     methodName2 = "JumpFlood"
-    methodName3 = "Analytical"
+
     methodName4 = "Multview"
     methodName5 = "NGP"
     methodName6 = "Heat"
@@ -855,32 +865,32 @@ def main():
     # default = "duck_4k_64_Multview.raw"
     fileTrue = modelName+ methodName1 + appendix
     file2 = modelName +methodName2 + appendix
-    # file3 = modelName +methodName3 + appendix
     file4 = modelName +methodName4 + appendix
     file5 = modelName +methodName5 + appendix
     file6 = modelName +methodName6 + appendix
 
     dataTrue = load_sdf_data(fileTrue,resolution=resolution) 
-    # data2 = load_sdf_data(file2,resolution=resolution,flip_x=True,flip_y=True)
+    # dataTrue = abs_sdf(dataTrue)
+    data2 = load_sdf_data(file2,resolution=resolution)
     # # # data3 = load_sdf_data(default,resolution=resolution)
     # # # data3 = abs_sdf(data3)
-    # data4 = load_sdf_data(file4,resolution=resolution)
-    # data4 = abs_sdf(data4)
+    data4 = load_sdf_data(file4,resolution=resolution)
+    data4 = abs_sdf(data4)
     # # diffSdf = data4 - dataTrue
     # data5 = load_sdf_data(file5,resolution=resolution)
     # data5 = abs_sdf(data5) # NGP
 
     # data6 = load_sdf_data(file6,resolution=resolution)
     # data6 = abs_sdf(data6) # HEat
-    # diffSdf = data4 - dataTrue
+    diffSdf = data4 - dataTrue
    
-    # visualize_2d_slices(diffSdf,[0.5,0.5,0.5])
+    visualize_2d_slices(diffSdf,[0.25,0.5,0.75])
     # # visualize_2d_slices(data4,[0.5,0.5,0.5])
-    # # visualize_error_slices(diffSdf,[0.25,0.5,0.75])
+    # visualize_error_slices(diffSdf,[0.25,0.5,0.75])
     # # compare_sdfao_images("happy_15k_128_AO1.png","happy_15k_128_AO_brute1.png")
     # # compare_sdf_data(data3,dataTrue,"Analytical")
-    # compare_sdf_data(data4,dataTrue,"heat")
-    visualize_3d_isosurface(dataTrue,resolution/2,save_path="SDFAO/"+modelName +methodName4+".png")
+    compare_sdf_data(data4,dataTrue,"multiview")
+    visualize_3d_isosurface(data4,resolution/2)
     
     # Visualize(dataTrue,data2,data3,data4,resolution)
     # save_sdf_data(data6,file6)

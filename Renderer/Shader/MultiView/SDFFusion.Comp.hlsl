@@ -51,9 +51,9 @@ void main(uint3 id : SV_DispatchThreadID) {
         const float3 cameraPos = cameraMatrices[cameraIndex].cameraPosition.xyz;
 
         // Debug: Check for invalid camera positions
-        if (length(cameraPos) < 0.001f) {
-            continue; // Skip invalid cameras
-        }
+        // if (length(cameraPos) < 0.001f) {
+        //     continue; // Skip invalid cameras
+        // }
 
         // b. Calculate projection vector from camera to voxel
         float3 vecToVoxel = worldPos-cameraPos;
@@ -76,13 +76,18 @@ void main(uint3 id : SV_DispatchThreadID) {
         // d. Sample depth map and convert to world distance
         float sampledDepth = depthCubemapArray.SampleLevel(depthSampler, cubemapCoord, 0).r;
 
-        // Debug: Check for invalid depth values
-        if (sampledDepth <= 0.0f || sampledDepth > 1000.0f) {
+        // Ignore invalid depth values first.
+        if (sampledDepth <= 0.0f || sampledDepth > SDF_WORLD_SIZE) {
             continue; // Skip invalid depth samples
         }
 
         // e. Calculate SDF value for current view: distance from voxel to surface
         float sdfValue = currentDistance - sampledDepth;
+
+        // Ignore abnormal SDF contributions outside the volume scale.
+        if (abs(sdfValue) > SDF_WORLD_SIZE) {
+            continue;
+        }
 
         // f. Update minimum SDF value
         if(minSdfValue<0&&sdfValue<0) {

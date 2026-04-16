@@ -137,6 +137,7 @@ struct Pipelines
 	VkPipeline skyBox{VK_NULL_HANDLE};
 	VkPipeline toneMapping{VK_NULL_HANDLE};
 	VkPipeline cameraOverlay{VK_NULL_HANDLE};
+	VkPipeline sdfIsoSurface{VK_NULL_HANDLE};
 	VkPipeline blurVert{VK_NULL_HANDLE};
 	VkPipeline blurHorz{VK_NULL_HANDLE};
 	VkPipeline FXAA{nullptr};
@@ -150,6 +151,7 @@ struct DescriptorSets
 	VkDescriptorSet skyBox{VK_NULL_HANDLE};
 	VkDescriptorSet toneMapping{nullptr};
 	VkDescriptorSet cameraOverlay{nullptr};
+	VkDescriptorSet sdfIsoSurface{nullptr};
 	VkDescriptorSet blurVert{nullptr};
 	VkDescriptorSet blurHorz{nullptr};
 	VkDescriptorSet FXAA{nullptr};
@@ -191,6 +193,7 @@ struct PipelineLayouts
 	VkPipelineLayout shadow;
 	VkPipelineLayout toneMapping;
 	VkPipelineLayout cameraOverlay{nullptr};
+	VkPipelineLayout sdfIsoSurface{nullptr};
 	VkPipelineLayout blur;
 	VkPipelineLayout FXAA;
 };
@@ -202,6 +205,7 @@ struct DescriptorSetLayouts
 	VkDescriptorSetLayout skyBox{nullptr};
 	VkDescriptorSetLayout toneMapping{nullptr};
 	VkDescriptorSetLayout cameraOverlay{nullptr};
+	VkDescriptorSetLayout sdfIsoSurface{nullptr};
 	VkDescriptorSetLayout blur{nullptr};
 	VkDescriptorSetLayout FXAA{nullptr};
 };
@@ -453,6 +457,9 @@ private:
 	void SetupBloomPass();
 	void SetupToneMappingPass();
 	void SetupCameraOverlayPass();
+	void PreparePipelineSdfIsoSurface();
+	void AllocateDescriptorSetSdfIsoSurface();
+	void SetMultiviewIsoSurfaceEnabled(bool enabled);
 
 	// PBR
 	void GenerateBRDFLUT();
@@ -463,6 +470,7 @@ private:
 	void UpdateUniformBufferFXAA();
 	void AllocateDescriptorSetCameraOverlay();
 	void UpdateCameraOverlayDescriptorSet();
+	void UpdateFXAADescriptorSet();
 	void PreparePipelineCameraOverlay();
 	struct PostSettings
 	{
@@ -712,6 +720,20 @@ private:
 			alignas(16) glm::vec4 params{22.0f, 0.95f, 32.0f, 0.0f};
 		} pushConstants;
 	} m_cameraOverlayPass;
+
+	struct SdfIsoSurfacePass
+	{
+		struct PushConstants
+		{
+			alignas(16) glm::vec4 surfaceColor{0.18f, 0.82f, 1.0f, 1.0f};
+			alignas(16) glm::vec4 contourColor{1.0f, 1.0f, 1.0f, 1.0f};
+			alignas(16) glm::vec4 volumeMin{-1.0f, -1.0f, -1.0f, 0.0f};
+			alignas(16) glm::vec4 volumeMax{1.0f, 1.0f, 1.0f, 0.0f};
+			alignas(16) glm::vec4 sliceParams{2.0f, 0.0f, 0.0f, 0.01f}; // x: axis 0/1/2, y: octree layer, z: slice index, w: contour width
+			alignas(16) glm::vec4 styleParams{0.18f, 0.55f, 0.0f, 0.0f}; // x: fill strength, y: background mix
+			alignas(16) glm::vec4 gridParams{64.0f, 0.0f, 0.0f, 0.0f};   // x: base SDF resolution
+		} pushConstants;
+	} m_sdfIsoSurfacePass;
 
 private:
 	struct BloomPass
@@ -1204,7 +1226,8 @@ private:
         };
 		Buffer SortedNodeBuffer{}; // 排序后的节点缓冲区
         Buffer SortedCountBuffer{};
-        VkPipeline SortingPipeline{};
+		VkPipeline SortingPipeline{};
+        VkPipeline SortingPassthroughPipeline{};
         VkPipelineLayout SortingPipelineLayout{};
         VkDescriptorSetLayout SortingDescriptorSetLayout{};
         VkDescriptorSet SortingDescriptorSet{};
@@ -1212,7 +1235,10 @@ private:
 	} multiViewNodeSelection_;
 
 	// 版本控制：选择使用阶段三的哪个版本
-	bool useMultiview_ = false; 
+	bool useMultiview_ = false;
+    bool useCountSort_ = true;
+    bool m_enableCameraOverlay = true;
+	bool m_showMultiviewIsoSurface = false;
 
 	// 阶段四：解析式SDF生成 (Analytical SDF Generation)
 	struct AnalyticalSDFGeneration
@@ -1410,6 +1436,8 @@ private:
 	void UpdateAnalyticalSDFGenerationDescriptorSet();		 // 动态更新阶段四使用的节点选择版本
 	void ExecuteMultiViewNodeSelection(VkCommandBuffer cmd); // 执行版本B节点筛选
 	void SetSolidNodeSelectionVersion(bool useVersionB);	 // 切换版本A/B
+    void SetMultiViewCountSortEnabled(bool enabled);        // 切换是否启用计数排序
+    void SetCameraOverlayEnabled(bool enabled);
 
 	// 阶段四版本B的相关函数 (Multi-View Depth SDF)
 	void InitializeMultiViewDepthSDFResources(); // 初始化多视角深度SDF资源

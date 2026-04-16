@@ -47,6 +47,9 @@ Config::Config(std::string configPath)
         Sdf.SampledLevel = sdfConfig.value("SampledLevel", 1);
         Sdf.SdfAoUseSdfKind = static_cast<SdfKind>(sdfConfig.value("UseSdfKind", 2));
         Sdf.UseRandomSelection = sdfConfig.value("UseRandomSelection", 1);
+        Sdf.EnableCountSort = sdfConfig.value("EnableCountSort", 1);
+        Sdf.EnableCameraOverlay = sdfConfig.value("EnableCameraOverlay", 1);
+        Sdf.EnableMultiviewIsoSurface = sdfConfig.value("EnableMultiviewIsoSurface", 0);
         Sdf.SdfResolution = sdfConfig.value("SdfResolution", 64);
     }
     spdlog::info("config loadded");

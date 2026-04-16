@@ -60,6 +60,9 @@ export struct Config
 		uint32_t MeshToSdfQuality{0};	   // normal:0, ultra:1
         SdfKind SdfAoUseSdfKind{SdfKind::MultiView};       //
         uint32_t UseRandomSelection{1};
+        uint32_t EnableCountSort{1};
+        uint32_t EnableCameraOverlay{1};
+        uint32_t EnableMultiviewIsoSurface{0};
         uint32_t SdfResolution{64};
 	};
 	SdfConfig Sdf;
