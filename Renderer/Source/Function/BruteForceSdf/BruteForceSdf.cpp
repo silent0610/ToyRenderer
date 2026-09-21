@@ -163,7 +163,7 @@ void BruteForceSdf::GenerateGroundTruth(std::vector<float> &sdfData)
 
     Log::Info(std::format("BruteForceSdf: Generating ground truth for {} voxels...", sdfData.size()));
 
-    ThreadPool pool;  // 使用默认线程数
+    ThreadPool pool{};  // 使用默认线程数
 
     // 按z层分配任务
     for (int z = 0; z < params_.voxelResolution.z; ++z)
@@ -448,48 +448,67 @@ bool BruteForceSdf::IsPointInsideMesh(const glm::vec3& point) const
     }
 
     constexpr float epsilon = 1e-4f;
-    const glm::vec3 rayDir = glm::normalize(glm::vec3(0.7548777f, 0.5698403f, 0.3216544f));
-    const glm::vec3 rayOrigin = point + rayDir * epsilon;
-    const glm::vec3 rayDirInv(1.0f / rayDir.x, 1.0f / rayDir.y, 1.0f / rayDir.z);
-    const bool rayDirNegX = rayDir.x < 0.0f;
-    const bool rayDirNegY = rayDir.y < 0.0f;
-    const bool rayDirNegZ = rayDir.z < 0.0f;
+    constexpr glm::vec3 kAxisDirs[6] = {
+        { 1.0f,  0.0f,  0.0f},
+        {-1.0f,  0.0f,  0.0f},
+        { 0.0f,  1.0f,  0.0f},
+        { 0.0f, -1.0f,  0.0f},
+        { 0.0f,  0.0f,  1.0f},
+        { 0.0f,  0.0f, -1.0f},
+    };
 
-    uint32_t hitCount = 0;
-    std::vector<uint32_t> nodeStack;
-    nodeStack.reserve(bvhNodes_.size());
-    nodeStack.push_back(rootNode_);
+    uint32_t insideCount = 0;
 
-    while (!nodeStack.empty())
+    for (uint32_t axis = 0; axis < 6; ++axis)
     {
-        const uint32_t nodeIndex = nodeStack.back();
-        nodeStack.pop_back();
+        const glm::vec3 rayDir = kAxisDirs[axis];
+        const glm::vec3 rayOrigin = point + rayDir * epsilon;
+        const glm::vec3 rayDirInv(1.0f / rayDir.x, 1.0f / rayDir.y, 1.0f / rayDir.z);
+        const bool rayDirNegX = rayDir.x < 0.0f;
+        const bool rayDirNegY = rayDir.y < 0.0f;
+        const bool rayDirNegZ = rayDir.z < 0.0f;
 
-        const BvhNode &node = bvhNodes_[nodeIndex];
-        if (!IntersectRayAabb(rayOrigin, rayDirInv, rayDirNegX, rayDirNegY, rayDirNegZ, node.boundsMin, node.boundsMax))
-        {
-            continue;
-        }
+        uint32_t hitCount = 0;
+        std::vector<uint32_t> nodeStack;
+        nodeStack.reserve(bvhNodes_.size());
+        nodeStack.push_back(rootNode_);
 
-        if (node.triangleCount > 0)
+        while (!nodeStack.empty())
         {
-            for (uint32_t i = 0; i < node.triangleCount; ++i)
+            const uint32_t nodeIndex = nodeStack.back();
+            nodeStack.pop_back();
+
+            const BvhNode &node = bvhNodes_[nodeIndex];
+            if (!IntersectRayAabb(rayOrigin, rayDirInv, rayDirNegX, rayDirNegY, rayDirNegZ, node.boundsMin, node.boundsMax))
             {
-                const TriangleData &triangle = triangles_[triangleIndices_[node.leftFirst + i]];
-                float t = 0.0f;
-                if (IntersectRayTriangle(rayOrigin, rayDir, triangle, t))
-                {
-                    ++hitCount;
-                }
+                continue;
             }
-            continue;
+
+            if (node.triangleCount > 0)
+            {
+                for (uint32_t i = 0; i < node.triangleCount; ++i)
+                {
+                    const TriangleData &triangle = triangles_[triangleIndices_[node.leftFirst + i]];
+                    float t = 0.0f;
+                    if (IntersectRayTriangle(rayOrigin, rayDir, triangle, t))
+                    {
+                        ++hitCount;
+                    }
+                }
+                continue;
+            }
+
+            nodeStack.push_back(node.leftFirst);
+            nodeStack.push_back(node.rightChild);
         }
 
-        nodeStack.push_back(node.leftFirst);
-        nodeStack.push_back(node.rightChild);
+        if ((hitCount % 2u) == 1u)
+        {
+            ++insideCount;
+        }
     }
 
-    return (hitCount % 2u) == 1u;
+    return insideCount >= 4u;
 }
 
 void BruteForceSdf::SaveToFile(const std::vector<float>& data, const std::string& filename)

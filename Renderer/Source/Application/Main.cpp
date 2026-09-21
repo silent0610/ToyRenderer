@@ -10,11 +10,7 @@ import ToolMod;
 int main(int argc, char *argv[])
 {
 
-	// 启用异步模式以获得最高性能 - 在最开始启用
-	Log::EnableAsyncMode(16384); // 16K 队列大小
 
-	// 高性能logging + std::format格式化
-	Log::Info("Starting MyToyRenderer application [ASYNC MODE]");
 
 	Config *config = new Config{Tool::GetProjectPath() + "/Config.json5"};
 

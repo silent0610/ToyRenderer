@@ -1,6 +1,6 @@
 {
     "modelPath": [
-        "Models/checked/bunny4k.gltf"
+        "Models/dynamic/bend_bar.gltf"
     ],
     "shaderPath": [
         "BlinnPhong/Basic.Vert.spv",
@@ -34,7 +34,7 @@
         "MultiViewUsedCameraNum": 256, // 没有用了
         "MaxCameraNum": 40, // 允许的最大相机数
         "SdfMode": 1, // 1 Multiview, 0 
-        "MultiViewDepthResolution": 128,
+        "MultiViewDepthResolution": 64,
         "SampledLevel": 3,  // 最低到哪一层, 如6,5,4,3
         "MeshToSdfMode": 1, // 1 JFA, 0 Linear
         "MeshToSdfIteration": 64, // 只适用于 Linear 模式
@@ -42,5 +42,11 @@
         "MeshToSdfQuality": 1, // 1 Ultra
         "UseSdfKind": 2, // SDFAO, 0 BruteForce, 2 Multiview, 3 JFA , 4 NGP, 5 Heat
         "UseRandomSelection": 0
+    },
+    "DynamicGeometry": {
+        "enable": false,
+        "animationIndex": 0,
+        "speed": 1.0,
+        "loop": true
     }
 }

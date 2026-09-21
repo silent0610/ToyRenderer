@@ -229,7 +229,7 @@ namespace Tool
 	std::string GetProjectPath()
 	{
 		auto path = std::filesystem::current_path();
-		while (path != std::filesystem::path("/") && path.filename() != "MyToyRenderer")
+		while (path != std::filesystem::path("/") && path.filename() != "ToyRenderer")
 		{
 			path = path.parent_path(); // 向上遍历
 		}

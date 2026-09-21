@@ -316,10 +316,16 @@ namespace vkglTF
 
 		std::vector<uint32_t> indexBuffer;
         std::vector<Vertex> vertexBuffer; // 如果使用了Flags, 则为预处理后的顶点数据
+		std::vector<Vertex> restPoseVertices; // 蒙皮/节点动画用的 bind pose（局部空间）
 
 		Model() {};
 		~Model();
 		void Destroy();
+
+		bool HasSkinnedAnimation() const;
+		void SkinToCurrentPose();
+		void UploadVertices();
+		void CheckDeformedBounds(float worldSize);
 
 		void loadNode(vkglTF::Node *parent, const tinygltf::Node &node, uint32_t nodeIndex, const tinygltf::Model &model, std::vector<uint32_t> &indexBuffer, std::vector<Vertex> &vertexBuffer, float globalscale);
 		void loadSkins(tinygltf::Model &gltfModel);
@@ -337,5 +343,18 @@ namespace vkglTF
         Node* findNode(vkglTF::Node* parent, uint32_t index);
 		Node *nodeFromIndex(uint32_t index);
 		void prepareNodeDescriptor(vkglTF::Node *node, VkDescriptorSetLayout descriptorSetLayout);
+
+	private:
+		VkQueue copyQueue{VK_NULL_HANDLE};
+		VkBuffer vertexStagingBuffer{VK_NULL_HANDLE};
+		VkDeviceMemory vertexStagingMemory{VK_NULL_HANDLE};
+		void *vertexStagingMapped{nullptr};
+		bool boundsFrozen{false};
+		bool deformFromRestPose{false};
+		uint32_t boundsWarningFrame{0};
+		void CaptureRestPose();
+		void CreatePersistentVertexStaging();
+		void UpdateActualDimensionsFromVertices();
+		void DestroyVertexStaging();
 	};
 }

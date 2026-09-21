@@ -1,5 +1,6 @@
 module;
 #include <cstdint>
+#include <fstream>
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
 export module RendererMod;
@@ -1544,6 +1545,18 @@ private:
 	void CleanupTimestampQueries();
 	void CollectFrameTimestamps(); // 每帧收集时间戳
 	void PrintPerformanceStatistics(); // 打印最终统计结果
+	void UpdateDynamicGeometry();
+	void ReadSelectedCameraCount();
+	void WriteDynamicPerfSample(float jfaMs, float unifiedMs);
+
+	float dynamicAnimTime_{0.0f};
+	float lastClipTime_{0.0f};
+	float lastClipDuration_{0.0f};
+	float lastJfaMs_{0.0f};
+	float lastUnifiedMs_{0.0f};
+	uint32_t lastSelectedCameraCount_{0};
+	std::ofstream dynamicPerfCsv_;
+	bool dynamicCsvOpened_{false};
 
 public:
 	MeshToSdf *GetMeshToSdfOperator();
@@ -1555,5 +1568,6 @@ public:
 	std::string GenerateSdfFileName(const std::string& methodName);
 
 public:
-	void TestBruteSdfAndSave();
+	void TestBruteSdfAndSave(bool bSigned);
+
 };

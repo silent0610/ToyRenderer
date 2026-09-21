@@ -1,5 +1,5 @@
 ## MultiviewDepth SDF
-![alt text](asset/comparison_labeled.png)
+![](Asset/comparison_labeled.png)
 
 ## Renderer
-![renderer](asset/Renderer.png)
+![](./Asset/Renderer.png)

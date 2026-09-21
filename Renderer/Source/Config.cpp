@@ -53,5 +53,13 @@ Config::Config(std::string configPath)
         Sdf.EnableSelectionScoreOctreePass = sdfConfig.value("EnableSelectionScoreOctreePass", 0);
         Sdf.SdfResolution = sdfConfig.value("SdfResolution", 64);
     }
+    if (config.contains("DynamicGeometry"))
+    {
+        const auto &dynamicConfig{config["DynamicGeometry"]};
+        Dynamic.enable = dynamicConfig.value("enable", false);
+        Dynamic.animationIndex = dynamicConfig.value("animationIndex", 0u);
+        Dynamic.speed = dynamicConfig.value("speed", 1.0f);
+        Dynamic.loop = dynamicConfig.value("loop", true);
+    }
     spdlog::info("config loadded");
 }
