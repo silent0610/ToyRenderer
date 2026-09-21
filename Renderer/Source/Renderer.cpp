@@ -293,7 +293,7 @@ std::string Renderer::GenerateSdfFileName(const std::string &methodName)
     return modelName + "_" + std::to_string(resolution) + "_" + methodName + ".raw";
 }
 
-void Renderer::TestBruteSdfAndSave()
+void Renderer::TestBruteSdfAndSave(bool bSigned)
 {
     Log::Info("开始生成暴力法SDF (Ground Truth)...");
 
@@ -305,7 +305,7 @@ void Renderer::TestBruteSdfAndSave()
     const float worldSize = config_->Sdf.WorldSize;
 
     // 设置SDF参数
-    sdfParams.signedDistance = false; // 无符号距离
+    sdfParams.signedDistance = bSigned; // 无符号距离
     sdfParams.voxelResolution = glm::vec3(resolution, resolution, resolution);
     sdfParams.origin = glm::vec3(-worldSize / 2.0f, -worldSize / 2.0f, -worldSize / 2.0f);
     sdfParams.cellSize = worldSize / static_cast<float>(resolution);
@@ -334,7 +334,16 @@ void Renderer::TestBruteSdfAndSave()
 
     // 生成输出文件名并保存
     std::string outputFileName = GenerateSdfFileName("BruteSdf");
-    std::string outputPath = Tool::GetAssetsPath() + "Sdf/" + outputFileName;
+    std::string outputPath{};
+    if (bSigned)
+    {
+        outputPath = Tool::GetAssetsPath() + "Sdf/" + "Signed" + outputFileName;
+    }
+    else
+    {
+        outputPath = Tool::GetAssetsPath() + "Sdf/" + "Unsigned"+ outputFileName;
+    }
+    
 
     sdfGenerator.SaveToFile(sdfData, outputPath);
 
@@ -1430,7 +1439,10 @@ void Renderer::KeyCallback(GLFWwindow *window, int key, int scancode, int action
             switch (key)
             {
             case GLFW_KEY_V:
-                app->TestBruteSdfAndSave();
+                app->TestBruteSdfAndSave(false);
+                break;
+            case GLFW_KEY_B:
+                app->TestBruteSdfAndSave(true);
                 break;
             case GLFW_KEY_E:
             { // 按E键导出SDF数据用于Python可视化

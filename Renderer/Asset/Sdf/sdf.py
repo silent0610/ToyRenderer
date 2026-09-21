@@ -841,7 +841,7 @@ def main():
     # meshToSdf = "duck_4k_64_JumpFlood.raw"
     # multiViewSdf = "duck_4k_64_Multview.raw"
     
-    modelName = "happy_291k_"
+    modelName = "rock_"
     resolution = 128
     modelName = modelName + str(resolution) +"_"
     methodName1 = "BruteSdf"
@@ -860,12 +860,13 @@ def main():
     file5 = modelName +methodName5 + appendix
     file6 = modelName +methodName6 + appendix
 
-    dataTrue = load_sdf_data(fileTrue,resolution=resolution) 
+    dataTrueUnsigend = load_sdf_data("Unsigned"+fileTrue,resolution=resolution) 
+    dataTrueSigned = load_sdf_data("Signed"+fileTrue,resolution=resolution) 
     # data2 = load_sdf_data(file2,resolution=resolution,flip_x=True,flip_y=True)
     # # # data3 = load_sdf_data(default,resolution=resolution)
     # # # data3 = abs_sdf(data3)
-    # data4 = load_sdf_data(file4,resolution=resolution)
-    # data4 = abs_sdf(data4)
+    data4 = load_sdf_data(file4,resolution=resolution)
+    
     # # diffSdf = data4 - dataTrue
     # data5 = load_sdf_data(file5,resolution=resolution)
     # data5 = abs_sdf(data5) # NGP
@@ -879,8 +880,13 @@ def main():
     # # visualize_error_slices(diffSdf,[0.25,0.5,0.75])
     # # compare_sdfao_images("happy_15k_128_AO1.png","happy_15k_128_AO_brute1.png")
     # # compare_sdf_data(data3,dataTrue,"Analytical")
-    # compare_sdf_data(data4,dataTrue,"heat")
-    visualize_3d_isosurface(dataTrue,resolution/2,save_path="SDFAO/"+modelName +methodName4+".png")
+    compare_sdf_data(data4,dataTrueSigned,"Signed")
+    
+
+    data4 = abs_sdf(data4)
+    compare_sdf_data(data4,dataTrueUnsigend,"Unsigned")
+
+    # visualize_3d_isosurface(dataTrueSigned,resolution/2,save_path="SDFAO/"+modelName +methodName4+".png")
     
     # Visualize(dataTrue,data2,data3,data4,resolution)
     # save_sdf_data(data6,file6)

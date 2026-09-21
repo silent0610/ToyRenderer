@@ -1525,5 +1525,6 @@ public:
 	std::string GenerateSdfFileName(const std::string& methodName);
 
 public:
-	void TestBruteSdfAndSave();
+	void TestBruteSdfAndSave(bool bSigned);
+
 };

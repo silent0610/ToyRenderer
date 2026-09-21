@@ -1,6 +1,6 @@
 {
     "modelPath": [
-        "Models/checked/model2.gltf"
+        "Models/checked/rock.gltf"
     ],
     "shaderPath": [
         "BlinnPhong/Basic.Vert.spv",
@@ -35,7 +35,7 @@
         "MaxCameraNum": 40, // 允许的最大相机数
         "SdfMode": 1, // 1 Multiview, 0 
         "MultiViewDepthResolution": 64,
-        "SampledLevel": 2,  // 最低到哪一层, 如6,5,4,3
+        "SampledLevel": 3,  // 最低到哪一层, 如6,5,4,3
         "MeshToSdfMode": 1, // 1 JFA, 0 Linear
         "MeshToSdfIteration": 64, // 只适用于 Linear 模式
         "MeshToSdfDistanceMode": 0, // 只有在Linear模式有效, JFA默认无符号
