@@ -1,0 +1,224 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "ToyRenderer dynamic smoke test"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0,
+        2
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Root",
+      "translation": [
+        0.0,
+        -0.8,
+        0.0
+      ],
+      "children": [
+        1
+      ]
+    },
+    {
+      "name": "Bend",
+      "translation": [
+        0.0,
+        0.8,
+        0.0
+      ]
+    },
+    {
+      "name": "Mesh",
+      "mesh": 0,
+      "skin": 0
+    }
+  ],
+  "meshes": [
+    {
+      "name": "BendBar",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "JOINTS_0": 2,
+            "WEIGHTS_0": 3
+          },
+          "indices": 4,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "skins": [
+    {
+      "name": "BendSkin",
+      "joints": [
+        0,
+        1
+      ],
+      "inverseBindMatrices": 5,
+      "skeleton": 0
+    }
+  ],
+  "animations": [
+    {
+      "name": "BendLoop",
+      "samplers": [
+        {
+          "input": 6,
+          "output": 7,
+          "interpolation": "LINEAR"
+        }
+      ],
+      "channels": [
+        {
+          "sampler": 0,
+          "target": {
+            "node": 1,
+            "path": "rotation"
+          }
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "Default",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.75,
+          0.72,
+          0.68,
+          1.0
+        ],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.8
+      }
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "bend_bar.bin",
+      "byteLength": 21884
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 3624,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 3624,
+      "byteLength": 3624,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 7248,
+      "byteLength": 2416,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 9664,
+      "byteLength": 4832,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 14496,
+      "byteLength": 7200,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 21696,
+      "byteLength": 128
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 21824,
+      "byteLength": 12
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 21836,
+      "byteLength": 48
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 302,
+      "type": "VEC3",
+      "min": [
+        -0.22,
+        -0.8,
+        -0.22
+      ],
+      "max": [
+        0.22,
+        0.8000000000000003,
+        0.22
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 302,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5123,
+      "count": 302,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 302,
+      "type": "VEC4"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5125,
+      "count": 1800,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 2,
+      "type": "MAT4"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 3,
+      "type": "SCALAR",
+      "min": [
+        0.0
+      ],
+      "max": [
+        2.0
+      ]
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC4"
+    }
+  ]
+}

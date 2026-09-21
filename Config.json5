@@ -1,6 +1,6 @@
 {
     "modelPath": [
-        "Models/checked/rock.gltf"
+        "Models/dynamic/bend_bar.gltf"
     ],
     "shaderPath": [
         "BlinnPhong/Basic.Vert.spv",
@@ -42,5 +42,11 @@
         "MeshToSdfQuality": 1, // 1 Ultra
         "UseSdfKind": 2, // SDFAO, 0 BruteForce, 2 Multiview, 3 JFA , 4 NGP, 5 Heat
         "UseRandomSelection": 0
+    },
+    "DynamicGeometry": {
+        "enable": false,
+        "animationIndex": 0,
+        "speed": 1.0,
+        "loop": true
     }
 }

@@ -1843,6 +1843,15 @@ void Renderer::SetUI(UIOverlay *overlay)
                 UpdateUniformBuffersBlur();
             }
         }
+        if (overlay->Header("Dynamic SDF"))
+        {
+            overlay->Text("enable: %s", config_->Dynamic.enable ? "true" : "false");
+            overlay->Text("clip: %.3f / %.3f s  (elapsed %.3f s)", lastClipTime_, lastClipDuration_, dynamicAnimTime_);
+            overlay->Text("JFA: %.3f ms", lastJfaMs_);
+            overlay->Text("Unified (voxel+octree+cam+fusion): %.3f ms", lastUnifiedMs_);
+            overlay->Text("selected cameras: %u", lastSelectedCameraCount_);
+            overlay->Text("cameras/octree: rebuild every frame");
+        }
         if (overlay->Header("Others"))
         {
         }
@@ -2059,6 +2068,7 @@ void Renderer::PrepareFrame()
 
 void Renderer::Draw()
 {
+    UpdateDynamicGeometry();
 
     {
         vkResetCommandBuffer(meshToSdfCommandBuffer_, 0);
@@ -3091,6 +3101,11 @@ void Renderer::TestVoxelization()
 
 void Renderer::Cleanup()
 {
+    if (dynamicPerfCsv_.is_open())
+    {
+        dynamicPerfCsv_.close();
+    }
+
     // GPU Timestamp性能统计清理
     CleanupTimestampQueries();
 
@@ -9653,6 +9668,42 @@ void Renderer::ExecuteAnalyticalNodeSelection(VkCommandBuffer cmd)
 
 void Renderer::ExecuteVoxelizationMarkPass(VkCommandBuffer cmd)
 {
+    VkImageSubresourceRange counterRange{};
+    counterRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    counterRange.baseMipLevel = 0;
+    counterRange.levelCount = 1;
+    counterRange.baseArrayLayer = 0;
+    counterRange.layerCount = 1;
+
+    VkImageMemoryBarrier toClear{};
+    toClear.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toClear.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    toClear.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    toClear.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toClear.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toClear.image = m_voxelizationPass.voxelCounterTexture.image;
+    toClear.subresourceRange = counterRange;
+    toClear.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    toClear.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
+                         nullptr, 0, nullptr, 1, &toClear);
+
+    VkClearColorValue clearValue{};
+    clearValue.int32[0] = 0;
+    vkCmdClearColorImage(cmd, m_voxelizationPass.voxelCounterTexture.image, VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &counterRange);
+
+    VkImageMemoryBarrier toMark{};
+    toMark.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toMark.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    toMark.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    toMark.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toMark.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toMark.image = m_voxelizationPass.voxelCounterTexture.image;
+    toMark.subresourceRange = counterRange;
+    toMark.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    toMark.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &toMark);
+
     // === 开始Dynamic Rendering ===
     VkRenderingInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -11780,9 +11831,115 @@ void Renderer::CleanupTimestampQueries()
     }
 }
 
+void Renderer::UpdateDynamicGeometry()
+{
+    if (!config_->Dynamic.enable)
+    {
+        return;
+    }
+    if (m_glTFModel.animations.empty())
+    {
+        return;
+    }
+
+    const uint32_t animationIndex = config_->Dynamic.animationIndex;
+    if (animationIndex >= static_cast<uint32_t>(m_glTFModel.animations.size()))
+    {
+        Log::Warn("DynamicGeometry.animationIndex out of range");
+        return;
+    }
+
+    const auto &animation = m_glTFModel.animations[animationIndex];
+    float duration = animation.end - animation.start;
+    if (duration <= 1e-5f)
+    {
+        duration = 1.0f;
+    }
+
+    dynamicAnimTime_ += m_frameTimer * config_->Dynamic.speed;
+    float localTime = dynamicAnimTime_;
+    if (config_->Dynamic.loop)
+    {
+        localTime = std::fmod(dynamicAnimTime_, duration);
+        if (localTime < 0.0f)
+        {
+            localTime += duration;
+        }
+    }
+    else if (localTime > duration)
+    {
+        localTime = duration;
+    }
+
+    const float sampleTime = animation.start + localTime;
+    lastClipTime_ = localTime;
+    lastClipDuration_ = duration;
+    m_glTFModel.updateAnimation(animationIndex, sampleTime);
+    m_glTFModel.SkinToCurrentPose();
+    m_glTFModel.UploadVertices();
+    m_glTFModel.CheckDeformedBounds(config_->Sdf.WorldSize);
+}
+
+void Renderer::ReadSelectedCameraCount()
+{
+    lastSelectedCameraCount_ = 0;
+    Buffer *countBuffer = nullptr;
+    if (useMultiview_)
+    {
+        countBuffer = &multiViewNodeSelection_.selectedCountBuffer;
+    }
+    else
+    {
+        countBuffer = &analyticalNodeSelection_.counterBuffer;
+    }
+    if (!countBuffer || countBuffer->buffer == VK_NULL_HANDLE)
+    {
+        return;
+    }
+
+    if (countBuffer->mapped)
+    {
+        lastSelectedCameraCount_ = *static_cast<uint32_t *>(countBuffer->mapped);
+        return;
+    }
+
+    if (countBuffer->Map() == VK_SUCCESS && countBuffer->mapped)
+    {
+        lastSelectedCameraCount_ = *static_cast<uint32_t *>(countBuffer->mapped);
+        countBuffer->Unmap();
+    }
+}
+
+void Renderer::WriteDynamicPerfSample(float jfaMs, float unifiedMs)
+{
+    if (!dynamicCsvOpened_)
+    {
+        const std::string modelName = GetModelNameFromPath(config_->modelPath);
+        const std::string csvPath = Tool::GetAssetsPath() + "Sdf/" + modelName + "_dynamic_perf.csv";
+        dynamicPerfCsv_.open(csvPath, std::ios::out | std::ios::trunc);
+        if (!dynamicPerfCsv_.is_open())
+        {
+            Log::Error("Failed to open dynamic perf csv: " + csvPath);
+            return;
+        }
+        dynamicPerfCsv_ << "frame,clipTime,clipDuration,elapsedTime,jfaMs,unifiedMs,selectedCameras\n";
+        dynamicCsvOpened_ = true;
+        Log::Info("Dynamic perf csv: " + csvPath);
+    }
+
+    if (!dynamicPerfCsv_.is_open())
+    {
+        return;
+    }
+
+    dynamicPerfCsv_ << perfStats_.currentFrame << "," << lastClipTime_ << "," << lastClipDuration_ << "," << dynamicAnimTime_ << "," << jfaMs << ","
+                    << unifiedMs << "," << lastSelectedCameraCount_ << "\n";
+}
+
 void Renderer::CollectFrameTimestamps()
 {
     perfStats_.currentFrame++;
+    const bool dynamicEnabled = config_->Dynamic.enable && !m_glTFModel.animations.empty();
 
     // 预热阶段：跳过前N帧
     if (perfStats_.currentFrame <= perfStats_.warmupFrames)
@@ -11795,45 +11952,62 @@ void Renderer::CollectFrameTimestamps()
         return;
     }
 
-    // 数据收集完成
-    if (perfStats_.isComplete)
+    if (!dynamicEnabled && perfStats_.isComplete)
     {
         return;
     }
 
-    // 收集数据阶段
-    if (perfStats_.isCollecting)
+    if (!perfStats_.isCollecting && !dynamicEnabled)
     {
-        // 读取时间戳
-        uint64_t timestamps[MAX_TIMESTAMP_QUERIES] = {0};
-        VkResult result = vkGetQueryPoolResults(m_device, timestampQueryPool_, 0, MAX_TIMESTAMP_QUERIES, sizeof(timestamps), timestamps,
-                                                sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+        return;
+    }
 
-        if (result == VK_SUCCESS)
+    uint64_t timestamps[MAX_TIMESTAMP_QUERIES] = {0};
+    VkResult result = vkGetQueryPoolResults(m_device, timestampQueryPool_, 0, MAX_TIMESTAMP_QUERIES, sizeof(timestamps), timestamps,
+                                            sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+
+    if (result != VK_SUCCESS)
+    {
+        return;
+    }
+
+    const float meshToSdfTime = (timestamps[MESHTOSDF_END] - timestamps[MESHTOSDF_START]) * timestampPeriod_ / 1e6f;
+    const float unifiedTime = (timestamps[UNIFIED_PIPELINE_END] - timestamps[UNIFIED_PIPELINE_START]) * timestampPeriod_ / 1e6f;
+    lastJfaMs_ = meshToSdfTime;
+    lastUnifiedMs_ = unifiedTime;
+    ReadSelectedCameraCount();
+
+    if (dynamicEnabled)
+    {
+        WriteDynamicPerfSample(meshToSdfTime, unifiedTime);
+        if (perfStats_.currentFrame % 100 == 0)
         {
-            // 计算MeshToSdf的GPU时间（毫秒）
-            float meshToSdfTime = (timestamps[MESHTOSDF_END] - timestamps[MESHTOSDF_START]) * timestampPeriod_ / 1e6f;
-            perfStats_.meshToSdfTimes.push_back(meshToSdfTime);
-
-            // 计算UnifiedPipeline的GPU时间（毫秒）
-            float unifiedTime = (timestamps[UNIFIED_PIPELINE_END] - timestamps[UNIFIED_PIPELINE_START]) * timestampPeriod_ / 1e6f;
-            perfStats_.unifiedPipelineTimes.push_back(unifiedTime);
-
-            // 每100帧打印一次进度
-            if (perfStats_.meshToSdfTimes.size() % 100 == 0)
-            {
-                printf("Collected %zu/%u frames... (MeshToSdf: %.2f ms, UnifiedPipeline: %.2f ms)\n", perfStats_.meshToSdfTimes.size(),
-                       perfStats_.targetFrames, meshToSdfTime, unifiedTime);
-            }
-
-            // 检查是否收集完成
-            if (perfStats_.meshToSdfTimes.size() >= perfStats_.targetFrames)
-            {
-                perfStats_.isCollecting = false;
-                perfStats_.isComplete = true;
-                PrintPerformanceStatistics();
-            }
+            printf("Dynamic frame %u: clip=%.3f/%.3fs elapsed=%.3fs JFA=%.2f ms Unified=%.2f ms cameras=%u\n",
+                   perfStats_.currentFrame, lastClipTime_, lastClipDuration_, dynamicAnimTime_, meshToSdfTime, unifiedTime,
+                   lastSelectedCameraCount_);
         }
+        return;
+    }
+
+    if (!perfStats_.isCollecting)
+    {
+        return;
+    }
+
+    perfStats_.meshToSdfTimes.push_back(meshToSdfTime);
+    perfStats_.unifiedPipelineTimes.push_back(unifiedTime);
+
+    if (perfStats_.meshToSdfTimes.size() % 100 == 0)
+    {
+        printf("Collected %zu/%u frames... (MeshToSdf: %.2f ms, UnifiedPipeline: %.2f ms)\n", perfStats_.meshToSdfTimes.size(),
+               perfStats_.targetFrames, meshToSdfTime, unifiedTime);
+    }
+
+    if (perfStats_.meshToSdfTimes.size() >= perfStats_.targetFrames)
+    {
+        perfStats_.isCollecting = false;
+        perfStats_.isComplete = true;
+        PrintPerformanceStatistics();
     }
 }
 

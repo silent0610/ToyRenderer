@@ -63,4 +63,13 @@ export struct Config
         uint32_t SdfResolution{64};
 	};
 	SdfConfig Sdf;
+
+	struct DynamicGeometryConfig
+	{
+		bool enable{false};
+		uint32_t animationIndex{0};
+		float speed{1.0f};
+		bool loop{true};
+	};
+	DynamicGeometryConfig Dynamic;
 };

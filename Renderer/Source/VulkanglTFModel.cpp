@@ -22,6 +22,7 @@ module VkglTFModel;
 import InitMod;
 import std;
 import ToolMod;
+import Logger;
 VkDescriptorSetLayout vkglTF::descriptorSetLayoutImage = VK_NULL_HANDLE;
 VkDescriptorSetLayout vkglTF::descriptorSetLayoutUbo = VK_NULL_HANDLE;
 VkMemoryPropertyFlags vkglTF::memoryPropertyFlags = 0;
@@ -59,6 +60,7 @@ bool loadImageDataFuncEmpty(tinygltf::Image *image, const int imageIndex, std::s
 
 void vkglTF::Model::Destroy()
 {
+    DestroyVertexStaging();
     vkDestroyBuffer(device->logicalDevice, vertices.buffer, nullptr);
     vkFreeMemory(device->logicalDevice, vertices.memory, nullptr);
     vkDestroyBuffer(device->logicalDevice, indices.buffer, nullptr);
@@ -939,7 +941,9 @@ void vkglTF::Model::loadNode(vkglTF::Node *parent, const tinygltf::Node &node, u
                 const float *bufferColors = nullptr;
                 const float *bufferTangents = nullptr;
                 uint32_t numColorComponents;
-                const uint16_t *bufferJoints = nullptr;
+                const uint8_t *bufferJointsU8 = nullptr;
+                const uint16_t *bufferJointsU16 = nullptr;
+                int jointComponentType = 0;
                 const float *bufferWeights = nullptr;
 
                 // Position attribute is required
@@ -991,8 +995,16 @@ void vkglTF::Model::loadNode(vkglTF::Node *parent, const tinygltf::Node &node, u
                 {
                     const tinygltf::Accessor &jointAccessor = model.accessors[primitive.attributes.find("JOINTS_0")->second];
                     const tinygltf::BufferView &jointView = model.bufferViews[jointAccessor.bufferView];
-                    bufferJoints =
-                        reinterpret_cast<const uint16_t *>(&(model.buffers[jointView.buffer].data[jointAccessor.byteOffset + jointView.byteOffset]));
+                    jointComponentType = jointAccessor.componentType;
+                    const unsigned char *jointData = &(model.buffers[jointView.buffer].data[jointAccessor.byteOffset + jointView.byteOffset]);
+                    if (jointComponentType == TINYGLTF_PARAMETER_TYPE_UNSIGNED_BYTE)
+                    {
+                        bufferJointsU8 = reinterpret_cast<const uint8_t *>(jointData);
+                    }
+                    else
+                    {
+                        bufferJointsU16 = reinterpret_cast<const uint16_t *>(jointData);
+                    }
                 }
 
                 if (primitive.attributes.find("WEIGHTS_0") != primitive.attributes.end())
@@ -1002,7 +1014,7 @@ void vkglTF::Model::loadNode(vkglTF::Node *parent, const tinygltf::Node &node, u
                     bufferWeights = reinterpret_cast<const float *>(&(model.buffers[uvView.buffer].data[uvAccessor.byteOffset + uvView.byteOffset]));
                 }
 
-                hasSkin = (bufferJoints && bufferWeights);
+                hasSkin = ((bufferJointsU8 || bufferJointsU16) && bufferWeights);
 
                 vertexCount = static_cast<uint32_t>(posAccessor.count);
 
@@ -1027,8 +1039,25 @@ void vkglTF::Model::loadNode(vkglTF::Node *parent, const tinygltf::Node &node, u
                         vert.color = glm::vec4(1.0f);
                     }
                     vert.tangent = bufferTangents ? glm::vec4(glm::make_vec4(&bufferTangents[v * 4])) : glm::vec4(0.0f);
-                    vert.joint0 = hasSkin ? glm::vec4(glm::make_vec4(&bufferJoints[v * 4])) : glm::vec4(0.0f);
-                    vert.weight0 = hasSkin ? glm::make_vec4(&bufferWeights[v * 4]) : glm::vec4(0.0f);
+                    if (hasSkin)
+                    {
+                        if (bufferJointsU8)
+                        {
+                            const uint8_t *j = bufferJointsU8 + v * 4;
+                            vert.joint0 = glm::vec4(j[0], j[1], j[2], j[3]);
+                        }
+                        else
+                        {
+                            const uint16_t *j = bufferJointsU16 + v * 4;
+                            vert.joint0 = glm::vec4(j[0], j[1], j[2], j[3]);
+                        }
+                        vert.weight0 = glm::make_vec4(&bufferWeights[v * 4]);
+                    }
+                    else
+                    {
+                        vert.joint0 = glm::vec4(0.0f);
+                        vert.weight0 = glm::vec4(0.0f);
+                    }
                     vertexBuffer.push_back(vert);
                 }
             }
@@ -1369,8 +1398,18 @@ void vkglTF::Model::loadFromFile(std::string filename, OldVulkanDevice *device, 
     std::string error, warning;
 
     this->device = device;
+    this->copyQueue = transferQueue;
 
-    bool fileLoaded = gltfContext.LoadASCIIFromFile(&gltfModel, &error, &warning, filename);
+    bool fileLoaded = false;
+    const bool isBinary = filename.size() >= 4 && (filename.ends_with(".glb") || filename.ends_with(".GLB"));
+    if (isBinary)
+    {
+        fileLoaded = gltfContext.LoadBinaryFromFile(&gltfModel, &error, &warning, filename);
+    }
+    else
+    {
+        fileLoaded = gltfContext.LoadASCIIFromFile(&gltfModel, &error, &warning, filename);
+    }
 
     if (fileLoaded)
     {
@@ -1410,6 +1449,14 @@ void vkglTF::Model::loadFromFile(std::string filename, OldVulkanDevice *device, 
     {
         Tool::ExitFatal("Could not load glTF file \"" + filename + "\": " + error, -1);
         return;
+    }
+
+    deformFromRestPose = !skins.empty() || !animations.empty();
+    if (deformFromRestPose)
+    {
+        // Bind pose must stay in local space so CPU skinning / node animation can re-bake each frame.
+        fileLoadingFlags &= ~static_cast<uint32_t>(FileLoadingFlags::PreTransformVertices);
+        Log::Info("Skipping PreTransformVertices for skinned/animated model");
     }
 
     // Pre-Calculations for requested features
@@ -1461,6 +1508,8 @@ void vkglTF::Model::loadFromFile(std::string filename, OldVulkanDevice *device, 
             }
         }
     }
+
+    CaptureRestPose();
 
     for (auto extension : gltfModel.extensionsUsed)
     {
@@ -1515,10 +1564,22 @@ void vkglTF::Model::loadFromFile(std::string filename, OldVulkanDevice *device, 
 
     device->FlushCommandBuffer(copyCmd, transferQueue, true);
 
-    vkDestroyBuffer(device->logicalDevice, vertexStaging.buffer, nullptr);
-    vkFreeMemory(device->logicalDevice, vertexStaging.memory, nullptr);
     vkDestroyBuffer(device->logicalDevice, indexStaging.buffer, nullptr);
     vkFreeMemory(device->logicalDevice, indexStaging.memory, nullptr);
+
+    if (deformFromRestPose)
+    {
+        vertexStagingBuffer = vertexStaging.buffer;
+        vertexStagingMemory = vertexStaging.memory;
+        Tool::CheckResult(vkMapMemory(device->logicalDevice, vertexStagingMemory, 0, vertexBufferSize, 0, &vertexStagingMapped));
+        SkinToCurrentPose();
+        UploadVertices();
+    }
+    else
+    {
+        vkDestroyBuffer(device->logicalDevice, vertexStaging.buffer, nullptr);
+        vkFreeMemory(device->logicalDevice, vertexStaging.memory, nullptr);
+    }
 
     getSceneDimensions();
 
@@ -1540,6 +1601,10 @@ void vkglTF::Model::loadFromFile(std::string filename, OldVulkanDevice *device, 
         }
         actualDimensionsMin = actualMin;
         actualDimensionsMax = actualMax;
+        if (deformFromRestPose)
+        {
+            boundsFrozen = true;
+        }
         //std::cout << "Actual Min (from vertex buffer): (" << actualMin.x << ", " << actualMin.y << ", " << actualMin.z << ")" << std::endl;
         //std::cout << "Actual Max (from vertex buffer): (" << actualMax.x << ", " << actualMax.y << ", " << actualMax.z << ")" << std::endl;
         //std::cout << "Calculated Min (from getSceneDimensions): (" << dimensions.min.x << ", " << dimensions.min.y << ", " << dimensions.min.z << ")"
@@ -1911,4 +1976,201 @@ glm::mat4 vkglTF::Model::GetModelToStandardTransform()const
     transform = glm::translate(transform, -modelCenter);            // 第1步：移动到原点
 
     return transform;
+}
+
+bool vkglTF::Model::HasSkinnedAnimation() const
+{
+    return !animations.empty() && !skins.empty();
+}
+
+void vkglTF::Model::CaptureRestPose()
+{
+    restPoseVertices = vertexBuffer;
+}
+
+void vkglTF::Model::DestroyVertexStaging()
+{
+    if (!device)
+    {
+        return;
+    }
+    if (vertexStagingMapped)
+    {
+        vkUnmapMemory(device->logicalDevice, vertexStagingMemory);
+        vertexStagingMapped = nullptr;
+    }
+    if (vertexStagingBuffer != VK_NULL_HANDLE)
+    {
+        vkDestroyBuffer(device->logicalDevice, vertexStagingBuffer, nullptr);
+        vertexStagingBuffer = VK_NULL_HANDLE;
+    }
+    if (vertexStagingMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device->logicalDevice, vertexStagingMemory, nullptr);
+        vertexStagingMemory = VK_NULL_HANDLE;
+    }
+}
+
+void vkglTF::Model::CreatePersistentVertexStaging()
+{
+    if (vertexStagingBuffer != VK_NULL_HANDLE || vertexBuffer.empty())
+    {
+        return;
+    }
+    const VkDeviceSize vertexBufferSize = vertexBuffer.size() * sizeof(Vertex);
+    Tool::CheckResult(device->CreateBuffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                           vertexBufferSize, &vertexStagingBuffer, &vertexStagingMemory, vertexBuffer.data()));
+    Tool::CheckResult(vkMapMemory(device->logicalDevice, vertexStagingMemory, 0, vertexBufferSize, 0, &vertexStagingMapped));
+}
+
+void vkglTF::Model::UpdateActualDimensionsFromVertices()
+{
+    if (vertexBuffer.empty() || boundsFrozen)
+    {
+        return;
+    }
+    glm::vec3 actualMin(FLT_MAX);
+    glm::vec3 actualMax(-FLT_MAX);
+    for (const auto &vertex : vertexBuffer)
+    {
+        actualMin = glm::min(actualMin, vertex.pos);
+        actualMax = glm::max(actualMax, vertex.pos);
+    }
+    actualDimensionsMin = actualMin;
+    actualDimensionsMax = actualMax;
+}
+
+void vkglTF::Model::SkinToCurrentPose()
+{
+    if (!deformFromRestPose || restPoseVertices.empty())
+    {
+        return;
+    }
+
+    vertexBuffer = restPoseVertices;
+
+    for (Node *node : linearNodes)
+    {
+        if (!node->mesh)
+        {
+            continue;
+        }
+
+        const glm::mat4 meshWorld = node->getMatrix();
+        std::vector<glm::mat4> jointMats;
+        if (node->skin)
+        {
+            Skin *skin = node->skin;
+            jointMats.resize(skin->joints.size(), glm::mat4(1.0f));
+            const glm::mat4 inverseTransform = glm::inverse(meshWorld);
+            for (size_t i = 0; i < skin->joints.size(); i++)
+            {
+                glm::mat4 jointMat = skin->joints[i]->getMatrix() * skin->inverseBindMatrices[i];
+                jointMats[i] = inverseTransform * jointMat;
+            }
+            node->mesh->uniformBlock.matrix = meshWorld;
+            node->mesh->uniformBlock.jointcount = 0.0f;
+            memcpy(node->mesh->uniformBuffer.mapped, &node->mesh->uniformBlock, sizeof(node->mesh->uniformBlock));
+        }
+
+        for (Primitive *primitive : node->mesh->primitives)
+        {
+            for (uint32_t i = 0; i < primitive->vertexCount; i++)
+            {
+                const uint32_t idx = primitive->firstVertex + i;
+                const Vertex &rest = restPoseVertices[idx];
+                glm::vec3 localPos = rest.pos;
+                glm::vec3 localNormal = rest.normal;
+
+                if (node->skin && !jointMats.empty())
+                {
+                    glm::vec4 skinned{0.0f};
+                    glm::vec3 skinnedN{0.0f};
+                    float totalWeight = 0.0f;
+                    for (int j = 0; j < 4; j++)
+                    {
+                        const float w = rest.weight0[j];
+                        if (w <= 0.0f)
+                        {
+                            continue;
+                        }
+                        const int jointIndex = static_cast<int>(rest.joint0[j] + 0.5f);
+                        if (jointIndex < 0 || jointIndex >= static_cast<int>(jointMats.size()))
+                        {
+                            continue;
+                        }
+                        skinned += w * (jointMats[jointIndex] * glm::vec4(rest.pos, 1.0f));
+                        skinnedN += w * (glm::mat3(jointMats[jointIndex]) * rest.normal);
+                        totalWeight += w;
+                    }
+                    if (totalWeight > 0.0f)
+                    {
+                        localPos = glm::vec3(skinned);
+                        if (glm::dot(skinnedN, skinnedN) > 1e-12f)
+                        {
+                            localNormal = glm::normalize(skinnedN);
+                        }
+                    }
+                }
+
+                vertexBuffer[idx].pos = glm::vec3(meshWorld * glm::vec4(localPos, 1.0f));
+                vertexBuffer[idx].normal = glm::normalize(glm::mat3(meshWorld) * localNormal);
+            }
+        }
+    }
+
+    UpdateActualDimensionsFromVertices();
+}
+
+void vkglTF::Model::UploadVertices()
+{
+    if (vertexBuffer.empty() || vertices.buffer == VK_NULL_HANDLE)
+    {
+        return;
+    }
+    if (vertexStagingBuffer == VK_NULL_HANDLE)
+    {
+        CreatePersistentVertexStaging();
+    }
+    if (!vertexStagingMapped)
+    {
+        return;
+    }
+
+    const VkDeviceSize vertexBufferSize = vertexBuffer.size() * sizeof(Vertex);
+    memcpy(vertexStagingMapped, vertexBuffer.data(), static_cast<size_t>(vertexBufferSize));
+
+    VkCommandBuffer copyCmd = device->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+    VkBufferCopy copyRegion{};
+    copyRegion.size = vertexBufferSize;
+    vkCmdCopyBuffer(copyCmd, vertexStagingBuffer, vertices.buffer, 1, &copyRegion);
+    device->FlushCommandBuffer(copyCmd, copyQueue, true);
+}
+
+void vkglTF::Model::CheckDeformedBounds(float worldSize)
+{
+    if (vertexBuffer.empty())
+    {
+        return;
+    }
+
+    ++boundsWarningFrame;
+    if (boundsWarningFrame % 60 != 1)
+    {
+        return;
+    }
+
+    const glm::mat4 toStandard = GetModelToStandardTransform();
+    float maxAbs = 0.0f;
+    for (const auto &vertex : vertexBuffer)
+    {
+        const glm::vec3 p = glm::vec3(toStandard * glm::vec4(vertex.pos, 1.0f));
+        maxAbs = glm::max(maxAbs, glm::max(glm::abs(p.x), glm::max(glm::abs(p.y), glm::abs(p.z))));
+    }
+
+    if (maxAbs > 1.15f)
+    {
+        Log::Warn("Deformed mesh extends outside SDF volume (max |standard coord|=" + std::to_string(maxAbs) +
+                  ", WorldSize=" + std::to_string(worldSize) + "). Scale the asset to fit.");
+    }
 }
