@@ -1,0 +1,11 @@
+Model Information:
+* title:	cute panda
+* source:	https://sketchfab.com/3d-models/cute-panda-c5d6ab02e97d420b8c4a4cd171cc30c2
+* author:	exceptional_3d (https://sketchfab.com/exceptional_3d)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "cute panda" (https://sketchfab.com/3d-models/cute-panda-c5d6ab02e97d420b8c4a4cd171cc30c2) by exceptional_3d (https://sketchfab.com/exceptional_3d) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

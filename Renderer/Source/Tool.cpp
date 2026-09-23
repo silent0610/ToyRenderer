@@ -7,6 +7,9 @@ module ToolMod;
 import std;
 import InitMod;
 
+#ifndef PROJECT_ROOT
+#define PROJECT_ROOT "."
+#endif
 namespace Tool
 {
 	bool errorModeSilent = false;
@@ -228,11 +231,7 @@ namespace Tool
 	}
 	std::string GetProjectPath()
 	{
-		auto path = std::filesystem::current_path();
-		while (path != std::filesystem::path("/") && path.filename() != "ToyRenderer")
-		{
-			path = path.parent_path(); // 向上遍历
-		}
+        auto path = std::filesystem::path{PROJECT_ROOT};
 		return path.string();
 	}
 	std::string GetShadersPath()

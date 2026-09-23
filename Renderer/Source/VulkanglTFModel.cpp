@@ -17,6 +17,7 @@ module;
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <stdlib.h>
+#include <unordered_set>
 
 module VkglTFModel;
 import InitMod;
@@ -869,6 +870,21 @@ vkglTF::Model::~Model()
 void vkglTF::Model::loadNode(vkglTF::Node *parent, const tinygltf::Node &node, uint32_t nodeIndex, const tinygltf::Model &model,
                              std::vector<uint32_t> &indexBuffer, std::vector<Vertex> &vertexBuffer, float globalscale)
 {
+    for (Node *existing : linearNodes)
+    {
+        if (existing->index != nodeIndex)
+        {
+            continue;
+        }
+        if (parent && !existing->parent)
+        {
+            parent->children.push_back(existing);
+            existing->parent = parent;
+            nodes.erase(std::remove(nodes.begin(), nodes.end(), existing), nodes.end());
+        }
+        return;
+    }
+
     vkglTF::Node *newNode = new Node{};
     newNode->index = nodeIndex;
     newNode->parent = parent;
@@ -1420,11 +1436,44 @@ void vkglTF::Model::loadFromFile(std::string filename, OldVulkanDevice *device, 
         // 加载所有材质
         loadMaterials(gltfModel);
         const tinygltf::Scene &scene = gltfModel.scenes[gltfModel.defaultScene > -1 ? gltfModel.defaultScene : 0];
+        std::unordered_set<int> childNodeIndices;
+        for (const auto &gltfNode : gltfModel.nodes)
+        {
+            for (int childIndex : gltfNode.children)
+            {
+                childNodeIndices.insert(childIndex);
+            }
+        }
+        uint32_t skippedDuplicateRoots = 0;
         for (size_t i = 0; i < scene.nodes.size(); i++)
         {
-            const tinygltf::Node node = gltfModel.nodes[scene.nodes[i]];
-            loadNode(nullptr, node, scene.nodes[i], gltfModel, indexBuffer, vertexBuffer, scale);
+            const int rootIndex = scene.nodes[i];
+            if (childNodeIndices.contains(rootIndex))
+            {
+                ++skippedDuplicateRoots;
+                continue;
+            }
+            loadNode(nullptr, gltfModel.nodes[rootIndex], rootIndex, gltfModel, indexBuffer, vertexBuffer, scale);
         }
+        if (skippedDuplicateRoots > 0)
+        {
+            Log::Info("Skipped " + std::to_string(skippedDuplicateRoots) +
+                      " scene.nodes that are also children (avoids drawing skinned meshes twice)");
+        }
+        uint32_t meshNodeCount = 0;
+        uint32_t uniqueMeshNodes = 0;
+        std::unordered_set<uint32_t> uniqueMeshIndices;
+        for (Node *node : linearNodes)
+        {
+            if (!node->mesh)
+            {
+                continue;
+            }
+            ++meshNodeCount;
+            uniqueMeshIndices.insert(node->index);
+        }
+        uniqueMeshNodes = static_cast<uint32_t>(uniqueMeshIndices.size());
+        Log::Info("glTF mesh nodes: " + std::to_string(uniqueMeshNodes) + " unique / " + std::to_string(meshNodeCount) + " loaded");
         if (gltfModel.animations.size() > 0)
         {
             loadAnimations(gltfModel);
@@ -1466,9 +1515,10 @@ void vkglTF::Model::loadFromFile(std::string filename, OldVulkanDevice *device, 
         const bool preTransform = fileLoadingFlags & FileLoadingFlags::PreTransformVertices;
         const bool preMultiplyColor = fileLoadingFlags & FileLoadingFlags::PreMultiplyVertexColors;
         const bool flipY = fileLoadingFlags & FileLoadingFlags::FlipY;
+        std::unordered_set<uint32_t> transformedNodes;
         for (Node *node : linearNodes)
         {
-            if (node->mesh)
+            if (node->mesh && transformedNodes.insert(node->index).second)
             {
                 const glm::mat4 localMatrix = node->getMatrix();
 
@@ -1726,38 +1776,35 @@ void vkglTF::Model::bindBuffers(VkCommandBuffer commandBuffer)
 void vkglTF::Model::drawNode(vkglTF::Node* node, VkCommandBuffer commandBuffer, uint32_t renderFlags, VkPipelineLayout pipelineLayout,
                              uint32_t bindImageSet)
 {
-    if (node->mesh)
+    if (!node || !node->mesh)
     {
-        for (Primitive *primitive : node->mesh->primitives)
-        {
-            bool skip = false;
-            const vkglTF::Material &material = primitive->material;
-            if (renderFlags & RenderFlags::RenderOpaqueNodes)
-            {
-                skip = (material.alphaMode != Material::ALPHAMODE_OPAQUE);
-            }
-            if (renderFlags & RenderFlags::RenderAlphaMaskedNodes)
-            {
-                skip = (material.alphaMode != Material::ALPHAMODE_MASK);
-            }
-            if (renderFlags & RenderFlags::RenderAlphaBlendedNodes)
-            {
-                skip = (material.alphaMode != Material::ALPHAMODE_BLEND);
-            }
-            if (!skip)
-            {
-                if (renderFlags & RenderFlags::BindImages)
-                {
-                    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, bindImageSet, 1, &material.descriptorSet,
-                                            0, nullptr);
-                }
-                vkCmdDrawIndexed(commandBuffer, primitive->indexCount, 1, primitive->firstIndex, 0, 0);
-            }
-        }
+        return;
     }
-    for (auto &child : node->children)
+    for (Primitive *primitive : node->mesh->primitives)
     {
-        drawNode(child, commandBuffer, renderFlags, pipelineLayout, bindImageSet);
+        bool skip = false;
+        const vkglTF::Material &material = primitive->material;
+        if (renderFlags & RenderFlags::RenderOpaqueNodes)
+        {
+            skip = (material.alphaMode != Material::ALPHAMODE_OPAQUE);
+        }
+        if (renderFlags & RenderFlags::RenderAlphaMaskedNodes)
+        {
+            skip = (material.alphaMode != Material::ALPHAMODE_MASK);
+        }
+        if (renderFlags & RenderFlags::RenderAlphaBlendedNodes)
+        {
+            skip = (material.alphaMode != Material::ALPHAMODE_BLEND);
+        }
+        if (!skip)
+        {
+            if (renderFlags & RenderFlags::BindImages)
+            {
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, bindImageSet, 1, &material.descriptorSet, 0,
+                                        nullptr);
+            }
+            vkCmdDrawIndexed(commandBuffer, primitive->indexCount, 1, primitive->firstIndex, 0, 0);
+        }
     }
 }
 
@@ -1769,8 +1816,19 @@ void vkglTF::Model::Draw(VkCommandBuffer commandBuffer, uint32_t renderFlags, Vk
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertices.buffer, offsets);
         vkCmdBindIndexBuffer(commandBuffer, indices.buffer, 0, VK_INDEX_TYPE_UINT32);
     }
-    for (auto &node : nodes)
+    // Draw each unique mesh node once. Recursive traversal from scene.nodes double-draws
+    // skinned meshes when exporters list the mesh both as a child and as a scene root.
+    std::unordered_set<uint32_t> drawnNodeIndices;
+    for (Node *node : linearNodes)
     {
+        if (!node || !node->mesh)
+        {
+            continue;
+        }
+        if (!drawnNodeIndices.insert(node->index).second)
+        {
+            continue;
+        }
         drawNode(node, commandBuffer, renderFlags, pipelineLayout, bindImageSet);
     }
 }
@@ -2049,9 +2107,15 @@ void vkglTF::Model::SkinToCurrentPose()
 
     vertexBuffer = restPoseVertices;
 
+    std::unordered_set<uint32_t> processedMeshNodes;
     for (Node *node : linearNodes)
     {
         if (!node->mesh)
+        {
+            continue;
+        }
+
+        if (!processedMeshNodes.insert(node->index).second)
         {
             continue;
         }

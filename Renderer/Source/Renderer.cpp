@@ -8,6 +8,7 @@ module;
 #include <algorithm>
 #include <fstream>
 #include <memory>
+#include <unordered_set>
 
 module RendererMod;
 import BruteForceSdf;
@@ -10403,10 +10404,11 @@ void Renderer::LoadModelStaticData4C()
     staticData.partInfos.clear();
     staticData.totalPartCount = 0;
 
-    // 遍历所有节点和原语来构建子部件信息
+    // 遍历所有节点和原语来构建子部件信息（按 glTF node index 去重，避免骨骼 mesh 被列两次）
+    std::unordered_set<uint32_t> seenMeshNodes;
     for (auto *node : m_glTFModel.linearNodes)
     {
-        if (node->mesh)
+        if (node->mesh && seenMeshNodes.insert(node->index).second)
         {
             for (auto *primitive : node->mesh->primitives)
             {
@@ -10473,19 +10475,16 @@ void Renderer::CreateModelMatrices4C()
     std::vector<glm::mat4> modelMatrices(staticData.totalPartCount);
 
     size_t partIndex = 0;
+    std::unordered_set<uint32_t> seenMeshNodes;
     for (auto *node : m_glTFModel.linearNodes)
     {
-        if (node->mesh)
+        if (node->mesh && seenMeshNodes.insert(node->index).second)
         {
-            // 获取节点的变换矩阵
-            glm::mat4 nodeMatrix = node->getMatrix();
-
             for (auto *primitive : node->mesh->primitives)
             {
                 if (partIndex < modelMatrices.size())
                 {
-                    // Fix: Use identity matrix since vertices are pre-transformed by glTF loader
-                    // The nodeMatrix was already applied during PreTransformVertices stage
+                    // Vertices are already in world space after CPU skinning / PreTransformVertices.
                     modelMatrices[partIndex] = glm::mat4(1.0f);
                     partIndex++;
                 }

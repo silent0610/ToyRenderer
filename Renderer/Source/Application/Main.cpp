@@ -10,8 +10,6 @@ import ToolMod;
 int main(int argc, char *argv[])
 {
 
-
-
 	Config *config = new Config{Tool::GetProjectPath() + "/Config.json5"};
 
 	if (argc == 1)
