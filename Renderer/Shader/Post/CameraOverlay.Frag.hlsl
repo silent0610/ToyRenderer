@@ -29,6 +29,7 @@ struct CameraOverlayPush
     float4 markerColor;
     float4 highlightColor;
     float4 params;
+    float4 levelFilter; // x: octree level to draw, < 0 draws every selected camera
 };
 
 [[vk::push_constant]] CameraOverlayPush pushConsts;
@@ -45,6 +46,17 @@ float CircleMask(float2 p, float radius, float softness)
     return saturate(1.0 - smoothstep(0.0, softness, dist));
 }
 
+float3 LevelColor(float level)
+{
+    uint levelIndex = uint(level + 0.5f) % 6u;
+    if (levelIndex == 0u) return float3(0.95f, 0.28f, 0.22f);
+    if (levelIndex == 1u) return float3(0.96f, 0.62f, 0.16f);
+    if (levelIndex == 2u) return float3(0.28f, 0.82f, 0.34f);
+    if (levelIndex == 3u) return float3(0.20f, 0.55f, 0.95f);
+    if (levelIndex == 4u) return float3(0.62f, 0.36f, 0.95f);
+    return float3(0.95f, 0.40f, 0.72f);
+}
+
 float4 main(float2 uv : TEXCOORD0) : SV_Target
 {
     float3 color = sceneColor.Sample(sceneSampler, uv).rgb;
@@ -59,7 +71,14 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target
     [loop]
     for (uint i = 0; i < cameraCount; ++i)
     {
-        float3 worldPos = cameraMatrices[i].xyz;
+        float4 cameraInfo = cameraMatrices[i];
+        float cameraLevel = cameraInfo.w;
+        if (pushConsts.levelFilter.x >= 0.0f && abs(cameraLevel - pushConsts.levelFilter.x) > 0.5f)
+        {
+            continue;
+        }
+
+        float3 worldPos = cameraInfo.xyz;
         float4 clip = mul(CBCamera.ProjView, float4(worldPos, 1.0f));
         if (clip.w <= 0.0001f)
         {
@@ -80,7 +99,7 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target
         float invRadius = 1.0f / markerRadius;
         float2 local = localPx * invRadius;
 
-        float3 markerBase = pushConsts.markerColor.rgb;
+        float3 markerBase = LevelColor(cameraLevel);
         float3 markerHighlight = pushConsts.highlightColor.rgb;
         float shapeMode = pushConsts.params.w;
 

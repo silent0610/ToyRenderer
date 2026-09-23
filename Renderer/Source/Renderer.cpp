@@ -1826,6 +1826,33 @@ void Renderer::SetUI(UIOverlay *overlay)
                 RecordMainCommandBuffer();
             }
 
+            if (m_enableCameraOverlay)
+            {
+                const int minLevel = static_cast<int>(config_->Sdf.SampledLevel);
+                int maxLevel = minLevel;
+                if (m_gpuMipmapOctree)
+                {
+                    maxLevel = std::max(minLevel, static_cast<int>(m_gpuMipmapOctree->GetMaxLevel()) - 1);
+                }
+
+                int cameraLevel = m_cameraOverlayLevel < minLevel ? minLevel - 1 : m_cameraOverlayLevel;
+                if (overlay->SliderInt("Camera Level", &cameraLevel, minLevel - 1, maxLevel))
+                {
+                    cameraLevel = glm::clamp(cameraLevel, minLevel - 1, maxLevel);
+                    m_cameraOverlayLevel = cameraLevel;
+                    m_cameraOverlayPass.pushConstants.levelFilter.x = cameraLevel < minLevel ? -1.0f : static_cast<float>(cameraLevel);
+                    RecordMainCommandBuffer();
+                }
+                if (m_cameraOverlayLevel < minLevel)
+                {
+                    overlay->Text("cameras: all selected levels");
+                }
+                else
+                {
+                    overlay->Text("cameras: level %d", m_cameraOverlayLevel);
+                }
+            }
+
             bool selectionScorePassEnabled = m_enableSelectionScoreOctreePass;
             if (overlay->CheckBox("Enable S(n) Octree Pass", &selectionScorePassEnabled))
             {

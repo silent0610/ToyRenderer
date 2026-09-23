@@ -52,7 +52,8 @@ void main(uint3 id : SV_DispatchThreadID) {
     float3 worldCameraPos = (normalizedPos) * pushConsts.halfSizeWithMargin + pushConsts.modelCenter;
     // Generate camera matrix using transformed world position
     CameraMatrix camera;
-    camera.cameraPosition = float4(worldCameraPos, 1.0);
+    // w stores the octree level so the overlay can show one level at a time.
+    camera.cameraPosition = float4(worldCameraPos, float(node.level));
     
     // Write to output buffer
     cameraMatrices[nodeIndex] = camera;

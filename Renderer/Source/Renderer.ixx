@@ -720,6 +720,8 @@ private:
 			// z: shininess
 			// w: shape mode (0 = sphere, 1 = camera icon)
 			alignas(16) glm::vec4 params{22.0f, 0.95f, 32.0f, 0.0f};
+			// x < 0 draws every selected camera. Otherwise only that octree level.
+			alignas(16) glm::vec4 levelFilter{-1.0f, 0.0f, 0.0f, 0.0f};
 		} pushConstants;
 	} m_cameraOverlayPass;
 
@@ -1240,6 +1242,7 @@ private:
     bool useMultiview_ = false;
     bool useCountSort_ = true;
     bool m_enableCameraOverlay = true;
+	int32_t m_cameraOverlayLevel{-1};
 	bool m_showMultiviewIsoSurface = false;
     bool m_enableSelectionScoreOctreePass = false;
 
