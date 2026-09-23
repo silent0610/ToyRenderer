@@ -7,10 +7,33 @@ import RendererMod; // OLD RENDERER - DISABLED
 // import NewRenderer; // NEW RENDERER - ENABLED
 import ConfigMod;
 import ToolMod;
+import DatasetBench;
 int main(int argc, char *argv[])
 {
 
 	Config *config = new Config{Tool::GetProjectPath() + "/Config.json5"};
+
+	if (DatasetBench::RequestsBatch(argc, argv))
+	{
+		const auto options = DatasetBench::ParseArgs(argc, argv);
+		if (!options)
+		{
+			delete config;
+			return EXIT_FAILURE;
+		}
+		for (int i = 1; i < argc; ++i)
+		{
+			if (std::string(argv[i]) == "v")
+			{
+				config->enableValidation = false;
+			}
+		}
+		DatasetBench::ApplyToConfig(*config, *options);
+		Renderer renderer{config};
+		renderer.RunDatasetBench(*options);
+		delete config;
+		return EXIT_SUCCESS;
+	}
 
 	if (argc == 1)
 	{

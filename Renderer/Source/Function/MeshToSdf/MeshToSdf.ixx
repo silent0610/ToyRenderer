@@ -41,6 +41,7 @@ public:
 	};
 	MeshToSdf();
     void Initialize(OldVulkanDevice* device, VkQueue queue, VkDescriptorPool descriptorPool, vkglTF::Model* mesh, SdfParam &param);
+	void SetMesh(vkglTF::Model *mesh);
 	void GenerateSdf(VkCommandBuffer cmd);
 	void SetSdfParams(const SdfParam& params) { sdfParam_ = params; }
 	const SdfParam& GetSdfParams() const { return sdfParam_; }

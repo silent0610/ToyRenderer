@@ -22,6 +22,7 @@ import std;
 import CameraMod;
 import GPUMipmapOctreeMod;
 import MeshToSdf;
+import DatasetBench;
 
 const int LIGHT_COUNT = 3;
 struct ShadowSettings
@@ -1572,5 +1573,10 @@ public:
 
 public:
 	void TestBruteSdfAndSave(bool bSigned);
+	// 打开窗口。每个模型先丢掉 warmup 帧，再对 repeat 帧的预处理时间取平均，写入 CSV 后退出。
+	void RunDatasetBench(const DatasetBenchOptions &options);
+
+private:
+	void ReloadBenchModel(const std::string &relativePath);
 
 };

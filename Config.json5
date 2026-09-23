@@ -1,6 +1,6 @@
 {
     "modelPath": [
-        "Models/dynamic/cute_panda/scene.gltf"
+        "Models/checked/happy_15k.gltf"
     ],
     "shaderPath": [
         "BlinnPhong/Basic.Vert.spv",

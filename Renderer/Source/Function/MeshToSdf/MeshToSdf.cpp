@@ -36,6 +36,12 @@ void MeshToSdf::Initialize(OldVulkanDevice *device, VkQueue queue, VkDescriptorP
 }
 
 // 2. GenerateSdf 方法 - 执行SDF生成管线
+void MeshToSdf::SetMesh(vkglTF::Model *mesh)
+{
+    currentMesh_ = mesh;
+    UpdateDescriptorSet();
+}
+
 void MeshToSdf::GenerateSdf(VkCommandBuffer cmd)
 {
     std::array<VkDescriptorSet, 3> sets{descriptor_.NormalSet, descriptor_.PingSet, descriptor_.JumpPingSet};

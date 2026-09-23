@@ -61,23 +61,51 @@ bool loadImageDataFuncEmpty(tinygltf::Image *image, const int imageIndex, std::s
 
 void vkglTF::Model::Destroy()
 {
+    if (device == nullptr || vertices.buffer == VK_NULL_HANDLE)
+    {
+        return;
+    }
+
     DestroyVertexStaging();
     vkDestroyBuffer(device->logicalDevice, vertices.buffer, nullptr);
     vkFreeMemory(device->logicalDevice, vertices.memory, nullptr);
     vkDestroyBuffer(device->logicalDevice, indices.buffer, nullptr);
     vkFreeMemory(device->logicalDevice, indices.memory, nullptr);
-    for (auto texture : textures)
+    vertices.buffer = VK_NULL_HANDLE;
+    vertices.memory = VK_NULL_HANDLE;
+    vertices.count = 0;
+    indices.buffer = VK_NULL_HANDLE;
+    indices.memory = VK_NULL_HANDLE;
+    indices.count = 0;
+
+    for (auto &texture : textures)
     {
         texture.destroy();
+        texture.image = VK_NULL_HANDLE;
+        texture.deviceMemory = VK_NULL_HANDLE;
+        texture.view = VK_NULL_HANDLE;
+        texture.sampler = VK_NULL_HANDLE;
+        texture.device = nullptr;
     }
-    for (auto node : nodes)
+    textures.clear();
+    materials.clear();
+
+    for (auto *node : nodes)
     {
         delete node;
     }
-    for (auto skin : skins)
+    nodes.clear();
+    linearNodes.clear();
+    for (auto *skin : skins)
     {
         delete skin;
     }
+    skins.clear();
+    animations.clear();
+    indexBuffer.clear();
+    vertexBuffer.clear();
+    restPoseVertices.clear();
+
     if (descriptorSetLayoutUbo != VK_NULL_HANDLE)
     {
         vkDestroyDescriptorSetLayout(device->logicalDevice, descriptorSetLayoutUbo, nullptr);
@@ -88,8 +116,17 @@ void vkglTF::Model::Destroy()
         vkDestroyDescriptorSetLayout(device->logicalDevice, descriptorSetLayoutImage, nullptr);
         descriptorSetLayoutImage = VK_NULL_HANDLE;
     }
-    vkDestroyDescriptorPool(device->logicalDevice, descriptorPool, nullptr);
+    if (descriptorPool != VK_NULL_HANDLE)
+    {
+        vkDestroyDescriptorPool(device->logicalDevice, descriptorPool, nullptr);
+        descriptorPool = VK_NULL_HANDLE;
+    }
     emptyTexture.destroy();
+    emptyTexture.image = VK_NULL_HANDLE;
+    emptyTexture.deviceMemory = VK_NULL_HANDLE;
+    emptyTexture.view = VK_NULL_HANDLE;
+    emptyTexture.sampler = VK_NULL_HANDLE;
+    emptyTexture.device = nullptr;
 }
 
 void vkglTF::Texture::updateDescriptor()
