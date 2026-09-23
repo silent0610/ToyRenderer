@@ -7,7 +7,7 @@ import std;
 
 export struct Config
 {
-	Config(std::string configPath);
+	Config(const std::string& configPath);
 	bool enableValidation;
 	std::string modelPath;
 	std::vector<std::string> shadersPath;

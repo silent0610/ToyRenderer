@@ -1,6 +1,6 @@
 {
     "modelPath": [
-        "Models/dynamic/bend_bar.gltf"
+        "Models/dynamic/cute_panda/scene.gltf"
     ],
     "shaderPath": [
         "BlinnPhong/Basic.Vert.spv",
@@ -32,7 +32,7 @@
         "VoxelResolution": 128, // 同样是暴力法和JFA的SDF分辨率
         "SdfResolution":128,
         "MultiViewUsedCameraNum": 256, // 没有用了
-        "MaxCameraNum": 40, // 允许的最大相机数
+        "MaxCameraNum": 60, // 允许的最大相机数
         "SdfMode": 1, // 1 Multiview, 0 
         "MultiViewDepthResolution": 64,
         "SampledLevel": 3,  // 最低到哪一层, 如6,5,4,3
@@ -44,7 +44,7 @@
         "UseRandomSelection": 0
     },
     "DynamicGeometry": {
-        "enable": false,
+        "enable": true,
         "animationIndex": 0,
         "speed": 1.0,
         "loop": true

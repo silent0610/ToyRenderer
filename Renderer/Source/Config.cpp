@@ -6,7 +6,7 @@ module;
 module ConfigMod;
 import Logger;
 using Json = nlohmann::json;
-Config::Config(std::string configPath)
+Config::Config(const std::string& configPath)
 {
     std::ifstream f(configPath);
     Json config = Json::parse(f, nullptr, true, true);
