@@ -29,12 +29,17 @@ Config::Config(const std::string& configPath)
     {
         const auto &sdfConfig{config["SdfConfig"]};
         Sdf.WorldSize = sdfConfig.value("WorldSize", 2.0f); // 默认值
-        Sdf.VoxelResolution = sdfConfig.value("VoxelResolution", 64);
-        if (Sdf.VoxelResolution < 8)
+        Sdf.OctreeResolution = sdfConfig.value("OctreeResolution", sdfConfig.value("VoxelResolution", 32u));
+        Sdf.MaxSelectionResolution = sdfConfig.value("MaxSelectionResolution", Sdf.OctreeResolution);
+        Sdf.MinSelectionResolution = sdfConfig.value("MinSelectionResolution", 4u);
+        const auto powerOfTwo = [](uint32_t value) { return value >= 2 && (value & (value - 1)) == 0; };
+        if (!powerOfTwo(Sdf.OctreeResolution) || !powerOfTwo(Sdf.MinSelectionResolution) || !powerOfTwo(Sdf.MaxSelectionResolution) ||
+            Sdf.MinSelectionResolution > Sdf.MaxSelectionResolution || Sdf.MaxSelectionResolution > Sdf.OctreeResolution)
         {
-            Log::Error("SDF Resolution must be at least 8");
-            throw std::runtime_error("SDF Resolution must be at least 8");
+            Log::Error("octree and selection resolutions must be powers of two, and min <= max <= octree");
+            throw std::runtime_error("invalid selection resolution");
         }
+        Sdf.VoxelResolution = Sdf.OctreeResolution;
         Sdf.AnalyticalUsedPointNum = sdfConfig.value("AnalyticalUsedPointNum", 512);
         Sdf.MultiViewDepthResolution = sdfConfig.value("MultiViewDepthResolution", 128);
         Sdf.MultiViewUsedCameraNum = sdfConfig.value("MultiViewUsedCameraNum", 10);

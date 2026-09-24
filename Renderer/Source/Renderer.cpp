@@ -18,6 +18,18 @@ const float PI = 3.1415929;
 constexpr uint32_t kMaxOctreeLevels = 11;
 constexpr uint32_t kOctreeLevelCountBinding = 13;
 
+int OctreeLevelForResolution(uint32_t octreeResolution, uint32_t resolution, int octreeMaxLevel)
+{
+    int level = 0;
+    uint32_t size = octreeResolution;
+    while (size > resolution && level < octreeMaxLevel)
+    {
+        size >>= 1;
+        ++level;
+    }
+    return level;
+}
+
 Renderer::Renderer(Config *config) : config_(config)
 {
     m_neededFeatures.validation = config->enableValidation;
@@ -256,6 +268,8 @@ void Renderer::InitVulkan()
 
         if (!m_gpuMipmapOctree)
         {
+            printf("octree %u, selection %u to %u, SDF %u\n", config_->Sdf.OctreeResolution, config_->Sdf.MaxSelectionResolution,
+                   config_->Sdf.MinSelectionResolution, config_->Sdf.SdfResolution);
             m_gpuMipmapOctree = std::make_unique<GPUMipmapOctree>(m_vulkanDevice, config_->Sdf.SdfMode, config_->Sdf.VoxelResolution, false);
             m_gpuMipmapOctree->SetScorePassEnabled(m_enableSelectionScoreOctreePass);
         }
@@ -315,7 +329,7 @@ void Renderer::TestBruteSdfAndSave(bool bSigned)
     BruteForceSdf::SdfParameters sdfParams{};
 
     // 从Config读取参数
-    const uint32_t resolution = config_->Sdf.VoxelResolution;
+    const uint32_t resolution = config_->Sdf.SdfResolution;
     const float worldSize = config_->Sdf.WorldSize;
 
     // 设置SDF参数
@@ -375,7 +389,7 @@ void Renderer::InitializeMeshToSdfOperator()
     sdfParams.floodIterations = static_cast<int>(config_->Sdf.MeshToSdfIteration);
     sdfParams.offset = 0.043f;
     sdfParams.size = config_->Sdf.WorldSize;
-    sdfParams.voxelResolution = static_cast<int>(config_->Sdf.VoxelResolution);
+    sdfParams.voxelResolution = static_cast<int>(config_->Sdf.SdfResolution);
     // meshToSdfOperator_->SetSdfParams(sdfParams);
     meshToSdfOperator_->Initialize(m_vulkanDevice, m_queues.graphicsQueue, m_descriptorPool, &m_glTFModel, sdfParams);
 
@@ -1831,12 +1845,9 @@ void Renderer::SetUI(UIOverlay *overlay)
 
             if (m_enableCameraOverlay)
             {
-                const int minLevel = static_cast<int>(config_->Sdf.SampledLevel);
-                int maxLevel = minLevel;
-                if (m_gpuMipmapOctree)
-                {
-                    maxLevel = std::max(minLevel, static_cast<int>(m_gpuMipmapOctree->GetMaxLevel()) - 1);
-                }
+                const int octreeMaxLevel = m_gpuMipmapOctree ? static_cast<int>(m_gpuMipmapOctree->GetMaxLevel()) : 0;
+                const int minLevel = OctreeLevelForResolution(config_->Sdf.OctreeResolution, config_->Sdf.MaxSelectionResolution, octreeMaxLevel);
+                int maxLevel = OctreeLevelForResolution(config_->Sdf.OctreeResolution, config_->Sdf.MinSelectionResolution, octreeMaxLevel);
 
                 int cameraLevel = m_cameraOverlayLevel < minLevel ? minLevel - 1 : m_cameraOverlayLevel;
                 if (overlay->SliderInt("Camera Level", &cameraLevel, minLevel - 1, maxLevel))
@@ -9320,8 +9331,10 @@ void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
     // 应当从8x8x8开始选择, 直到base, 所以需要动态计算开始level.
     // 槽位覆盖到 4096³。开始层由当前分辨率的最粗一级决定。
 
-    int maxSampledLevel = m_gpuMipmapOctree->GetMaxLevel() - 1;
-    for (int level = maxSampledLevel; level >= static_cast<int>(config_->Sdf.SampledLevel); --level)
+    const int octreeMaxLevel = static_cast<int>(m_gpuMipmapOctree->GetMaxLevel());
+    const int finestLevel = OctreeLevelForResolution(config_->Sdf.OctreeResolution, config_->Sdf.MaxSelectionResolution, octreeMaxLevel);
+    const int coarsestLevel = OctreeLevelForResolution(config_->Sdf.OctreeResolution, config_->Sdf.MinSelectionResolution, octreeMaxLevel);
+    for (int level = coarsestLevel; level >= finestLevel; --level)
     {
         // 设置当前level
         multiViewNodeSelection_.CollectionPushConstant.CurrentLevel = static_cast<uint32_t>(level);
@@ -9996,14 +10009,14 @@ void Renderer::ExecuteAnalyticalNodeSelection(VkCommandBuffer cmd)
                             &analyticalNodeSelection_.descriptorSet, 0, nullptr);
 
     AnalyticalSolidNodeSelection::SolidNodeSelectionPushConstant pushConstants;
-    pushConstants.SampledLevel = config_->Sdf.SampledLevel;
+    pushConstants.SampledLevel = 0;
     pushConstants.BaseSize = config_->Sdf.VoxelResolution; // 64
     pushConstants.modelCenter = glm::vec3(0.0f, 0.0f, 0.0f);
     pushConstants.halfSizeWithMargin = 1.0f;
 
     vkCmdPushConstants(cmd, analyticalNodeSelection_.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pushConstants), &pushConstants);
 
-    uint32_t levelSize = config_->Sdf.VoxelResolution >> config_->Sdf.SampledLevel;
+    uint32_t levelSize = config_->Sdf.VoxelResolution;
     uint32_t groupSize = 4;
     uint32_t groupCountX = (levelSize + groupSize - 1) / groupSize;
     uint32_t groupCountY = (levelSize + groupSize - 1) / groupSize;
@@ -11265,8 +11278,8 @@ void Renderer::CreateFinalSDFTexture()
         throw std::runtime_error("Failed to create SDF texture view!");
     }
 
-    printf("Final SDF texture created: %ux%ux%u R32_SFLOAT 3D storage texture\n", config_->Sdf.VoxelResolution, config_->Sdf.VoxelResolution,
-           config_->Sdf.VoxelResolution);
+    printf("Final SDF texture created: %ux%ux%u R32_SFLOAT 3D storage texture\n", config_->Sdf.SdfResolution, config_->Sdf.SdfResolution,
+           config_->Sdf.SdfResolution);
 }
 
 void Renderer::CreateDepthCubemapSampler()
@@ -11505,7 +11518,7 @@ void Renderer::InitializeSDFFusionPass()
     // Step 5: Initialize push constants
     // Note: SDF fusion should read actual camera count from GPU buffer, not from push constants
     // This is for compatibility, the actual count will come from cameraMatricesBuffer binding
-    m_multiViewDepthSDF4C.sdfFusionPass.pushConstants.BaseSize = config_->Sdf.VoxelResolution; // 64³ SDF grid
+    m_multiViewDepthSDF4C.sdfFusionPass.pushConstants.BaseSize = config_->Sdf.SdfResolution;
     m_multiViewDepthSDF4C.sdfFusionPass.pushConstants.activeCameraCount = config_->Sdf.MultiViewUsedCameraNum;
     m_multiViewDepthSDF4C.sdfFusionPass.pushConstants.maxDistance = 10.0f; // 10 units maximum SDF distance
 }
@@ -11544,7 +11557,7 @@ void Renderer::ExecuteSDFFusion(VkCommandBuffer cmd)
     // Step 4: Dispatch compute shader
     // SDF grid is 64³, compute shader uses 8×8×8 thread groups
     // Therefore we need (64/8)³ = 8³ work groups
-    const uint32_t workGroupsPerDim = config_->Sdf.VoxelResolution / 4;
+    const uint32_t workGroupsPerDim = config_->Sdf.SdfResolution / 4;
     vkCmdDispatch(cmd, workGroupsPerDim, workGroupsPerDim, workGroupsPerDim);
 
     // Step 5: Memory barrier for compute write completion
@@ -11744,7 +11757,7 @@ void Renderer::UpdateCBufferSdfAO()
     // sdfAOPass_.buffers.cBufferData.maxDistance = 0.3f;
     // sdfAOPass_.buffers.cBufferData.falloffPower = 2.0f;
     sdfAOPass_.buffers.cBufferData.voxelSize = 1.0f;
-    sdfAOPass_.buffers.cBufferData.sdfTextureSize = config_->Sdf.VoxelResolution;
+    sdfAOPass_.buffers.cBufferData.sdfTextureSize = config_->Sdf.SdfResolution;
     sdfAOPass_.buffers.cBufferData.minBounds = glm::vec4(-1.f, 1.f, 1.f, 1.0f);
     sdfAOPass_.buffers.cBufferData.maxBounds = glm::vec4(1.f, -1.f, -1.f, 1.0f);
     sdfAOPass_.buffers.cBufferData.noiseScale = glm::vec2(1.0f, 1.0f);

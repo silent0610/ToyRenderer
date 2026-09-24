@@ -47,7 +47,10 @@ export struct Config
 	struct SdfConfig
 	{
 		float WorldSize{2.0f};
-		uint32_t VoxelResolution{64};
+		uint32_t VoxelResolution{32};
+		uint32_t OctreeResolution{32};
+		uint32_t MinSelectionResolution{4};
+		uint32_t MaxSelectionResolution{16};
 		uint32_t SdfMode{1}; // Analytical:0, Multiview:1
 		uint32_t SampledLevel{1};
 		uint32_t MeshToSdfMode{1}; // floodfill:0, jump:1

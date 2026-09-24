@@ -17,7 +17,7 @@ GPUMipmapOctree::GPUMipmapOctree(OldVulkanDevice *device, uint32_t mode, uint32_
 {
     // Calculate number of mip levels
     uint32_t size = baseSize;
-    while (size > 4) // 认为小于4, 即2x2x2没有意义了,不再细分
+    while (size > 2) // 最粗收到 2³
     {
         m_maxLevel++;
         size /= 2;

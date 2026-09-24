@@ -260,7 +260,6 @@ std::vector<std::string> DatasetBench::ModelPaths(const DatasetBenchOptions &opt
 void DatasetBench::ApplyToConfig(Config &config, const DatasetBenchOptions &options)
 {
     config.modelPath = ModelPaths(options).front();
-    config.Sdf.VoxelResolution = options.resolution;
     config.Sdf.SdfResolution = options.resolution;
     if (options.cameras > 0)
     {

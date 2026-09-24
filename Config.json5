@@ -29,8 +29,10 @@
     },
     "SdfConfig": {
         "WorldSize": 2.0,
-        "VoxelResolution": 512, // 同样是暴力法和JFA的SDF分辨率
-        "SdfResolution":512,
+        "OctreeResolution": 64, // 八叉树最细一层。挑选范围不能比它更细
+        "MinSelectionResolution": 4, // 挑选八叉树最粗一层
+        "MaxSelectionResolution": 16, // 挑选八叉树最细一层
+        "SdfResolution":64,
         "MultiViewUsedCameraNum": 256, // 没有用了
         "MaxCameraNum": 30, // 允许的最大相机数
         "SdfMode": 1, // 1 Multiview, 0 
