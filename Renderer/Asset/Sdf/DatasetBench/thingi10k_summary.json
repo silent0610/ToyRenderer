@@ -1,0 +1,97 @@
+{
+  "dataset_total": 9995,
+  "filtered": 4075,
+  "selected": 185,
+  "min_facets": 100,
+  "max_facets": 2451710,
+  "bins": [
+    {
+      "bin": 0,
+      "min_facets": 100.0,
+      "max_facets": 274.755825841529,
+      "available": 347,
+      "target": 20,
+      "written": 20
+    },
+    {
+      "bin": 1,
+      "min_facets": 274.755825841529,
+      "max_facets": 754.9076383386056,
+      "available": 628,
+      "target": 20,
+      "written": 20
+    },
+    {
+      "bin": 2,
+      "min_facets": 754.9076383386056,
+      "max_facets": 2074.1527160580195,
+      "available": 964,
+      "target": 20,
+      "written": 20
+    },
+    {
+      "bin": 3,
+      "min_facets": 2074.1527160580195,
+      "max_facets": 5698.855424219717,
+      "available": 749,
+      "target": 20,
+      "written": 20
+    },
+    {
+      "bin": 4,
+      "min_facets": 5698.855424219717,
+      "max_facets": 15657.937284329631,
+      "available": 678,
+      "target": 20,
+      "written": 20
+    },
+    {
+      "bin": 5,
+      "min_facets": 15657.937284329631,
+      "max_facets": 43021.094895308495,
+      "available": 398,
+      "target": 20,
+      "written": 20
+    },
+    {
+      "bin": 6,
+      "min_facets": 43021.094895308495,
+      "max_facets": 118202.96456567297,
+      "available": 172,
+      "target": 20,
+      "written": 20
+    },
+    {
+      "bin": 7,
+      "min_facets": 118202.96456567297,
+      "max_facets": 324769.5314615842,
+      "available": 81,
+      "target": 20,
+      "written": 20
+    },
+    {
+      "bin": 8,
+      "min_facets": 324769.5314615842,
+      "max_facets": 892323.2082489387,
+      "available": 53,
+      "target": 20,
+      "written": 20
+    },
+    {
+      "bin": 9,
+      "min_facets": 892323.2082489387,
+      "max_facets": 2451711.0,
+      "available": 5,
+      "target": 20,
+      "written": 5
+    }
+  ],
+  "failures": [],
+  "seed": 0,
+  "filters": {
+    "solid": true,
+    "num_components": 1,
+    "closed": true,
+    "manifold": true
+  }
+}
