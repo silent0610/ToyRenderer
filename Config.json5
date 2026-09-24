@@ -29,10 +29,10 @@
     },
     "SdfConfig": {
         "WorldSize": 2.0,
-        "VoxelResolution": 128, // 同样是暴力法和JFA的SDF分辨率
-        "SdfResolution":128,
+        "VoxelResolution": 512, // 同样是暴力法和JFA的SDF分辨率
+        "SdfResolution":512,
         "MultiViewUsedCameraNum": 256, // 没有用了
-        "MaxCameraNum": 60, // 允许的最大相机数
+        "MaxCameraNum": 30, // 允许的最大相机数
         "SdfMode": 1, // 1 Multiview, 0 
         "MultiViewDepthResolution": 64,
         "SampledLevel": 3,  // 最低到哪一层, 如6,5,4,3
@@ -44,7 +44,7 @@
         "UseRandomSelection": 0
     },
     "DynamicGeometry": {
-        "enable": true,
+        "enable": false,
         "animationIndex": 0,
         "speed": 1.0,
         "loop": true

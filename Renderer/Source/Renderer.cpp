@@ -14,6 +14,9 @@ module RendererMod;
 import BruteForceSdf;
 import Logger;
 const float PI = 3.1415929;
+// 八叉树最粗停在 4³。11 个槽覆盖 4096³。计数缓冲放在 t2–t12 之后。
+constexpr uint32_t kMaxOctreeLevels = 11;
+constexpr uint32_t kOctreeLevelCountBinding = 13;
 
 Renderer::Renderer(Config *config) : config_(config)
 {
@@ -8732,22 +8735,15 @@ void Renderer::InitializeAnalyticalNodeSelectionResource()
     memcpy(analyticalNodeSelection_.counterBuffer.mapped, &zero, sizeof(uint32_t));
     analyticalNodeSelection_.counterBuffer.Unmap();
 
-    // 创建描述符集布局
-    // 这里需要注意, 128的输入应该只有6层, 256就应该有7层, 目前是硬编码, 后续可以改进
-    // 对于analytical, 4x4x4是允许被使用的, 但是multiview 最多应该使用8x8x8, 4x4x4仅作为复杂度计算
+    // t2–t12 固定 11 个槽，覆盖 4096³ 到 4³。实际层数随 VoxelResolution 变化，空槽稍后绑到最粗层。
     std::vector<VkDescriptorSetLayoutBinding> bindings = {
-        // Binding 0: Counter buffer (atomic counter)
         {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        // Binding 1: Solid node buffer (output)
         {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        // Binding 2-7: Mipmap octree texture array
-        {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 0: basesize 128
-        {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 1: 64
-        {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 2: 32
-        {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 3: 16
-        {6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}, // Level 4: 8
-        {7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}  // Level 4: 4
     };
+    for (uint32_t level = 0; level < kMaxOctreeLevels; ++level)
+    {
+        bindings.push_back({2 + level, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
+    }
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -8790,7 +8786,7 @@ void Renderer::InitializeAnalyticalNodeSelectionResource()
     // 创建描述符池
     std::vector<VkDescriptorPoolSize> poolSizes = {
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2},        // counter + solid node buffers
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6} // 5 mipmap textures (level 0-4)
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kMaxOctreeLevels}
     };
 
     VkDescriptorPoolCreateInfo poolInfo{};
@@ -8883,7 +8879,7 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
 
     // 最终节点计数缓冲区
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                                   &multiViewNodeSelection_.LevelCountBuffer, 6 * sizeof(uint32_t)));
+                                                   &multiViewNodeSelection_.LevelCountBuffer, kMaxOctreeLevels * sizeof(uint32_t)));
     // Pass 5:计数排序
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                    &multiViewNodeSelection_.SortedCountBuffer, sizeof(uint32_t)));
@@ -8909,14 +8905,12 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
         {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         // Binding 1: Candidate nodes buffer (RW)
         {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        // Binding 2-5: Mipmap octree textures (input)
-        {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        {6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        {7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        {8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}};
+    };
+    for (uint32_t level = 0; level < kMaxOctreeLevels; ++level)
+    {
+        collectionBindings.push_back({2 + level, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
+    }
+    collectionBindings.push_back({kOctreeLevelCountBinding, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
 
     VkDescriptorSetLayoutCreateInfo collectionLayoutInfo{};
     collectionLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -8999,7 +8993,7 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
     VkWriteDescriptorSet levelCountWrite{};
     levelCountWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     levelCountWrite.dstSet = multiViewNodeSelection_.collectionDescriptorSet;
-    levelCountWrite.dstBinding = 8;
+    levelCountWrite.dstBinding = kOctreeLevelCountBinding;
     levelCountWrite.dstArrayElement = 0;
     levelCountWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     levelCountWrite.descriptorCount = 1;
@@ -9251,40 +9245,40 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
 // Update descriptor set with mipmap textures for Solid Node Selection B
 void Renderer::UpdateMultiviewNodeSelectionDescriptorSet()
 {
-    std::vector<VkWriteDescriptorSet> descriptorWrites;
     std::vector<VkDescriptorImageInfo> imageInfos;
 
-    // 只绑定前4个mipmap级别 (Levels 0-3: 32x32x32 to 4x4x4)
     const uint32_t maxUsedLevel = m_gpuMipmapOctree->GetMaxLevel();
-    imageInfos.reserve(maxUsedLevel);
-    descriptorWrites.reserve(maxUsedLevel);
-
-    // 收集所有mipmap纹理的image info
-    for (uint32_t level = 0; level <= maxUsedLevel; ++level)
+    if (maxUsedLevel >= kMaxOctreeLevels)
     {
-        VkImageView mipmapView = m_gpuMipmapOctree->GetMipLevelView(level);
+        printf("WARNING: octree has %u levels, shader slots stop at %u\n", maxUsedLevel + 1, kMaxOctreeLevels);
+        return;
+    }
+    imageInfos.reserve(kMaxOctreeLevels);
+
+    VkSampler mipmapSampler = m_gpuMipmapOctree->GetSampler();
+    for (uint32_t level = 0; level < kMaxOctreeLevels; ++level)
+    {
+        const uint32_t sourceLevel = std::min(level, maxUsedLevel);
+        VkImageView mipmapView = m_gpuMipmapOctree->GetMipLevelView(sourceLevel);
         if (mipmapView == VK_NULL_HANDLE)
         {
-            printf("WARNING: Mip level %u view is null\n", level);
+            printf("WARNING: Mip level %u view is null\n", sourceLevel);
             return;
         }
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
         imageInfo.imageView = mipmapView;
-        imageInfo.sampler = m_gpuMipmapOctree->GetSampler(); // Combined image sampler需要sampler
+        imageInfo.sampler = mipmapSampler;
         imageInfos.push_back(imageInfo);
     }
 
-    // === 同时更新收集管线的描述符集纹理绑定 ===
     std::vector<VkWriteDescriptorSet> collectionDescriptorWrites;
-
-    // 创建收集管线的descriptor writes，引用同样的imageInfos
-    for (uint32_t level = 0; level <= maxUsedLevel; ++level)
+    for (uint32_t level = 0; level < kMaxOctreeLevels; ++level)
     {
         VkWriteDescriptorSet collectionWrite{};
         collectionWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         collectionWrite.dstSet = multiViewNodeSelection_.collectionDescriptorSet;
-        collectionWrite.dstBinding = 2 + level; // Bindings 2-5 (Level 0-3) in collection shader
+        collectionWrite.dstBinding = 2 + level;
         collectionWrite.dstArrayElement = 0;
         collectionWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         collectionWrite.descriptorCount = 1;
@@ -9324,7 +9318,7 @@ void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
     multiViewNodeSelection_.CollectionPushConstant.BaseSize = config_->Sdf.VoxelResolution;
     // 执行Level max,... 0
     // 应当从8x8x8开始选择, 直到base, 所以需要动态计算开始level.
-    // 理想的base范围为[8,128]
+    // 槽位覆盖到 4096³。开始层由当前分辨率的最粗一级决定。
 
     int maxSampledLevel = m_gpuMipmapOctree->GetMaxLevel() - 1;
     for (int level = maxSampledLevel; level >= static_cast<int>(config_->Sdf.SampledLevel); --level)
@@ -9933,23 +9927,22 @@ void Renderer::UpdateSolidNodeSelectionDescriptorSet()
     }
 
     // 准备mipmap纹理的descriptor信息
-    const uint32_t maxUsedLevel = m_gpuMipmapOctree->GetMaxLevel(); // Use levels 0, 1, 2, 3, 4 (5 levels total)
+    const uint32_t maxUsedLevel = m_gpuMipmapOctree->GetMaxLevel();
+    if (maxUsedLevel >= kMaxOctreeLevels)
+    {
+        printf("ERROR: octree has %u levels, shader slots stop at %u\n", maxUsedLevel + 1, kMaxOctreeLevels);
+        return;
+    }
     std::vector<VkWriteDescriptorSet> descriptorWrites;
     std::vector<VkDescriptorImageInfo> imageInfos;
+    imageInfos.reserve(kMaxOctreeLevels);
+    descriptorWrites.reserve(kMaxOctreeLevels);
 
-    // 预分配空间以避免vector重新分配导致的指针失效
-    imageInfos.reserve(maxUsedLevel + 1);
-    descriptorWrites.reserve(maxUsedLevel + 1);
-
-    // 获取GPUMipmapOctree的sampler
     VkSampler mipmapSampler = m_gpuMipmapOctree->GetSampler();
-
-    // 为每个mipmap层级创建image info - 限制到level 0-4 (64x64x64 到 4x4x4)
-
-    // 先收集所有imageInfo
-    for (uint32_t level = 0; level <= maxUsedLevel; ++level)
+    for (uint32_t level = 0; level < kMaxOctreeLevels; ++level)
     {
-        VkImageView mipmapView = m_gpuMipmapOctree->GetMipLevelView(level);
+        const uint32_t sourceLevel = std::min(level, maxUsedLevel);
+        VkImageView mipmapView = m_gpuMipmapOctree->GetMipLevelView(sourceLevel);
         if (mipmapView == VK_NULL_HANDLE)
         {
             return;
@@ -9959,17 +9952,15 @@ void Renderer::UpdateSolidNodeSelectionDescriptorSet()
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
         imageInfo.imageView = mipmapView;
         imageInfo.sampler = mipmapSampler;
-
         imageInfos.push_back(imageInfo);
     }
 
-    // 然后创建descriptorWrites，引用稳定的imageInfos
-    for (uint32_t level = 0; level <= maxUsedLevel; ++level)
+    for (uint32_t level = 0; level < kMaxOctreeLevels; ++level)
     {
         VkWriteDescriptorSet descriptorWrite{};
         descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrite.dstSet = analyticalNodeSelection_.descriptorSet;
-        descriptorWrite.dstBinding = 2 + level; // Bindings 2-6
+        descriptorWrite.dstBinding = 2 + level;
         descriptorWrite.dstArrayElement = 0;
         descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrite.descriptorCount = 1;

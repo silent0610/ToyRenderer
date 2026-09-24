@@ -173,6 +173,10 @@ std::optional<DatasetBenchOptions> DatasetBench::ParseArgs(int argc, char **argv
         {
             target = &options.warmup;
         }
+        else if (arg == "--cameras")
+        {
+            target = &options.cameras;
+        }
         else
         {
             std::cerr << "unknown arg: " << arg << "\n" << kUsage << "\n";
@@ -258,6 +262,10 @@ void DatasetBench::ApplyToConfig(Config &config, const DatasetBenchOptions &opti
     config.modelPath = ModelPaths(options).front();
     config.Sdf.VoxelResolution = options.resolution;
     config.Sdf.SdfResolution = options.resolution;
+    if (options.cameras > 0)
+    {
+        config.Sdf.MaxCameraNum = options.cameras;
+    }
     config.Dynamic.enable = false;
 }
 

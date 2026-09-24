@@ -21,15 +21,20 @@ struct SolidNode {
 RWStructuredBuffer<uint> candidateCountBuffer : register(u0);        // Candidate node count
 RWStructuredBuffer<SolidNode> candidateNodesBuffer : register(u1);   // Candidate nodes buffer
 
-// Mipmap octree textures (read-only)
-Texture3D<uint2> mipmapTexture0 : register(t2); // Level 0: 128
-Texture3D<uint2> mipmapTexture1 : register(t3); // Level 1: 64
-Texture3D<uint2> mipmapTexture2 : register(t4); // Level 2: 32
-Texture3D<uint2> mipmapTexture3 : register(t5); // Level 3: 16
-Texture3D<uint2> mipmapTexture4 : register(t6); // Level 3: 8
-Texture3D<uint2> mipmapTexture5 : register(t7); // Level 3: 4
+// t2–t12：4096³ 到 4³，共 11 层。u13 避开这些 binding。
+Texture3D<uint2> mipmapTexture0 : register(t2);
+Texture3D<uint2> mipmapTexture1 : register(t3);
+Texture3D<uint2> mipmapTexture2 : register(t4);
+Texture3D<uint2> mipmapTexture3 : register(t5);
+Texture3D<uint2> mipmapTexture4 : register(t6);
+Texture3D<uint2> mipmapTexture5 : register(t7);
+Texture3D<uint2> mipmapTexture6 : register(t8);
+Texture3D<uint2> mipmapTexture7 : register(t9);
+Texture3D<uint2> mipmapTexture8 : register(t10);
+Texture3D<uint2> mipmapTexture9 : register(t11);
+Texture3D<uint2> mipmapTexture10 : register(t12);
 
-RWStructuredBuffer<uint> LevelCountBuffer : register(u8);
+RWStructuredBuffer<uint> LevelCountBuffer : register(u13);
 // Push constants structure
 struct PushConstantDesc {
     uint BaseSize;
@@ -70,23 +75,33 @@ SolidNode CreateNode(uint3 coord, uint level) {
 
 // Read mipmap texture based on current level
 uint2 ReadCurrentLevelTexture(uint3 coord) {
-    switch(PushConstant.CurrentLevel) {
+    switch (PushConstant.CurrentLevel) {
         case 0: return mipmapTexture0.Load(int4(coord, 0));
         case 1: return mipmapTexture1.Load(int4(coord, 0));
         case 2: return mipmapTexture2.Load(int4(coord, 0));
         case 3: return mipmapTexture3.Load(int4(coord, 0));
         case 4: return mipmapTexture4.Load(int4(coord, 0));
         case 5: return mipmapTexture5.Load(int4(coord, 0));
-        default: return EMPTY;
+        case 6: return mipmapTexture6.Load(int4(coord, 0));
+        case 7: return mipmapTexture7.Load(int4(coord, 0));
+        case 8: return mipmapTexture8.Load(int4(coord, 0));
+        case 9: return mipmapTexture9.Load(int4(coord, 0));
+        case 10: return mipmapTexture10.Load(int4(coord, 0));
+        default: return uint2(EMPTY, 0);
     }
 }
 uint ReadPrevLevelTexture(uint3 coord) {
-    switch(PushConstant.CurrentLevel) {
+    switch (PushConstant.CurrentLevel) {
         case 0: return mipmapTexture1.Load(int4(coord, 0)).y;
         case 1: return mipmapTexture2.Load(int4(coord, 0)).y;
         case 2: return mipmapTexture3.Load(int4(coord, 0)).y;
         case 3: return mipmapTexture4.Load(int4(coord, 0)).y;
         case 4: return mipmapTexture5.Load(int4(coord, 0)).y;
+        case 5: return mipmapTexture6.Load(int4(coord, 0)).y;
+        case 6: return mipmapTexture7.Load(int4(coord, 0)).y;
+        case 7: return mipmapTexture8.Load(int4(coord, 0)).y;
+        case 8: return mipmapTexture9.Load(int4(coord, 0)).y;
+        case 9: return mipmapTexture10.Load(int4(coord, 0)).y;
         default: return 0;
     }
 }

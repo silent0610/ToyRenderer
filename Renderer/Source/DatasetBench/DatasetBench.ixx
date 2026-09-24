@@ -13,6 +13,7 @@ export struct DatasetBenchOptions
     std::string listPath;
     std::string outPath{"bench.csv"};
     uint32_t resolution{128};
+    uint32_t cameras{0};
     uint32_t queries{4096};
     uint32_t repeat{50};
     uint32_t warmup{50};
@@ -85,5 +86,5 @@ public:
     static void AppendRows(const std::string &path, const std::vector<BenchRow> &rows);
 
     static constexpr const char *kUsage =
-        "usage: MyToyRenderer --batch <model.gltf> | --batch-list <models.txt> [--out bench.csv] [--resolution 128] [--queries 4096] [--warmup 50] [--repeat 50]";
+        "usage: MyToyRenderer --batch <model.gltf> | --batch-list <models.txt> [--out bench.csv] [--resolution 128] [--cameras 0] [--queries 4096] [--warmup 50] [--repeat 50]";
 };

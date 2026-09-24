@@ -15,13 +15,17 @@ struct SolidNode {
 RWStructuredBuffer<uint> counterBuffer : register(u0);     // nodeCount - Binding 0
 RWStructuredBuffer<SolidNode> solidNodeBuffer : register(u1); // Solid nodes - Binding 1
 
-// Mipmap textures - Bindings 2-7 level 0-5 若base为128,则(128,64,32,16,8,4)
-Texture3D<uint> mipmapTexture0 : register(t2); // Level 0: 128
-Texture3D<uint> mipmapTexture1 : register(t3); // Level 1: 64
-Texture3D<uint> mipmapTexture2 : register(t4); // Level 2: 32
-Texture3D<uint> mipmapTexture3 : register(t5); // Level 3: 16
-Texture3D<uint> mipmapTexture4 : register(t6); // Level 4: 8
-Texture3D<uint> mipmapTexture5 : register(t7); // Level 4: 4
+Texture3D<uint> mipmapTexture0 : register(t2);
+Texture3D<uint> mipmapTexture1 : register(t3);
+Texture3D<uint> mipmapTexture2 : register(t4);
+Texture3D<uint> mipmapTexture3 : register(t5);
+Texture3D<uint> mipmapTexture4 : register(t6);
+Texture3D<uint> mipmapTexture5 : register(t7);
+Texture3D<uint> mipmapTexture6 : register(t8);
+Texture3D<uint> mipmapTexture7 : register(t9);
+Texture3D<uint> mipmapTexture8 : register(t10);
+Texture3D<uint> mipmapTexture9 : register(t11);
+Texture3D<uint> mipmapTexture10 : register(t12);
 // Push constants for coordinate transformation (matching voxelization)
 struct PushConstants {  
     uint BaseSize;
@@ -62,9 +66,12 @@ uint SampleSdfLevel(int4 coord, uint level)
         case 3: return mipmapTexture3.Load(coord);
         case 4: return mipmapTexture4.Load(coord);
         case 5: return mipmapTexture5.Load(coord);
-        default:
-            // 超出范围时返回 0 或某种标记值
-            return 0;
+        case 6: return mipmapTexture6.Load(coord);
+        case 7: return mipmapTexture7.Load(coord);
+        case 8: return mipmapTexture8.Load(coord);
+        case 9: return mipmapTexture9.Load(coord);
+        case 10: return mipmapTexture10.Load(coord);
+        default: return 0;
     }
 }
 
