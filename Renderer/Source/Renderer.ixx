@@ -1523,7 +1523,8 @@ private:
 
 	// GPU Timestamp支持 - 连续1000帧统计
 	VkQueryPool timestampQueryPool_{VK_NULL_HANDLE};
-	static constexpr uint32_t MAX_TIMESTAMP_QUERIES = 4; // 只需要4个时间戳
+	static constexpr uint32_t MAX_TIMESTAMP_QUERIES = 11;
+
 	float timestampPeriod_{1.0f}; // GPU时间戳周期（纳秒）
 
 	// 性能计时索引
@@ -1531,7 +1532,14 @@ private:
 		MESHTOSDF_START = 0,
 		MESHTOSDF_END = 1,
 		UNIFIED_PIPELINE_START = 2,
-		UNIFIED_PIPELINE_END = 3
+		STAGE_MARK = 3,
+		STAGE_FILL = 4,
+		STAGE_OCTREE = 5,
+		STAGE_SELECT = 6,
+		STAGE_PREPARE = 7,
+		STAGE_DEPTH = 8,
+		STAGE_FUSION = 9,
+		UNIFIED_PIPELINE_END = 10
 	};
 
 	// 性能统计数据
@@ -1558,6 +1566,7 @@ private:
 	float lastClipDuration_{0.0f};
 	float lastJfaMs_{0.0f};
 	float lastUnifiedMs_{0.0f};
+	float lastStageMs_[7]{};
 	uint32_t lastSelectedCameraCount_{0};
 	std::ofstream dynamicPerfCsv_;
 	bool dynamicCsvOpened_{false};

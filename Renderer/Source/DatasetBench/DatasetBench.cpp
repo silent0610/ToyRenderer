@@ -87,6 +87,10 @@ BenchRow MultiViewSdfMethod::Run(const BenchContext &context)
     }
     BenchRow row = MakeBaseRow(context, Name(), "precomp_only");
     row.precompMs = context.multiViewPrecompMs;
+    for (int stage = 0; stage < 7; ++stage)
+    {
+        row.stageMs[stage] = context.stageMs[stage];
+    }
     return row;
 }
 
@@ -300,12 +304,18 @@ void DatasetBench::AppendRows(const std::string &path, const std::vector<BenchRo
     }
     if (needsHeader)
     {
-        out << "model,triangles,method,resolution,queries,precomp_ms,eval_ms,eval_per_query_us,status\n";
+        out << "model,triangles,method,resolution,queries,precomp_ms,eval_ms,eval_per_query_us,status,"
+               "mark_ms,fill_ms,octree_ms,select_ms,prepare_ms,depth_ms,fusion_ms\n";
     }
     for (const BenchRow &row : rows)
     {
         out << row.model << "," << row.triangles << "," << row.method << "," << row.resolution << "," << row.queries << ","
             << FormatOptional(row.precompMs) << "," << FormatOptional(row.evalMs) << "," << FormatOptional(row.evalPerQueryUs) << ","
-            << row.status << "\n";
+            << row.status;
+        for (const std::optional<double> &stage : row.stageMs)
+        {
+            out << "," << FormatOptional(stage);
+        }
+        out << "\n";
     }
 }

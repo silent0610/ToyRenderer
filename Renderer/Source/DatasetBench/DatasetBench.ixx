@@ -28,6 +28,7 @@ export struct BenchContext
     uint32_t queries{4096};
     double jfaPrecompMs{0.0};
     double multiViewPrecompMs{0.0};
+    double stageMs[7]{};
     bool hasPrecomp{false};
 };
 
@@ -41,6 +42,7 @@ export struct BenchRow
     std::optional<double> precompMs;
     std::optional<double> evalMs;
     std::optional<double> evalPerQueryUs;
+    std::optional<double> stageMs[7];
     std::string status;
 };
 

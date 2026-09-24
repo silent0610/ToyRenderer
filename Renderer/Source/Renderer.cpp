@@ -10156,6 +10156,7 @@ void Renderer::RecordUnifiedGPUPipelineCommands()
     BeginDebugLabel(cmd, "Voxelization Mark Pass", 1.0f, 0.0f, 0.0f, 1.0f);
     ExecuteVoxelizationMarkPass(cmd);
     EndDebugLabel(cmd);
+    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestampQueryPool_, STAGE_MARK);
 
     // 屏障：确保标记写入对填充可见
     VkMemoryBarrier memBarrier1{};
@@ -10169,6 +10170,7 @@ void Renderer::RecordUnifiedGPUPipelineCommands()
     BeginDebugLabel(cmd, "Voxelization Fill Pass", 0.0f, 1.0f, 0.0f, 1.0f);
     ExecuteVoxelizationFillPass(cmd);
     EndDebugLabel(cmd);
+    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestampQueryPool_, STAGE_FILL);
 
     // 屏障：确保填充写入对Mipmap可见
     VkMemoryBarrier memBarrier2{};
@@ -10181,6 +10183,7 @@ void Renderer::RecordUnifiedGPUPipelineCommands()
     BeginDebugLabel(cmd, "Mipmap Octree Generation", 0.0f, 0.0f, 1.0f, 1.0f);
     m_gpuMipmapOctree->BuildFromVoxelTexture(cmd, &m_voxelizationPass.finalVoxelStateTexture);
     EndDebugLabel(cmd);
+    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestampQueryPool_, STAGE_OCTREE);
 
     // 屏障：确保八叉树构建完成对节点筛选可见
     VkMemoryBarrier memBarrier3{};
@@ -10202,6 +10205,7 @@ void Renderer::RecordUnifiedGPUPipelineCommands()
         ExecuteAnalyticalNodeSelection(cmd);
         EndDebugLabel(cmd);
     }
+    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestampQueryPool_, STAGE_SELECT);
 
     // 屏障：确保节点筛选完成对SDF生成可见
     VkMemoryBarrier memBarrier4{};
@@ -10217,6 +10221,7 @@ void Renderer::RecordUnifiedGPUPipelineCommands()
         BeginDebugLabel(cmd, "GPU Data Preparation Stage", 1.0f, 0.5f, 0.0f, 1.0f);
         ExecuteGPUDataPreparation(cmd);
         EndDebugLabel(cmd);
+        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestampQueryPool_, STAGE_PREPARE);
 
         // Memory barrier: Ensure GPU data preparation completes before depth rendering
         VkMemoryBarrier gpuDataBarrier{};
@@ -10229,10 +10234,12 @@ void Renderer::RecordUnifiedGPUPipelineCommands()
         BeginDebugLabel(cmd, "Multi-View Depth SDF", 0.0f, 0.5f, 1.0f, 1.0f);
         ExecuteMultiViewDepthRendering(cmd);
         EndDebugLabel(cmd);
+        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestampQueryPool_, STAGE_DEPTH);
 
         BeginDebugLabel(cmd, "SDFFusion", 0.0f, 0.5f, 1.0f, 1.0f);
         ExecuteSDFFusion(cmd);
         EndDebugLabel(cmd);
+        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestampQueryPool_, STAGE_FUSION);
     }
     else
     {
@@ -10240,6 +10247,9 @@ void Renderer::RecordUnifiedGPUPipelineCommands()
         BeginDebugLabel(cmd, "Analytical SDF Generation", 1.0f, 0.0f, 1.0f, 1.0f);
         ExecuteAnalyticalSDFGeneration(cmd);
         EndDebugLabel(cmd);
+        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestampQueryPool_, STAGE_PREPARE);
+        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestampQueryPool_, STAGE_DEPTH);
+        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, timestampQueryPool_, STAGE_FUSION);
     }
 
     // 结束UnifiedPipeline时间测量
@@ -12355,6 +12365,11 @@ void Renderer::CollectFrameTimestamps()
 
     const float meshToSdfTime = (timestamps[MESHTOSDF_END] - timestamps[MESHTOSDF_START]) * timestampPeriod_ / 1e6f;
     const float unifiedTime = (timestamps[UNIFIED_PIPELINE_END] - timestamps[UNIFIED_PIPELINE_START]) * timestampPeriod_ / 1e6f;
+    const uint32_t stageQuery[8] = {UNIFIED_PIPELINE_START, STAGE_MARK, STAGE_FILL, STAGE_OCTREE, STAGE_SELECT, STAGE_PREPARE, STAGE_DEPTH, STAGE_FUSION};
+    for (int stage = 0; stage < 7; ++stage)
+    {
+        lastStageMs_[stage] = (timestamps[stageQuery[stage + 1]] - timestamps[stageQuery[stage]]) * timestampPeriod_ / 1e6f;
+    }
     lastJfaMs_ = meshToSdfTime;
     lastUnifiedMs_ = unifiedTime;
     ReadSelectedCameraCount();

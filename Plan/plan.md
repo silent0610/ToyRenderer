@@ -90,6 +90,8 @@ model,triangles,method,resolution,queries,precomp_ms,eval_ms,eval_per_query_us,s
 
 ## 高分辨率瓶颈和优化
 
+实测结论、三张折线图和论文句子怎么改，写在 [复杂度说明.md](复杂度说明.md)。下面“夹到 \(32^3\)”是改配置之前的设计。现在八叉树最细、挑选最细和挑选最粗是三个独立的 2 的幂：`OctreeResolution`、`MaxSelectionResolution`、`MinSelectionResolution`。
+
 证据是 `happy_15k`（14765 三角面）在 \(512^3\) 的一帧 RenderDoc：`工业模型.txt`。统一管线 285 ms 里，体素化标记 82.7 ms（其中 `vkCmdClearColorImage` 清 \(512^3\) `R32_SINT` 占 80.7 ms，画网格 2.0 ms）、沿 z 填充 89.3 ms、八叉树前两级 42.7 ms。三段合计约 215 ms。节点挑选 0.04 ms，深度渲染 0.82 ms，融合 69.9 ms。cubemap 仍是配置里的 \(64^2\)，不是这 215 ms 的来源。减 \(K\) 或缩小深度图动不到这三段。RenderDoc 的绝对值高于 bench（同一模型 MultiView 约 121 ms），比例用来定位阶段。
 
 2060 SUPER 带宽约 448 GB/s，512 MB 扫一遍大约 1 ms。这三段是几十毫秒，所以慢在访问方式，不在「必须搬运这么多字节」。清零走 3D 图像的 clear。填充在 `ScanFill.comp.hlsl`：每个线程沿 z 做 512 次有依赖的读取，相邻 z 隔着一整层。八叉树第一级对每个父节点散读 8 个子体素。

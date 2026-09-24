@@ -87,6 +87,7 @@ void Renderer::RunDatasetBench(const DatasetBenchOptions &options)
 
         std::vector<double> jfaSamples;
         std::vector<double> multiViewSamples;
+        std::vector<double> stageSamples[7];
         jfaSamples.reserve(options.repeat);
         multiViewSamples.reserve(options.repeat);
 
@@ -102,6 +103,10 @@ void Renderer::RunDatasetBench(const DatasetBenchOptions &options)
             }
             jfaSamples.push_back(lastJfaMs_);
             multiViewSamples.push_back(lastUnifiedMs_);
+            for (int stage = 0; stage < 7; ++stage)
+            {
+                stageSamples[stage].push_back(lastStageMs_[stage]);
+            }
         }
 
         BenchContext context;
@@ -117,9 +122,15 @@ void Renderer::RunDatasetBench(const DatasetBenchOptions &options)
         {
             context.jfaPrecompMs = *jfaMean;
             context.multiViewPrecompMs = *multiViewMean;
+            for (int stage = 0; stage < 7; ++stage)
+            {
+                context.stageMs[stage] = *DatasetBench::Mean(stageSamples[stage]);
+            }
             std::cout << "bench " << (modelIndex + 1) << "/" << models.size() << " " << context.model << " triangles=" << context.triangles
                       << " frames=" << jfaSamples.size() << " JFA=" << context.jfaPrecompMs << " ms MultiView=" << context.multiViewPrecompMs
-                      << " ms\n";
+                      << " ms mark=" << context.stageMs[0] << " fill=" << context.stageMs[1] << " octree=" << context.stageMs[2]
+                      << " select=" << context.stageMs[3] << " prepare=" << context.stageMs[4] << " depth=" << context.stageMs[5]
+                      << " fusion=" << context.stageMs[6] << "\n";
         }
         else
         {
