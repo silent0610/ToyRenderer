@@ -1840,6 +1840,16 @@ void Renderer::SetUI(UIOverlay *overlay)
                 SetMultiViewCountSortEnabled(countSortEnabled);
             }
 
+            {
+                const int cameraCap = static_cast<int>(std::max(1u, config_->Sdf.MultiViewUsedCameraNum));
+                int maxCameras = static_cast<int>(config_->Sdf.MaxCameraNum);
+                if (overlay->SliderInt("Max Camera Num", &maxCameras, 1, cameraCap))
+                {
+                    SetMaxCameraNum(static_cast<uint32_t>(maxCameras));
+                }
+                overlay->Text("selected cameras: %u / %u", lastSelectedCameraCount_, config_->Sdf.MaxCameraNum);
+            }
+
             bool cameraOverlayEnabled = m_enableCameraOverlay;
             if (overlay->CheckBox("Show Camera Overlay", &cameraOverlayEnabled))
             {
@@ -10064,6 +10074,23 @@ void Renderer::SetMaxChildrenPerParent(uint32_t maxChildren)
     {
         m_unifiedGPUPipeline.commandsRecorded = false;
         printf("Pipeline commands will be re-recorded with new parent quota\n");
+    }
+}
+
+void Renderer::SetMaxCameraNum(uint32_t maxCameras)
+{
+    const uint32_t cap = std::max(1u, config_->Sdf.MultiViewUsedCameraNum);
+    maxCameras = std::clamp(maxCameras, 1u, cap);
+    if (config_->Sdf.MaxCameraNum == maxCameras)
+    {
+        return;
+    }
+    config_->Sdf.MaxCameraNum = maxCameras;
+    printf("Max camera num = %u (cap %u)\n", config_->Sdf.MaxCameraNum, cap);
+    if (m_unifiedGPUPipeline.commandsRecorded)
+    {
+        m_unifiedGPUPipeline.commandsRecorded = false;
+        printf("Pipeline commands will be re-recorded with new camera budget\n");
     }
 }
 

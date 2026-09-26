@@ -465,6 +465,7 @@ private:
     void SetSelectionScoreOctreePassEnabled(bool enabled);
 	void SetHierarchicalParentQuotaEnabled(bool enabled);
 	void SetMaxChildrenPerParent(uint32_t maxChildren);
+	void SetMaxCameraNum(uint32_t maxCameras);
 
 	// PBR
 	void GenerateBRDFLUT();

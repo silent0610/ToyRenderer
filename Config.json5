@@ -1,6 +1,6 @@
 {
     "modelPath": [
-        "Models/checked/happy_15k.gltf"
+        "Models/dynamic/red_panda/scene.gltf"
     ],
     "shaderPath": [
         "BlinnPhong/Basic.Vert.spv",
@@ -31,10 +31,10 @@
         "WorldSize": 2.0,
         "OctreeResolution": 64, // 八叉树最细一层。挑选范围不能比它更细
         "MinSelectionResolution": 4, // 挑选八叉树最粗一层
-        "MaxSelectionResolution": 16, // 挑选八叉树最细一层
+        "MaxSelectionResolution": 32, // 挑选八叉树最细一层
         "SdfResolution":64,
         "MultiViewUsedCameraNum": 256, // 没有用了
-        "MaxCameraNum": 30, // 允许的最大相机数
+        "MaxCameraNum": 50, // 允许的最大相机数
         "SdfMode": 1, // 1 Multiview, 0 
         "MultiViewDepthResolution": 64,
         "SampledLevel": 3,  // 最低到哪一层, 如6,5,4,3
@@ -48,7 +48,7 @@
         "MaxChildrenPerParent": 1 // 同一父节点下最多选几个子相机 [1,8]
     },
     "DynamicGeometry": {
-        "enable": false,
+        "enable": true,
         "animationIndex": 0,
         "speed": 1.0,
         "loop": true
