@@ -176,6 +176,46 @@ std::optional<DatasetBenchOptions> DatasetBench::ParseArgs(int argc, char **argv
             options.qualityQuota = true;
             continue;
         }
+        if (arg == "--brute-only")
+        {
+            options.bruteOnly = true;
+            options.qualityQuota = true;
+            options.bruteGt = "generate";
+            continue;
+        }
+        if (arg == "--export-sdf")
+        {
+            const auto value = TakeValue(argc, argv, i, "--export-sdf");
+            if (!value)
+            {
+                std::cerr << kUsage << "\n";
+                return std::nullopt;
+            }
+            const auto parsed = ParseU32(*value);
+            if (!parsed || *parsed > 1)
+            {
+                std::cerr << "invalid --export-sdf (use 0 or 1)\n";
+                return std::nullopt;
+            }
+            options.exportSdf = (*parsed != 0);
+            continue;
+        }
+        if (arg == "--brute-gt")
+        {
+            const auto value = TakeValue(argc, argv, i, "--brute-gt");
+            if (!value)
+            {
+                std::cerr << kUsage << "\n";
+                return std::nullopt;
+            }
+            if (*value != "off" && *value != "cache" && *value != "generate")
+            {
+                std::cerr << "invalid --brute-gt (use off|cache|generate)\n";
+                return std::nullopt;
+            }
+            options.bruteGt = *value;
+            continue;
+        }
         if (arg == "--hierarchical")
         {
             const auto value = TakeValue(argc, argv, i, "--hierarchical");

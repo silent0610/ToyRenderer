@@ -11,6 +11,9 @@ import std;
 import DatasetBench;
 import InitMod;
 import CubqlBvh;
+import BruteForceSdf;
+import ToolMod;
+import GlmMod;
 
 namespace
 {
@@ -21,40 +24,95 @@ struct QuotaQualityMetrics
     double maxAbs{0.0};
     double rmseNarrow{0.0};
     uint32_t narrowCount{0};
-    uint32_t cameras{0};
+    double signAccuracy{-1.0};
+    double signIoU{-1.0};
+    bool hasMetrics{false};
 };
 
-QuotaQualityMetrics CompareAbsToUnsigned(const std::vector<float> &multiview, const std::vector<float> &gt, float narrowBand)
+struct MethodTiming
+{
+    double totalMs{0.0};
+    double stageMs[7]{};
+    double bvhBuildMs{0.0};
+    double bvhFillMs{0.0};
+    double bruteGenMs{0.0};
+};
+
+struct QualityRow
+{
+    std::string method;
+    uint32_t cameras{0};
+    QuotaQualityMetrics metrics{};
+    MethodTiming timing{};
+};
+
+QuotaQualityMetrics CompareToSignedGt(const std::vector<float> &pred, const std::vector<float> &gt, float narrowBand, bool computeSign)
 {
     QuotaQualityMetrics m;
-    if (multiview.size() != gt.size() || multiview.empty())
+    if (pred.size() != gt.size() || pred.empty())
     {
         return m;
     }
+
     double sumAbs = 0.0;
     double sumSq = 0.0;
     double sumSqNarrow = 0.0;
+    uint32_t tp = 0;
+    uint32_t fp = 0;
+    uint32_t fn = 0;
+    uint32_t tn = 0;
+
     for (std::size_t i = 0; i < gt.size(); ++i)
     {
-        const double err = std::abs(static_cast<double>(std::abs(multiview[i]) - gt[i]));
-        sumAbs += err;
-        sumSq += err * err;
-        m.maxAbs = std::max(m.maxAbs, err);
-        if (gt[i] <= narrowBand)
+        const double magErr = std::abs(static_cast<double>(std::abs(pred[i]) - std::abs(gt[i])));
+        sumAbs += magErr;
+        sumSq += magErr * magErr;
+        m.maxAbs = std::max(m.maxAbs, magErr);
+        if (std::abs(gt[i]) <= narrowBand)
         {
-            sumSqNarrow += err * err;
+            sumSqNarrow += magErr * magErr;
             ++m.narrowCount;
         }
+
+        if (computeSign)
+        {
+            const bool predIn = pred[i] < 0.0f;
+            const bool gtIn = gt[i] < 0.0f;
+            if (predIn && gtIn)
+            {
+                ++tp;
+            }
+            else if (predIn && !gtIn)
+            {
+                ++fp;
+            }
+            else if (!predIn && gtIn)
+            {
+                ++fn;
+            }
+            else
+            {
+                ++tn;
+            }
+        }
     }
+
     const double n = static_cast<double>(gt.size());
     m.maeAbs = sumAbs / n;
     m.rmseAbs = std::sqrt(sumSq / n);
     m.rmseNarrow = m.narrowCount > 0 ? std::sqrt(sumSqNarrow / static_cast<double>(m.narrowCount)) : 0.0;
+    if (computeSign)
+    {
+        m.signAccuracy = static_cast<double>(tp + tn) / n;
+        const uint32_t denom = tp + fp + fn;
+        m.signIoU = denom > 0 ? static_cast<double>(tp) / static_cast<double>(denom) : 1.0;
+    }
+    m.hasMetrics = true;
     return m;
 }
 
-void AppendQuotaQualityCsv(const std::string &path, const std::string &model, uint32_t triangles, uint32_t resolution, uint32_t budget,
-                           const std::string &variant, const QuotaQualityMetrics &m)
+void AppendQualityCsv(const std::string &path, const std::string &model, uint32_t triangles, uint32_t resolution, uint32_t budget,
+                      const QualityRow &row)
 {
     const bool needsHeader = !std::filesystem::exists(path) || std::filesystem::file_size(path) == 0;
     std::ofstream out(path, std::ios::app);
@@ -64,11 +122,39 @@ void AppendQuotaQualityCsv(const std::string &path, const std::string &model, ui
     }
     if (needsHeader)
     {
-        out << "model,triangles,resolution,budget,variant,cameras,rmse_abs,mae_abs,max_abs,rmse_narrow,narrow_count\n";
+        out << "model,triangles,resolution,budget,method,cameras,has_metrics,"
+               "rmse_abs,mae_abs,max_abs,rmse_narrow,narrow_count,sign_acc,sign_iou,"
+               "total_ms,mark_ms,fill_ms,octree_ms,select_ms,prepare_ms,depth_ms,fusion_ms,"
+               "bvh_build_ms,bvh_fill_ms,brute_gen_ms\n";
     }
-    out << model << ',' << triangles << ',' << resolution << ',' << budget << ',' << variant << ',' << m.cameras << ','
-        << std::format("{:.6f}", m.rmseAbs) << ',' << std::format("{:.6f}", m.maeAbs) << ',' << std::format("{:.6f}", m.maxAbs) << ','
-        << std::format("{:.6f}", m.rmseNarrow) << ',' << m.narrowCount << '\n';
+
+    const auto fmt = [](double v) { return std::format("{:.6f}", v); };
+    out << model << ',' << triangles << ',' << resolution << ',' << budget << ',' << row.method << ',' << row.cameras << ','
+        << (row.metrics.hasMetrics ? 1 : 0) << ',' << fmt(row.metrics.rmseAbs) << ',' << fmt(row.metrics.maeAbs) << ','
+        << fmt(row.metrics.maxAbs) << ',' << fmt(row.metrics.rmseNarrow) << ',' << row.metrics.narrowCount << ','
+        << fmt(row.metrics.signAccuracy) << ',' << fmt(row.metrics.signIoU) << ',' << fmt(row.timing.totalMs) << ','
+        << fmt(row.timing.stageMs[0]) << ',' << fmt(row.timing.stageMs[1]) << ',' << fmt(row.timing.stageMs[2]) << ','
+        << fmt(row.timing.stageMs[3]) << ',' << fmt(row.timing.stageMs[4]) << ',' << fmt(row.timing.stageMs[5]) << ','
+        << fmt(row.timing.stageMs[6]) << ',' << fmt(row.timing.bvhBuildMs) << ',' << fmt(row.timing.bvhFillMs) << ','
+        << fmt(row.timing.bruteGenMs) << '\n';
+}
+
+bool WriteVolumeRaw(const std::string &path, const std::vector<float> &volume)
+{
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out)
+    {
+        return false;
+    }
+    out.write(reinterpret_cast<const char *>(volume.data()), static_cast<std::streamsize>(volume.size() * sizeof(float)));
+    return static_cast<bool>(out);
+}
+
+std::string QualityExportDir(const std::string &outPath)
+{
+    const std::filesystem::path outDir = std::filesystem::path(outPath).parent_path();
+    return (outDir.empty() ? std::filesystem::path(".") : outDir).string();
 }
 
 std::vector<float> DownloadSdfTexture(OldVulkanDevice *device, VkQueue queue, Texture *texture, VkImageLayout oldLayout)
@@ -326,7 +412,8 @@ void Renderer::RunDatasetBench(const DatasetBenchOptions &options)
 void Renderer::RunQuotaQualityBench(const DatasetBenchOptions &options)
 {
     const std::vector<std::string> models = DatasetBench::ModelPaths(options);
-    const uint32_t settleFrames = std::max(3u, options.warmup == 0 ? 3u : std::min(options.warmup, 5u));
+    const uint32_t warmupFrames = options.warmup;
+    const uint32_t measureFrames = std::max(1u, options.repeat);
     std::vector<uint32_t> budgets;
     if (options.cameras > 0)
     {
@@ -337,16 +424,17 @@ void Renderer::RunQuotaQualityBench(const DatasetBenchOptions &options)
         budgets = {30u, 40u, 50u, 60u};
     }
 
-    std::cout << "quality-quota: legacy(complexity) vs hierarchical(parent quota)\n"
-              << "  models=" << models.size() << " resolution=" << options.resolution << " settle_frames=" << settleFrames
-              << " MaxChildrenPerParent=" << config_->Sdf.MaxChildrenPerParent << " budgets=";
+    std::cout << "quality-quota: methods=multiview,jfa,bvh"
+              << " export_sdf=" << (options.exportSdf ? 1 : 0) << " brute_gt=" << options.bruteGt
+              << " brute_only=" << (options.bruteOnly ? 1 : 0) << "\n"
+              << "  models=" << models.size() << " resolution=" << options.resolution << " warmup=" << warmupFrames
+              << " measure=" << measureFrames << " budgets=";
     for (std::size_t i = 0; i < budgets.size(); ++i)
     {
         std::cout << budgets[i] << (i + 1 < budgets.size() ? "," : "");
     }
     std::cout << "\n";
 
-    // 深度/挑选缓冲按 MultiViewUsedCameraNum 分配，需能盖住最大 budget
     uint32_t maxBudget = 0;
     for (uint32_t b : budgets)
     {
@@ -357,11 +445,14 @@ void Renderer::RunQuotaQualityBench(const DatasetBenchOptions &options)
         config_->Sdf.MultiViewUsedCameraNum = maxBudget;
     }
     config_->Sdf.MaxCameraNum = budgets.front();
+    config_->Sdf.SdfResolution = options.resolution;
 
     InitWindow();
     InitVulkan();
-    perfStats_.targetFrames = settleFrames + 1000;
     perfStats_.warmupFrames = 0;
+    perfStats_.targetFrames = warmupFrames + measureFrames + 1000;
+    perfStats_.isCollecting = true;
+    perfStats_.isComplete = false;
 
     if (std::filesystem::exists(options.outPath))
     {
@@ -371,6 +462,8 @@ void Renderer::RunQuotaQualityBench(const DatasetBenchOptions &options)
     bool allOk = true;
     const float cellSize = config_->Sdf.WorldSize / static_cast<float>(options.resolution);
     const float narrowBand = 2.0f * cellSize;
+    const std::string exportDir = QualityExportDir(options.outPath);
+    const bool wantMetrics = options.bruteGt != "off";
 
     for (std::size_t modelIndex = 0; modelIndex < models.size(); ++modelIndex)
     {
@@ -384,24 +477,85 @@ void Renderer::RunQuotaQualityBench(const DatasetBenchOptions &options)
         std::cout << "quality " << (modelIndex + 1) << "/" << models.size() << " " << modelName << " triangles=" << triangles << "\n";
 
         std::vector<float> gt;
+        double bruteGenMs = 0.0;
         {
-            CubqlBvhSdf cubql;
-            float buildMs = 0.f;
-            float fillMs = 0.f;
-            if (!cubql.Create())
+            const uint32_t resolution = options.resolution;
+            const float worldSize = config_->Sdf.WorldSize;
+            const std::string cachedName = "Signed" + GenerateSdfFileName("BruteSdf");
+            const std::string cachedPath = Tool::GetAssetsPath() + "Sdf/" + cachedName;
+
+            BruteForceSdf brute;
+            BruteForceSdf::SdfParameters params{};
+            params.signedDistance = true;
+            params.voxelResolution = glm::ivec3(static_cast<int>(resolution));
+            params.origin = glm::vec3(-worldSize * 0.5f);
+            params.cellSize = worldSize / static_cast<float>(resolution);
+            brute.Initialize(params);
+
+            const bool needGenerate = options.bruteGt == "generate" || options.bruteOnly;
+            if (!needGenerate && options.bruteGt == "cache" && std::filesystem::exists(cachedPath))
             {
-                std::cout << "  GT(BVH) create failed\n";
-                allOk = false;
-                continue;
+                gt = brute.LoadFromFile(cachedPath);
+                if (gt.size() != static_cast<std::size_t>(resolution) * resolution * resolution)
+                {
+                    std::cout << "  GT(Brute) cache size mismatch\n";
+                    gt.clear();
+                    allOk = false;
+                }
+                else
+                {
+                    std::cout << "  GT(Brute signed) cache " << cachedName << "\n";
+                }
             }
-            cubql.SetModel(&m_glTFModel);
-            if (!cubql.Build(buildMs) || !cubql.FillVolume(config_->Sdf.WorldSize, options.resolution, gt, fillMs))
+            else if (needGenerate)
             {
-                std::cout << "  GT(BVH) failed\n";
-                allOk = false;
-                continue;
+                brute.SetModel(&m_glTFModel);
+                gt.assign(static_cast<std::size_t>(resolution) * resolution * resolution, std::numeric_limits<float>::max());
+                const auto t0 = std::chrono::high_resolution_clock::now();
+                brute.GenerateGroundTruth(gt);
+                const auto t1 = std::chrono::high_resolution_clock::now();
+                bruteGenMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+                brute.SaveToFile(gt, cachedPath);
+                std::cout << "  GT(Brute signed) generated " << bruteGenMs << " ms -> " << cachedName << "\n";
             }
-            std::cout << "  GT(BVH) build=" << buildMs << " ms fill=" << fillMs << " ms\n";
+            else if (options.bruteGt == "cache")
+            {
+                std::cout << "  GT(Brute) cache missing: " << cachedPath << " (use --brute-gt generate or --brute-only)\n";
+                allOk = false;
+            }
+
+            if (wantMetrics && gt.empty())
+            {
+                allOk = false;
+                if (options.bruteOnly)
+                {
+                    continue;
+                }
+            }
+
+            if (options.exportSdf && !gt.empty())
+            {
+                const std::string gtExport = exportDir + "/" + modelName + "_n" + std::to_string(resolution) + "_gt_brute.raw";
+                WriteVolumeRaw(gtExport, gt);
+            }
+
+            if (options.bruteGt == "generate" || options.bruteOnly)
+            {
+                QualityRow bruteRow;
+                bruteRow.method = "brute_gt";
+                bruteRow.timing.totalMs = bruteGenMs;
+                bruteRow.timing.bruteGenMs = bruteGenMs;
+                if (!gt.empty())
+                {
+                    bruteRow.metrics = CompareToSignedGt(gt, gt, narrowBand, true);
+                }
+                AppendQualityCsv(options.outPath, modelName, triangles, options.resolution, 0, bruteRow);
+            }
+        }
+
+        if (options.bruteOnly)
+        {
+            continue;
         }
 
         auto rerecord = [&]() {
@@ -411,7 +565,7 @@ void Renderer::RunQuotaQualityBench(const DatasetBenchOptions &options)
             RecordUnifiedGPUPipelineCommands();
         };
 
-        auto runVariant = [&](uint32_t budget, bool hierarchical, const char *variantName) -> bool {
+        auto sampleGpuFrameTimes = [&](uint32_t budget, bool hierarchical, MethodTiming &mvTiming, MethodTiming &jfaTiming) {
             config_->Sdf.MaxCameraNum = budget;
             SetHierarchicalParentQuotaEnabled(hierarchical);
             if (hierarchical)
@@ -420,37 +574,189 @@ void Renderer::RunQuotaQualityBench(const DatasetBenchOptions &options)
             }
             rerecord();
 
-            for (uint32_t frame = 0; frame < settleFrames; ++frame)
+            std::vector<double> jfaSamples;
+            std::vector<double> mvTotalSamples;
+            std::vector<double> stageSamples[7];
+            jfaSamples.reserve(measureFrames);
+            mvTotalSamples.reserve(measureFrames);
+
+            perfStats_.currentFrame = 0;
+            perfStats_.isCollecting = true;
+            for (uint32_t frame = 0; frame < warmupFrames + measureFrames; ++frame)
             {
                 glfwPollEvents();
                 DrawFrame();
+                if (frame < warmupFrames)
+                {
+                    continue;
+                }
+                jfaSamples.push_back(lastJfaMs_);
+                double mvSum = 0.0;
+                for (int s = 0; s < 7; ++s)
+                {
+                    stageSamples[s].push_back(lastStageMs_[s]);
+                    mvSum += lastStageMs_[s];
+                }
+                mvTotalSamples.push_back(mvSum);
             }
             vkDeviceWaitIdle(m_device);
-            ReadSelectedCameraCount();
 
-            Texture *tex = GetMultiViewDepthSdfTexture();
-            std::vector<float> mv = DownloadSdfTexture(m_vulkanDevice, m_queues.graphicsQueue, tex, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            delete tex;
-
-            if (mv.size() != gt.size())
+            const auto meanOr0 = [](const std::vector<double> &v) -> double {
+                const auto m = DatasetBench::Mean(v);
+                return m.value_or(0.0);
+            };
+            jfaTiming.totalMs = meanOr0(jfaSamples);
+            mvTiming.totalMs = meanOr0(mvTotalSamples);
+            for (int s = 0; s < 7; ++s)
             {
-                std::cout << "  K=" << budget << " " << variantName << " size mismatch\n";
-                return false;
+                mvTiming.stageMs[s] = meanOr0(stageSamples[s]);
             }
-
-            QuotaQualityMetrics metrics = CompareAbsToUnsigned(mv, gt, narrowBand);
-            metrics.cameras = std::min(lastSelectedCameraCount_, budget);
-            AppendQuotaQualityCsv(options.outPath, modelName, triangles, options.resolution, budget, variantName, metrics);
-            std::cout << "  K=" << budget << " " << variantName << " cameras=" << metrics.cameras << " rmse_abs=" << metrics.rmseAbs
-                      << " mae_abs=" << metrics.maeAbs << " rmse_narrow=" << metrics.rmseNarrow << "\n";
-            return true;
         };
 
         for (uint32_t budget : budgets)
         {
-            if (!runVariant(budget, false, "legacy_complexity") || !runVariant(budget, true, "hierarchical_quota"))
+            // --- MultiView variants ---
+            for (bool hierarchical : {false, true})
             {
-                allOk = false;
+                const char *methodName = hierarchical ? "multiview_hierarchical" : "multiview_legacy";
+                MethodTiming mvTiming{};
+                MethodTiming jfaTimingUnused{};
+                sampleGpuFrameTimes(budget, hierarchical, mvTiming, jfaTimingUnused);
+                ReadSelectedCameraCount();
+
+                Texture *tex = GetMultiViewDepthSdfTexture();
+                std::vector<float> mv =
+                    DownloadSdfTexture(m_vulkanDevice, m_queues.graphicsQueue, tex, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                delete tex;
+
+                QualityRow row;
+                row.method = methodName;
+                row.cameras = std::min(lastSelectedCameraCount_, budget);
+                row.timing = mvTiming;
+                if (wantMetrics && !gt.empty() && mv.size() == gt.size())
+                {
+                    row.metrics = CompareToSignedGt(mv, gt, narrowBand, true);
+                }
+                else if (wantMetrics)
+                {
+                    allOk = false;
+                }
+                AppendQualityCsv(options.outPath, modelName, triangles, options.resolution, budget, row);
+
+                if (options.exportSdf && !mv.empty())
+                {
+                    const std::string path = exportDir + "/" + modelName + "_n" + std::to_string(options.resolution) + "_k" +
+                                            std::to_string(budget) + "_" + methodName + ".raw";
+                    WriteVolumeRaw(path, mv);
+                }
+
+                std::cout << "  K=" << budget << " " << methodName << " total=" << mvTiming.totalMs << " ms"
+                          << " select=" << mvTiming.stageMs[3] << " depth=" << mvTiming.stageMs[5] << " fusion=" << mvTiming.stageMs[6];
+                if (row.metrics.hasMetrics)
+                {
+                    std::cout << " rmse_n=" << row.metrics.rmseNarrow << " sign_iou=" << row.metrics.signIoU;
+                }
+                std::cout << "\n";
+            }
+
+            // --- JFA (reuse last DrawFrame volumes; re-sample timing once with hierarchical off) ---
+            {
+                MethodTiming mvUnused{};
+                MethodTiming jfaTiming{};
+                sampleGpuFrameTimes(budget, false, mvUnused, jfaTiming);
+
+                Texture3D *jfaTex = GetMeshToSdfOperator()->GetSdfTexture();
+                std::vector<float> jfaVol =
+                    DownloadSdfTexture(m_vulkanDevice, m_queues.graphicsQueue, jfaTex, VK_IMAGE_LAYOUT_GENERAL);
+
+                QualityRow row;
+                row.method = "jfa";
+                row.cameras = 0;
+                row.timing = jfaTiming;
+                if (wantMetrics && !gt.empty() && jfaVol.size() == gt.size())
+                {
+                    row.metrics = CompareToSignedGt(jfaVol, gt, narrowBand, false);
+                }
+                AppendQualityCsv(options.outPath, modelName, triangles, options.resolution, budget, row);
+
+                if (options.exportSdf && !jfaVol.empty())
+                {
+                    const std::string path =
+                        exportDir + "/" + modelName + "_n" + std::to_string(options.resolution) + "_k" + std::to_string(budget) + "_jfa.raw";
+                    WriteVolumeRaw(path, jfaVol);
+                }
+                std::cout << "  K=" << budget << " jfa total=" << jfaTiming.totalMs << " ms";
+                if (row.metrics.hasMetrics)
+                {
+                    std::cout << " rmse_n=" << row.metrics.rmseNarrow;
+                }
+                std::cout << "\n";
+            }
+
+            // --- BVH (cuBQL): independent of K, but keep budget column for join ---
+            {
+                CubqlBvhSdf cubql;
+                MethodTiming timing{};
+                std::vector<float> bvhVol;
+                if (cubql.Create())
+                {
+                    cubql.SetModel(&m_glTFModel);
+                    float buildMs = 0.f;
+                    float fillMs = 0.f;
+                    std::vector<double> buildSamples;
+                    std::vector<double> fillSamples;
+                    buildSamples.reserve(measureFrames);
+                    fillSamples.reserve(measureFrames);
+                    for (uint32_t i = 0; i < warmupFrames + measureFrames; ++i)
+                    {
+                        const bool built = cubql.Build(buildMs);
+                        const bool filled = built && cubql.FillVolume(config_->Sdf.WorldSize, options.resolution, bvhVol, fillMs);
+                        if (!filled)
+                        {
+                            allOk = false;
+                            bvhVol.clear();
+                            break;
+                        }
+                        if (i >= warmupFrames)
+                        {
+                            buildSamples.push_back(buildMs);
+                            fillSamples.push_back(fillMs);
+                        }
+                    }
+                    const auto buildMean = DatasetBench::Mean(buildSamples);
+                    const auto fillMean = DatasetBench::Mean(fillSamples);
+                    timing.bvhBuildMs = buildMean.value_or(0.0);
+                    timing.bvhFillMs = fillMean.value_or(0.0);
+                    timing.totalMs = timing.bvhBuildMs + timing.bvhFillMs;
+                }
+                else
+                {
+                    allOk = false;
+                }
+
+                QualityRow row;
+                row.method = "bvh";
+                row.cameras = 0;
+                row.timing = timing;
+                if (wantMetrics && !gt.empty() && bvhVol.size() == gt.size())
+                {
+                    row.metrics = CompareToSignedGt(bvhVol, gt, narrowBand, false);
+                }
+                AppendQualityCsv(options.outPath, modelName, triangles, options.resolution, budget, row);
+
+                if (options.exportSdf && !bvhVol.empty())
+                {
+                    const std::string path =
+                        exportDir + "/" + modelName + "_n" + std::to_string(options.resolution) + "_k" + std::to_string(budget) + "_bvh.raw";
+                    WriteVolumeRaw(path, bvhVol);
+                }
+                std::cout << "  K=" << budget << " bvh total=" << timing.totalMs << " ms build=" << timing.bvhBuildMs
+                          << " fill=" << timing.bvhFillMs;
+                if (row.metrics.hasMetrics)
+                {
+                    std::cout << " rmse_n=" << row.metrics.rmseNarrow;
+                }
+                std::cout << "\n";
             }
         }
     }

@@ -10,7 +10,11 @@ ABC（`E:\all\Projects\retrieve`，块 53）和 Fusion 360 Gallery（`E:\all\Pro
 
 已经接上的是 JFA（现有 MeshToSdf）、MultiView（现有 Unified Pipeline）和 BVH（vendored cuBQL / CubqlBvh）。JFA 与 MultiView 的时间是 GPU timestamp；BVH 的 `precomp_ms` 是 WideBVH 建树，`eval_ms` 是填满 \(N^3\) 无符号距离（cudaEvent）。交互模式 `UseSdfKind: 6` 会生成体积场并上传给 SDFAO。
 
-还没做：Thingi10K 筛选和 glTF 转换、画图、中位数列、SDF 误差（RMSE、MAE、MaxAE、P95、P99、PCC）。误差只比 SDF 体素场和暴力真值，DFAO 的 PSNR、SSIM、图像 MAE 先不做。误差要在计时结束之后算，不写入 `precomp_ms`。
+**基线映射：** 审稿人点的 TCKB22 / Barill 一类，本仓库用现有 GPU BVH（cuBQL）占位，**不再另实现一份 TCKB 或 Barill FWN**。公平对照就是 MultiView / JFA / BVH。
+
+质量 bench（`--quality-quota`）已齐地基：有符号 Brute GT（cache/generate/brute-only）、MV/JFA/BVH 体素误差与阶段时间、可选 `--export-sdf`。还差 Python 侧 Chamfer / Eikonal / 切片热图，以及正式 50/50 跑表。
+
+还没做：Thingi10K 正式筛选出图、中位数列、Python 表面距离与可视化、神经 512³+。DFAO 的 PSNR、SSIM、图像 MAE 先不做。体素误差已在质量 CSV 里，不写入速度表的 `precomp_ms`。
 
 ## 成果
 
@@ -78,7 +82,7 @@ model,triangles,method,resolution,queries,precomp_ms,eval_ms,eval_per_query_us,s
 - **固定 \(K\)，变化 \(N\)。** \(N = 64, 128, 256, 512, 1024\)。\(K\) 取一个固定预算，和正文主实验一致，并在图注里写明。
 - **固定 \(N\)，变化 \(K\)。** \(N = 128\)，\(K = 1, 2, 4, 8, 16, 32\)。
 
-对比方法是本方法、JFA、TCKB22、Barill。每条曲线报告预处理、深度渲染、融合、查询、总时间，以及内存占用和时间分解。JFA 没有深度渲染和融合，这两列留空。TCKB22 和 Barill 还没有实现。
+对比方法是本方法、JFA、GPU BVH（cuBQL；即原计划 TCKB22/Barill 槽）。每条曲线报告预处理、深度渲染、融合、查询、总时间，以及内存占用和时间分解。JFA 没有深度渲染和融合，这两列留空。BVH 拆 build / fill / total。
 
 ## 复杂度说法
 
@@ -127,5 +131,5 @@ SDF 分辨率保持自由配置。挑选用的八叉树单独限制：最细 \(3
 - 不在 Python 里重写 MultiView 或 JFA。
 - 不用 ABC 的 `trimesh` obj 或 Fusion 360 的构造序列 JSON 填这张速度图。
 - 不把完整 10,000 个未过滤模型放进主曲线。
-- 面数散点的第一轮可以先不接 Barill。分辨率和相机数那两张 log-log 图要加入 Barill 和 TCKB22。
+- 面数散点与分辨率/相机数 log-log 都应带上 GPU BVH（cuBQL），不必另接独立 TCKB/Barill 实现。
 - 不做 DFAO、PSNR、SSIM 和图像 MAE。

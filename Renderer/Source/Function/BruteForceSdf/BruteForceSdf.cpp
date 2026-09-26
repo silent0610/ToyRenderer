@@ -533,26 +533,38 @@ void BruteForceSdf::SaveToFile(const std::vector<float>& data, const std::string
 
 std::vector<float> BruteForceSdf::LoadFromFile(const std::string& filename)
 {
-    std::ifstream file(filename, std::ios::binary);
+    std::ifstream file(filename, std::ios::binary | std::ios::ate);
     if (!file)
     {
         Log::Error(std::format("Failed to open file for reading: {}", filename));
         return {};
     }
 
-    // 读取头信息
-    glm::ivec3 resolution;
-    glm::vec3 origin;
-    float cellSize;
+    const std::streamoff fileBytes = file.tellg();
+    file.seekg(0, std::ios::beg);
+    if (fileBytes <= 0 || (fileBytes % static_cast<std::streamoff>(sizeof(float))) != 0)
+    {
+        Log::Error(std::format("BruteForceSdf: invalid file size {}: {}", fileBytes, filename));
+        return {};
+    }
 
-    file.read(reinterpret_cast<char*>(&resolution), sizeof(resolution));
-    file.read(reinterpret_cast<char*>(&origin), sizeof(origin));
-    file.read(reinterpret_cast<char*>(&cellSize), sizeof(cellSize));
+    // SaveToFile 只写 float 裸数据（无 header）。若未来带 header，可在此扩展。
+    const size_t dataSize = static_cast<size_t>(fileBytes / static_cast<std::streamoff>(sizeof(float)));
+    const size_t expected =
+        static_cast<size_t>(params_.voxelResolution.x) * static_cast<size_t>(params_.voxelResolution.y) * static_cast<size_t>(params_.voxelResolution.z);
+    if (expected != 0 && dataSize != expected)
+    {
+        Log::Error(std::format("BruteForceSdf: voxel count {} != expected {} from {}", dataSize, expected, filename));
+        return {};
+    }
 
-    size_t dataSize = resolution.x * resolution.y * resolution.z;
     std::vector<float> data(dataSize);
-
-    file.read(reinterpret_cast<char*>(data.data()), dataSize * sizeof(float));
+    file.read(reinterpret_cast<char *>(data.data()), static_cast<std::streamsize>(fileBytes));
+    if (!file)
+    {
+        Log::Error(std::format("BruteForceSdf: failed reading {}", filename));
+        return {};
+    }
 
     Log::Info(std::format("BruteForceSdf: Loaded {} voxels from {}", dataSize, filename));
     return data;

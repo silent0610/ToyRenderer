@@ -17,8 +17,14 @@ export struct DatasetBenchOptions
     uint32_t queries{4096};
     uint32_t repeat{50};
     uint32_t warmup{50};
-    // 对比层级挑选「每父限额」与「不限额」的 MultiView SDF 质量（相对 BVH GT）
+    // 对比层级挑选；质量 CSV：误差 + 各方法阶段时间（GT 默认有符号 Brute）
     bool qualityQuota{false};
+    // 是否写出各方法 SDF raw（体积大，默认关）
+    bool exportSdf{false};
+    // Brute GT：off=不算误差；cache=只读缓存；generate=CPU 生成并缓存
+    std::string bruteGt{"cache"};
+    // 仅生成 Brute GT 后退出（不跑 MV/JFA/BVH）
+    bool bruteOnly{false};
     // 强制层级配额（测 select 开销）；-1=沿用 Config
     int hierarchicalQuota{-1};
     // 稳定挑选开关；-1=沿用 Config
@@ -97,6 +103,8 @@ public:
     static void AppendRows(const std::string &path, const std::vector<BenchRow> &rows);
 
     static constexpr const char *kUsage =
-        // 对比：旧复杂度门控 vs 层级父配额（限额）
-        "usage: MyToyRenderer --batch <model.gltf> | --batch-list <models.txt> [--out bench.csv] [--resolution 128] [--cameras 0] [--queries 4096] [--warmup 50] [--repeat 50] [--quality-quota] [--hierarchical 0|1] [--stable-selection 0|1]";
+        "usage: MyToyRenderer --batch <model.gltf> | --batch-list <models.txt> [--out bench.csv]\n"
+        "  [--resolution 128] [--cameras 0] [--queries 4096] [--warmup 50] [--repeat 50]\n"
+        "  [--quality-quota] [--export-sdf 0|1] [--brute-gt off|cache|generate] [--brute-only]\n"
+        "  [--hierarchical 0|1] [--stable-selection 0|1]";
 };
