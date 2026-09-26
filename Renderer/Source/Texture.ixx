@@ -98,5 +98,17 @@ public:
 		VkQueue copyQueue,
 		VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
 		VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+	// Upload host float volume (dimX*dimY*dimZ) into a sampled 3D image.
+	void LoadFromHostFloats(
+		const float *data,
+		uint32_t dimX,
+		uint32_t dimY,
+		uint32_t dimZ,
+		VkFormat format,
+		OldVulkanDevice *device,
+		VkQueue copyQueue,
+		VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT,
+		VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 };
 

@@ -101,7 +101,19 @@ std::string BvhSdfMethod::Name() const
 
 BenchRow BvhSdfMethod::Run(const BenchContext &context)
 {
-    return MakeBaseRow(context, Name(), "skipped");
+    if (!context.hasBvh)
+    {
+        return MakeBaseRow(context, Name(), "error");
+    }
+    BenchRow row = MakeBaseRow(context, Name(), "ok");
+    row.precompMs = context.bvhPrecompMs;
+    row.evalMs = context.bvhEvalMs;
+    const double cells = static_cast<double>(context.resolution) * context.resolution * context.resolution;
+    if (cells > 0.0)
+    {
+        row.evalPerQueryUs = context.bvhEvalMs * 1000.0 / cells;
+    }
+    return row;
 }
 
 bool DatasetBench::RequestsBatch(int argc, char **argv)

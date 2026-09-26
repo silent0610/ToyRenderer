@@ -42,7 +42,8 @@ export struct Config
         MultiView = 2,
         JFA = 3,
 		Ngp = 4,
-		Heat = 5
+		Heat = 5,
+		Bvh = 6
     };
 	struct SdfConfig
 	{

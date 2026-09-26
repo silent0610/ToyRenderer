@@ -745,7 +745,7 @@ void Texture3D::LoadFromRawFile(
 
 	// Read float data from file
 	std::vector<float> sdfData(dimX * dimY * dimZ);
-	if (!file.read(reinterpret_cast<char*>(sdfData.data()), fileSize))
+	if (!file.read(reinterpret_cast<char*>(sdfData.data()), static_cast<std::streamsize>(expectedSize)))
 	{
 		Log::Error(std::format("Failed to read data from raw file: {}", filename));
 		file.close();
@@ -755,7 +755,30 @@ void Texture3D::LoadFromRawFile(
 
 	Log::Info(std::format("Loaded raw SDF file: {}", filename));
 	Log::Info(std::format("  Dimensions: {}x{}x{}", dimX, dimY, dimZ));
-	Log::Info(std::format("  Data size: {} MB", fileSize / (1024.0f * 1024.0f)));
+	Log::Info(std::format("  Data size: {} MB", expectedSize / (1024.0f * 1024.0f)));
+
+	LoadFromHostFloats(sdfData.data(), dimX, dimY, dimZ, format, device, copyQueue, imageUsageFlags, imageLayout);
+	Log::Info(std::format("Successfully created 3D texture from raw file: {}", filename));
+}
+
+void Texture3D::LoadFromHostFloats(
+	const float *data,
+	uint32_t dimX,
+	uint32_t dimY,
+	uint32_t dimZ,
+	VkFormat format,
+	OldVulkanDevice *device,
+	VkQueue copyQueue,
+	VkImageUsageFlags imageUsageFlags,
+	VkImageLayout imageLayout)
+{
+	if (!data || dimX == 0 || dimY == 0 || dimZ == 0)
+	{
+		Log::Error("LoadFromHostFloats: invalid volume");
+		return;
+	}
+
+	const VkDeviceSize fileSize = static_cast<VkDeviceSize>(dimX) * dimY * dimZ * sizeof(float);
 
 	// Initialize texture members
 	this->device = device;
@@ -790,9 +813,9 @@ void Texture3D::LoadFromRawFile(
 	Tool::CheckResult(vkBindBufferMemory(device->logicalDevice, stagingBuffer, stagingMemory, 0));
 
 	// Copy SDF data to staging buffer
-	uint8_t* data;
-	Tool::CheckResult(vkMapMemory(device->logicalDevice, stagingMemory, 0, memReqs.size, 0, (void**)&data));
-	memcpy(data, sdfData.data(), fileSize);
+	uint8_t* mapped;
+	Tool::CheckResult(vkMapMemory(device->logicalDevice, stagingMemory, 0, memReqs.size, 0, (void**)&mapped));
+	memcpy(mapped, data, static_cast<size_t>(fileSize));
 	vkUnmapMemory(device->logicalDevice, stagingMemory);
 
 	// Create 3D image
@@ -899,6 +922,4 @@ void Texture3D::LoadFromRawFile(
 
 	// Update descriptor
 	UpdateDescriptor();
-
-	Log::Info(std::format("Successfully created 3D texture from raw file: {}", filename));
 }

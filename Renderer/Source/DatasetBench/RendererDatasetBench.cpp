@@ -7,6 +7,7 @@ module RendererMod;
 import std;
 import DatasetBench;
 import InitMod;
+import CubqlBvh;
 
 void Renderer::ReloadBenchModel(const std::string &relativePath)
 {
@@ -126,10 +127,13 @@ void Renderer::RunDatasetBench(const DatasetBenchOptions &options)
             {
                 context.stageMs[stage] = *DatasetBench::Mean(stageSamples[stage]);
             }
-            std::cout << "bench " << (modelIndex + 1) << "/" << models.size() << " " << context.model << " triangles=" << context.triangles
-                      << " frames=" << jfaSamples.size() << " JFA=" << context.jfaPrecompMs << " ms MultiView=" << context.multiViewPrecompMs
-                      << " ms mark=" << context.stageMs[0] << " fill=" << context.stageMs[1] << " octree=" << context.stageMs[2]
-                      << " select=" << context.stageMs[3] << " prepare=" << context.stageMs[4] << " depth=" << context.stageMs[5]
+            std::cout << "bench " << (modelIndex + 1) << "/" << models.size() << " " << context.model
+                      << " triangles=" << context.triangles << " frames=" << jfaSamples.size() << "\n"
+                      << "  JFA       " << context.jfaPrecompMs << " ms\n"
+                      << "  MultiView " << context.multiViewPrecompMs << " ms\n"
+                      << "    mark=" << context.stageMs[0] << " fill=" << context.stageMs[1]
+                      << " octree=" << context.stageMs[2] << " select=" << context.stageMs[3] << "\n"
+                      << "    prepare=" << context.stageMs[4] << " depth=" << context.stageMs[5]
                       << " fusion=" << context.stageMs[6] << "\n";
         }
         else
@@ -137,6 +141,52 @@ void Renderer::RunDatasetBench(const DatasetBenchOptions &options)
             allMeasured = false;
             std::cout << "bench " << (modelIndex + 1) << "/" << models.size() << " " << context.model << " failed, collected " << jfaSamples.size()
                       << "/" << options.repeat << " frames\n";
+        }
+
+        // BVH: precomp = WideBVH build, eval = fill N^3 unsigned distance.
+        {
+            CubqlBvhSdf cubql;
+            std::vector<double> buildSamples;
+            std::vector<double> fillSamples;
+            buildSamples.reserve(options.repeat);
+            fillSamples.reserve(options.repeat);
+            std::vector<float> volume;
+            if (cubql.Create())
+            {
+                cubql.SetModel(&m_glTFModel);
+                const uint32_t totalBvh = options.warmup + options.repeat;
+                for (uint32_t i = 0; i < totalBvh; ++i)
+                {
+                    float buildMs = 0.f;
+                    float fillMs = 0.f;
+                    const bool built = cubql.Build(buildMs);
+                    const bool filled = built && cubql.FillVolume(config_->Sdf.WorldSize, options.resolution, volume, fillMs);
+                    if (!filled)
+                    {
+                        break;
+                    }
+                    if (i >= options.warmup)
+                    {
+                        buildSamples.push_back(buildMs);
+                        fillSamples.push_back(fillMs);
+                    }
+                }
+            }
+            const auto buildMean = DatasetBench::Mean(buildSamples);
+            const auto fillMean = DatasetBench::Mean(fillSamples);
+            context.hasBvh = buildSamples.size() == options.repeat && fillSamples.size() == options.repeat && buildMean.has_value() &&
+                             fillMean.has_value();
+            if (context.hasBvh)
+            {
+                context.bvhPrecompMs = *buildMean;
+                context.bvhEvalMs = *fillMean;
+                std::cout << "  BVH       build=" << context.bvhPrecompMs << " ms  fill=" << context.bvhEvalMs << " ms\n";
+            }
+            else
+            {
+                allMeasured = false;
+                std::cout << "  BVH failed, collected " << buildSamples.size() << "/" << options.repeat << " samples\n";
+            }
         }
 
         DatasetBench::AppendRows(options.outPath, DatasetBench::MakeRows(context));

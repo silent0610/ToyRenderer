@@ -8,7 +8,7 @@ ABC（`E:\all\Projects\retrieve`，块 53）和 Fusion 360 Gallery（`E:\all\Pro
 
 渲染器里的预处理计时已经能用。一次进程读一份模型清单，Vulkan 只初始化一次，后面的模型换网格并重录命令缓冲。每个模型自己先丢掉 `--warmup` 帧，再对 `--repeat` 帧取平均。默认都是 50。交互模式的 `Run()` 没有改。
 
-已经接上的是 JFA（现有 MeshToSdf）和 MultiView（现有 Unified Pipeline）。时间是这两段 GPU timestamp，不含加载模型、建窗口和交换链。BVH 只有接口，CSV 状态是 `skipped`。求值时间 `eval_ms` 还是空的，没有 4096 点采样。
+已经接上的是 JFA（现有 MeshToSdf）、MultiView（现有 Unified Pipeline）和 BVH（vendored cuBQL / CubqlBvh）。JFA 与 MultiView 的时间是 GPU timestamp；BVH 的 `precomp_ms` 是 WideBVH 建树，`eval_ms` 是填满 \(N^3\) 无符号距离（cudaEvent）。交互模式 `UseSdfKind: 6` 会生成体积场并上传给 SDFAO。
 
 还没做：Thingi10K 筛选和 glTF 转换、画图、中位数列、SDF 误差（RMSE、MAE、MaxAE、P95、P99、PCC）。误差只比 SDF 体素场和暴力真值，DFAO 的 PSNR、SSIM、图像 MAE 先不做。误差要在计时结束之后算，不写入 `precomp_ms`。
 

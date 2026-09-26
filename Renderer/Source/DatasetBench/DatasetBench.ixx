@@ -28,8 +28,11 @@ export struct BenchContext
     uint32_t queries{4096};
     double jfaPrecompMs{0.0};
     double multiViewPrecompMs{0.0};
+    double bvhPrecompMs{0.0};
+    double bvhEvalMs{0.0};
     double stageMs[7]{};
     bool hasPrecomp{false};
+    bool hasBvh{false};
 };
 
 export struct BenchRow

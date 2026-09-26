@@ -12,6 +12,7 @@ module;
 
 module RendererMod;
 import BruteForceSdf;
+import CubqlBvh;
 import Logger;
 const float PI = 3.1415929;
 // 八叉树最粗停在 4³。11 个槽覆盖 4096³。计数缓冲放在 t2–t12 之后。
@@ -11816,6 +11817,38 @@ void Renderer::AllocateDescriptorSetSdfAO()
     else if (config_->Sdf.SdfAoUseSdfKind == Config::SdfKind::JFA)
     {
         sdfDescriptor = meshToSdfOperator_->GetSdfTexture()->descriptor;
+    }
+    else if (config_->Sdf.SdfAoUseSdfKind == Config::SdfKind::Bvh)
+    {
+        Log::Info("Generating cuBQL BVH unsigned SDF for SDFAO");
+        CubqlBvhSdf cubql;
+        if (!cubql.Create())
+        {
+            throw std::runtime_error("CubqlBvh: CUDA context create failed");
+        }
+        cubql.SetModel(&m_glTFModel);
+        float buildMs = 0.f;
+        float fillMs = 0.f;
+        std::vector<float> volume;
+        if (!cubql.Build(buildMs) || !cubql.FillVolume(config_->Sdf.WorldSize, config_->Sdf.SdfResolution, volume, fillMs))
+        {
+            throw std::runtime_error("CubqlBvh: build/fill failed");
+        }
+        Log::Info(std::format("CubqlBvh build={:.3f} ms fill={:.3f} ms tris={}", buildMs, fillMs, cubql.TriangleCount()));
+        const uint32_t resolution = config_->Sdf.SdfResolution;
+        const std::string rawPath = Tool::GetAssetsPath() + "Sdf/" + GenerateSdfFileName("CubqlBvh");
+        {
+            std::ofstream raw(rawPath, std::ios::binary);
+            raw.write(reinterpret_cast<const char *>(volume.data()),
+                      static_cast<std::streamsize>(volume.size() * sizeof(float)));
+        }
+        cubql.Destroy();
+        Log::Info(std::format("CubqlBvh wrote {}", rawPath));
+        sdfAOPass_.bruteForceSdfTexture.LoadFromRawFile(rawPath, resolution, resolution, resolution, VK_FORMAT_R32_SFLOAT, m_vulkanDevice,
+                                                        m_queues.graphicsQueue, VK_IMAGE_USAGE_SAMPLED_BIT,
+                                                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        sdfDescriptor = sdfAOPass_.bruteForceSdfTexture.descriptor;
+        Log::Info("CubqlBvh SDFAO texture ready");
     }
     else if (config_->Sdf.SdfAoUseSdfKind == Config::SdfKind::Ngp)
     {
