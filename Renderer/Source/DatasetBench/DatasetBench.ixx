@@ -17,6 +17,8 @@ export struct DatasetBenchOptions
     uint32_t queries{4096};
     uint32_t repeat{50};
     uint32_t warmup{50};
+    // 对比层级挑选「每父限额」与「不限额」的 MultiView SDF 质量（相对 BVH GT）
+    bool qualityQuota{false};
 };
 
 // 渲染器测完若干帧后交回的摘要。求值时间不在这里，采样 pass 还没有。
@@ -91,5 +93,6 @@ public:
     static void AppendRows(const std::string &path, const std::vector<BenchRow> &rows);
 
     static constexpr const char *kUsage =
-        "usage: MyToyRenderer --batch <model.gltf> | --batch-list <models.txt> [--out bench.csv] [--resolution 128] [--cameras 0] [--queries 4096] [--warmup 50] [--repeat 50]";
+        // 对比：旧复杂度门控 vs 层级父配额（限额）
+        "usage: MyToyRenderer --batch <model.gltf> | --batch-list <models.txt> [--out bench.csv] [--resolution 128] [--cameras 0] [--queries 4096] [--warmup 50] [--repeat 50] [--quality-quota]";
 };

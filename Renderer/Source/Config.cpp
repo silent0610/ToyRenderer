@@ -56,6 +56,16 @@ Config::Config(const std::string& configPath)
         Sdf.EnableCameraOverlay = sdfConfig.value("EnableCameraOverlay", 1);
         Sdf.EnableMultiviewIsoSurface = sdfConfig.value("EnableMultiviewIsoSurface", 0);
         Sdf.EnableSelectionScoreOctreePass = sdfConfig.value("EnableSelectionScoreOctreePass", 0);
+        Sdf.EnableHierarchicalParentQuota = sdfConfig.value("EnableHierarchicalParentQuota", 0);
+        Sdf.MaxChildrenPerParent = sdfConfig.value("MaxChildrenPerParent", 1);
+        if (Sdf.MaxChildrenPerParent < 1)
+        {
+            Sdf.MaxChildrenPerParent = 1;
+        }
+        if (Sdf.MaxChildrenPerParent > 8)
+        {
+            Sdf.MaxChildrenPerParent = 8;
+        }
         Sdf.SdfResolution = sdfConfig.value("SdfResolution", 64);
     }
     if (config.contains("DynamicGeometry"))

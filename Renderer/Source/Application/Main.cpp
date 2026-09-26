@@ -30,7 +30,14 @@ int main(int argc, char *argv[])
 		}
 		DatasetBench::ApplyToConfig(*config, *options);
 		Renderer renderer{config};
-		renderer.RunDatasetBench(*options);
+		if (options->qualityQuota)
+		{
+			renderer.RunQuotaQualityBench(*options);
+		}
+		else
+		{
+			renderer.RunDatasetBench(*options);
+		}
 		delete config;
 		return EXIT_SUCCESS;
 	}

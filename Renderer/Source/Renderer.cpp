@@ -18,6 +18,7 @@ const float PI = 3.1415929;
 // 八叉树最粗停在 4³。11 个槽覆盖 4096³。计数缓冲放在 t2–t12 之后。
 constexpr uint32_t kMaxOctreeLevels = 11;
 constexpr uint32_t kOctreeLevelCountBinding = 13;
+constexpr uint32_t kMaxCandidateNodes = 4096;
 
 int OctreeLevelForResolution(uint32_t octreeResolution, uint32_t resolution, int octreeMaxLevel)
 {
@@ -44,6 +45,8 @@ Renderer::Renderer(Config *config) : config_(config)
     m_enableCameraOverlay = config_->Sdf.EnableCameraOverlay != 0;
     m_showMultiviewIsoSurface = config_->Sdf.EnableMultiviewIsoSurface != 0;
     m_enableSelectionScoreOctreePass = config_->Sdf.EnableSelectionScoreOctreePass != 0;
+    m_enableHierarchicalParentQuota = config_->Sdf.EnableHierarchicalParentQuota != 0;
+    m_maxChildrenPerParent = std::clamp(config_->Sdf.MaxChildrenPerParent, 1u, 8u);
     m_sdfIsoSurfacePass.pushConstants.volumeMin = glm::vec4(-config_->Sdf.WorldSize * 0.5f, -config_->Sdf.WorldSize * 0.5f,
                                                             -config_->Sdf.WorldSize * 0.5f, 0.0f);
     m_sdfIsoSurfacePass.pushConstants.volumeMax = glm::vec4(config_->Sdf.WorldSize * 0.5f, config_->Sdf.WorldSize * 0.5f,
@@ -1872,6 +1875,21 @@ void Renderer::SetUI(UIOverlay *overlay)
             if (overlay->CheckBox("Enable S(n) Octree Pass", &selectionScorePassEnabled))
             {
                 SetSelectionScoreOctreePassEnabled(selectionScorePassEnabled);
+            }
+
+            bool hierarchicalQuotaEnabled = m_enableHierarchicalParentQuota;
+            if (overlay->CheckBox("Hierarchical Parent Quota", &hierarchicalQuotaEnabled))
+            {
+                SetHierarchicalParentQuotaEnabled(hierarchicalQuotaEnabled);
+            }
+            if (m_enableHierarchicalParentQuota)
+            {
+                int maxChildren = static_cast<int>(m_maxChildrenPerParent);
+                if (overlay->SliderInt("Max Children / Parent", &maxChildren, 1, 8))
+                {
+                    SetMaxChildrenPerParent(static_cast<uint32_t>(maxChildren));
+                }
+                overlay->Text("Count Sort: forced off while hierarchical");
             }
 
             bool isoSurfaceEnabled = m_showMultiviewIsoSurface;
@@ -8870,7 +8888,7 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
 
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        &multiViewNodeSelection_.candidateNodesBuffer, sizeof(MultiViewSolidNodeSelection::SolidNode) * config_->Sdf.MultiViewUsedCameraNum));
+        &multiViewNodeSelection_.candidateNodesBuffer, sizeof(MultiViewSolidNodeSelection::SolidNode) * kMaxCandidateNodes));
 
     // 候选节点计数缓冲区
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -8879,19 +8897,29 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
 
     // === Pass 4: 创建最终选择缓冲区 ===
 
-    // 最终选中节点缓冲区 (最多10个)
+    // 最终选中节点缓冲区
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         &multiViewNodeSelection_.selectedNodesBuffer, sizeof(MultiViewSolidNodeSelection::SolidNode) * config_->Sdf.MultiViewUsedCameraNum));
 
     // 最终节点计数缓冲区
-    Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+    Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                                    &multiViewNodeSelection_.selectedCountBuffer, sizeof(uint32_t)));
 
-    // 最终节点计数缓冲区
-    Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+    Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                    &multiViewNodeSelection_.LevelCountBuffer, kMaxOctreeLevels * sizeof(uint32_t)));
+
+    const uint32_t parentGrid = std::max(1u, config_->Sdf.MaxSelectionResolution / 2u);
+    const VkDeviceSize parentCountsBytes = static_cast<VkDeviceSize>(parentGrid) * parentGrid * parentGrid * sizeof(uint32_t);
+    Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                                   &multiViewNodeSelection_.parentCountsBuffer, parentCountsBytes));
+
+    Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                                   &multiViewNodeSelection_.selectionPrefixCountBuffer, sizeof(uint32_t)));
     // Pass 5:计数排序
     Tool::CheckResult(m_vulkanDevice->CreateBuffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                                    &multiViewNodeSelection_.SortedCountBuffer, sizeof(uint32_t)));
@@ -8930,12 +8958,8 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
     collectionLayoutInfo.pBindings = collectionBindings.data();
     Tool::CheckResult(vkCreateDescriptorSetLayout(m_device, &collectionLayoutInfo, nullptr, &multiViewNodeSelection_.collectionDescriptorSetLayout));
 
-    struct
-    {
-        uint32_t BaseSize;
-        uint32_t CurrentLevel;
-    } pushConst;
-    VkPushConstantRange pushConstantRange{Init::pushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, sizeof(pushConst), 0)};
+    VkPushConstantRange pushConstantRange{
+        Init::pushConstantRange(VK_SHADER_STAGE_COMPUTE_BIT, sizeof(MultiViewSolidNodeSelection::CollectionPushConstantDesc), 0)};
 
     // 创建收集管线布局
     VkPipelineLayoutCreateInfo collectionPipelineLayoutInfo{};
@@ -9059,6 +9083,20 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
     levelCountBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     finalSelectionBindings.push_back(levelCountBinding);
 
+    VkDescriptorSetLayoutBinding parentCountsBinding{};
+    parentCountsBinding.binding = 5;
+    parentCountsBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    parentCountsBinding.descriptorCount = 1;
+    parentCountsBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    finalSelectionBindings.push_back(parentCountsBinding);
+
+    VkDescriptorSetLayoutBinding selectionPrefixBinding{};
+    selectionPrefixBinding.binding = 6;
+    selectionPrefixBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    selectionPrefixBinding.descriptorCount = 1;
+    selectionPrefixBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    finalSelectionBindings.push_back(selectionPrefixBinding);
+
     VkDescriptorSetLayoutCreateInfo finalSelectionLayoutInfo{};
     finalSelectionLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     finalSelectionLayoutInfo.bindingCount = static_cast<uint32_t>(finalSelectionBindings.size());
@@ -9163,6 +9201,27 @@ void Renderer::InitializeMultiviewNodeSelectionResource()
     levelCountWrite.descriptorCount = 1;
     levelCountWrite.pBufferInfo = &multiViewNodeSelection_.LevelCountBuffer.descriptor;
     finalSelectionDescriptorWrites.push_back(levelCountWrite);
+
+    VkWriteDescriptorSet parentCountsWrite{};
+    parentCountsWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    parentCountsWrite.dstSet = multiViewNodeSelection_.finalSelectionDescriptorSet;
+    parentCountsWrite.dstBinding = 5;
+    parentCountsWrite.dstArrayElement = 0;
+    parentCountsWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    parentCountsWrite.descriptorCount = 1;
+    parentCountsWrite.pBufferInfo = &multiViewNodeSelection_.parentCountsBuffer.descriptor;
+    finalSelectionDescriptorWrites.push_back(parentCountsWrite);
+
+    VkWriteDescriptorSet selectionPrefixWrite{};
+    selectionPrefixWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    selectionPrefixWrite.dstSet = multiViewNodeSelection_.finalSelectionDescriptorSet;
+    selectionPrefixWrite.dstBinding = 6;
+    selectionPrefixWrite.dstArrayElement = 0;
+    selectionPrefixWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    selectionPrefixWrite.descriptorCount = 1;
+    selectionPrefixWrite.pBufferInfo = &multiViewNodeSelection_.selectionPrefixCountBuffer.descriptor;
+    finalSelectionDescriptorWrites.push_back(selectionPrefixWrite);
+
     // 更新最终选择描述符集
     vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(finalSelectionDescriptorWrites.size()), finalSelectionDescriptorWrites.data(), 0, nullptr);
 
@@ -9307,131 +9366,175 @@ void Renderer::UpdateMultiviewNodeSelectionDescriptorSet()
 // Execute Node Selection
 void Renderer::ExecuteMultiViewNodeSelection(VkCommandBuffer commandBuffer)
 {
-    // === Multi-Pass执行架构 ===
-    // Pass 1-3: 收集候选节点（level 3→2→1）
-    // Pass 4: 包含检查和最终选择（使用SolidNodeSelectionB_Final.Comp）
+    auto bufferBarrier = [](VkBuffer buffer, VkAccessFlags src, VkAccessFlags dst) {
+        VkBufferMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        barrier.srcAccessMask = src;
+        barrier.dstAccessMask = dst;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.buffer = buffer;
+        barrier.offset = 0;
+        barrier.size = VK_WHOLE_SIZE;
+        return barrier;
+    };
 
-    // === Phase 1: 清零所有计数器 ===
-
-    // 清零候选节点计数器
     vkCmdFillBuffer(commandBuffer, multiViewNodeSelection_.candidateCountBuffer.buffer, 0, sizeof(uint32_t), 0);
-
-    // 清零最终节点计数器
     vkCmdFillBuffer(commandBuffer, multiViewNodeSelection_.selectedCountBuffer.buffer, 0, VK_WHOLE_SIZE, 0);
-
     vkCmdFillBuffer(commandBuffer, multiViewNodeSelection_.LevelCountBuffer.buffer, 0, multiViewNodeSelection_.LevelCountBuffer.size, 0);
-    // === Phase 2: Pass 1-3 候选节点收集 (Level 3→2→1) ===
+    vkCmdFillBuffer(commandBuffer, multiViewNodeSelection_.parentCountsBuffer.buffer, 0, multiViewNodeSelection_.parentCountsBuffer.size, 0);
+    vkCmdFillBuffer(commandBuffer, multiViewNodeSelection_.selectionPrefixCountBuffer.buffer, 0, sizeof(uint32_t), 0);
 
-    // 绑定收集管线
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.collectionPipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.collectionPipelineLayout, 0, 1,
-                            &multiViewNodeSelection_.collectionDescriptorSet, 0, nullptr);
-
-    multiViewNodeSelection_.CollectionPushConstant.BaseSize = config_->Sdf.VoxelResolution;
-    // 执行Level max,... 0
-    // 应当从8x8x8开始选择, 直到base, 所以需要动态计算开始level.
-    // 槽位覆盖到 4096³。开始层由当前分辨率的最粗一级决定。
+    VkBufferMemoryBarrier fillBarriers[] = {
+        bufferBarrier(multiViewNodeSelection_.candidateCountBuffer.buffer, VK_ACCESS_TRANSFER_WRITE_BIT,
+                      VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT),
+        bufferBarrier(multiViewNodeSelection_.selectedCountBuffer.buffer, VK_ACCESS_TRANSFER_WRITE_BIT,
+                      VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT),
+        bufferBarrier(multiViewNodeSelection_.LevelCountBuffer.buffer, VK_ACCESS_TRANSFER_WRITE_BIT,
+                      VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT),
+        bufferBarrier(multiViewNodeSelection_.parentCountsBuffer.buffer, VK_ACCESS_TRANSFER_WRITE_BIT,
+                      VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT),
+        bufferBarrier(multiViewNodeSelection_.selectionPrefixCountBuffer.buffer, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT),
+    };
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 5, fillBarriers, 0,
+                         nullptr);
 
     const int octreeMaxLevel = static_cast<int>(m_gpuMipmapOctree->GetMaxLevel());
     const int finestLevel = OctreeLevelForResolution(config_->Sdf.OctreeResolution, config_->Sdf.MaxSelectionResolution, octreeMaxLevel);
     const int coarsestLevel = OctreeLevelForResolution(config_->Sdf.OctreeResolution, config_->Sdf.MinSelectionResolution, octreeMaxLevel);
-    for (int level = coarsestLevel; level >= finestLevel; --level)
-    {
-        // 设置当前level
+
+    multiViewNodeSelection_.CollectionPushConstant.BaseSize = config_->Sdf.VoxelResolution;
+    multiViewNodeSelection_.CollectionPushConstant.UseHierarchicalParentQuota = m_enableHierarchicalParentQuota ? 1u : 0u;
+    multiViewNodeSelection_.CollectionPushConstant.MaxChildrenPerParent = m_maxChildrenPerParent;
+
+    multiViewNodeSelection_.FinalSelectionPushConstant.MaxSelectedNode = config_->Sdf.MaxCameraNum;
+    multiViewNodeSelection_.FinalSelectionPushConstant.UseHierarchicalParentQuota = m_enableHierarchicalParentQuota ? 1u : 0u;
+    multiViewNodeSelection_.FinalSelectionPushConstant.MaxChildrenPerParent = m_maxChildrenPerParent;
+    multiViewNodeSelection_.FinalSelectionPushConstant.BaseSize = config_->Sdf.VoxelResolution;
+    multiViewNodeSelection_.FinalSelectionPushConstant.CoarsestLevel = static_cast<uint32_t>(coarsestLevel);
+    multiViewNodeSelection_.FinalSelectionPushConstant.MaxLevelIndex = static_cast<uint32_t>(octreeMaxLevel);
+    multiViewNodeSelection_.FinalSelectionPushConstant.Pad = 0;
+
+    const bool hierarchical = m_enableHierarchicalParentQuota;
+
+    auto dispatchCollectionLevel = [&](int level) {
         multiViewNodeSelection_.CollectionPushConstant.CurrentLevel = static_cast<uint32_t>(level);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.collectionPipeline);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.collectionPipelineLayout, 0, 1,
+                                &multiViewNodeSelection_.collectionDescriptorSet, 0, nullptr);
         vkCmdPushConstants(commandBuffer, multiViewNodeSelection_.collectionPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
                            sizeof(MultiViewSolidNodeSelection::CollectionPushConstantDesc), &multiViewNodeSelection_.CollectionPushConstant);
 
-        // 计算dispatch尺寸（使用GRID_SIZE=32作为基础）
-        uint32_t gridSize = config_->Sdf.VoxelResolution >> static_cast<uint32_t>(level); // Level 3: 4, Level 2: 8, Level 1: 16
-        uint32_t dispatchX = (gridSize + 3) / 4;                                          // 4x4x4 workgroup
-        uint32_t dispatchY = (gridSize + 3) / 4;
-        uint32_t dispatchZ = (gridSize + 3) / 4;
-
-        // 执行候选节点收集
+        const uint32_t gridSize = config_->Sdf.VoxelResolution >> static_cast<uint32_t>(level);
+        const uint32_t dispatchX = (gridSize + 3) / 4;
+        const uint32_t dispatchY = (gridSize + 3) / 4;
+        const uint32_t dispatchZ = (gridSize + 3) / 4;
         vkCmdDispatch(commandBuffer, dispatchX, dispatchY, dispatchZ);
+    };
 
-        // Level间屏障
-        if (level > 1)
+    auto dispatchFinalSelection = [&](int level, uint32_t estimatedCandidates) {
+        multiViewNodeSelection_.FinalSelectionPushConstant.CurrentLevel = static_cast<uint32_t>(level);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.finalSelectionPipeline);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.finalSelectionPipelineLayout, 0, 1,
+                                &multiViewNodeSelection_.finalSelectionDescriptorSet, 0, nullptr);
+        vkCmdPushConstants(commandBuffer, multiViewNodeSelection_.finalSelectionPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                           sizeof(MultiViewSolidNodeSelection::FinalSelectionPushConstantDesc), &multiViewNodeSelection_.FinalSelectionPushConstant);
+        const uint32_t groups = std::max(1u, (estimatedCandidates + 63u) / 64u);
+        vkCmdDispatch(commandBuffer, groups, 1, 1);
+    };
+
+    if (hierarchical)
+    {
+        // 逐层：收集本层 → Final（相对已选父节点做包含检查 + 每父配额）→ 再进更细层
+        for (int level = coarsestLevel; level >= finestLevel; --level)
         {
-            // 创建一个包含两个屏障的数组
-            VkBufferMemoryBarrier bufferBarriers[2] = {};
+            vkCmdFillBuffer(commandBuffer, multiViewNodeSelection_.candidateCountBuffer.buffer, 0, sizeof(uint32_t), 0);
+            vkCmdFillBuffer(commandBuffer, multiViewNodeSelection_.parentCountsBuffer.buffer, 0, multiViewNodeSelection_.parentCountsBuffer.size, 0);
+            VkBufferMemoryBarrier levelFillBarriers[] = {
+                bufferBarrier(multiViewNodeSelection_.candidateCountBuffer.buffer, VK_ACCESS_TRANSFER_WRITE_BIT,
+                              VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT),
+                bufferBarrier(multiViewNodeSelection_.parentCountsBuffer.buffer, VK_ACCESS_TRANSFER_WRITE_BIT,
+                              VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT),
+            };
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 2, levelFillBarriers, 0, nullptr);
 
-            // 屏障 1: 同步候选节点计数器 (candidateCountBuffer)
-            // 上一个shader写入了它，下一个shader需要读取并继续写入
-            bufferBarriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-            bufferBarriers[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-            bufferBarriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT; // 下一个shader会读写它
-            bufferBarriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            bufferBarriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            bufferBarriers[0].buffer = multiViewNodeSelection_.candidateCountBuffer.buffer;
-            bufferBarriers[0].offset = 0;
-            bufferBarriers[0].size = VK_WHOLE_SIZE;
+            dispatchCollectionLevel(level);
 
-            // 屏障 2: 同步候选节点数据 (candidateNodesBuffer)
-            // 上一个shader向其追加了数据，下一个shader也需要向其追加
-            // 尽管写入位置不同，但对同一资源的写入操作需要排序
-            bufferBarriers[1].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-            bufferBarriers[1].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-            bufferBarriers[1].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT; // 下一个shader只会写它
-            bufferBarriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            bufferBarriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            // 注意: 这里需要填入您的 candidateNodesBuffer 的 VkBuffer 句柄
-            // 根据您代码的其他部分，它应该在 m_solidNodeSelectionB 结构体中
-            bufferBarriers[1].buffer = multiViewNodeSelection_.candidateNodesBuffer.buffer;
-            bufferBarriers[1].offset = 0;
-            bufferBarriers[1].size = VK_WHOLE_SIZE;
+            VkBufferMemoryBarrier afterCollect[] = {
+                bufferBarrier(multiViewNodeSelection_.candidateCountBuffer.buffer, VK_ACCESS_SHADER_WRITE_BIT,
+                              VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT),
+                bufferBarrier(multiViewNodeSelection_.candidateNodesBuffer.buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT),
+            };
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 2,
+                                 afterCollect, 0, nullptr);
 
-            // 执行包含两个Buffer屏障的Pipeline Barrier
-            vkCmdPipelineBarrier(commandBuffer,
-                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // 源阶段
-                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // 目标阶段
-                                 0, 0, nullptr, 2, bufferBarriers,     // 传入2个buffer barrier
-                                 0, nullptr);
+            // 冻结已选前缀（仅含更粗层），供本层 Final 做包含检查
+            {
+                VkBufferMemoryBarrier beforeCopy = bufferBarrier(multiViewNodeSelection_.selectedCountBuffer.buffer, VK_ACCESS_SHADER_WRITE_BIT,
+                                                                 VK_ACCESS_TRANSFER_READ_BIT);
+                vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 1,
+                                     &beforeCopy, 0, nullptr);
+                VkBufferCopy copyRegion{0, 0, sizeof(uint32_t)};
+                vkCmdCopyBuffer(commandBuffer, multiViewNodeSelection_.selectedCountBuffer.buffer,
+                                multiViewNodeSelection_.selectionPrefixCountBuffer.buffer, 1, &copyRegion);
+                VkBufferMemoryBarrier afterCopy = bufferBarrier(multiViewNodeSelection_.selectionPrefixCountBuffer.buffer, VK_ACCESS_TRANSFER_WRITE_BIT,
+                                                                VK_ACCESS_SHADER_READ_BIT);
+                vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 1, &afterCopy,
+                                     0, nullptr);
+            }
+
+            const uint32_t gridSize = config_->Sdf.VoxelResolution >> static_cast<uint32_t>(level);
+            dispatchFinalSelection(level, gridSize * gridSize * gridSize);
+
+            VkBufferMemoryBarrier afterFinal[] = {
+                bufferBarrier(multiViewNodeSelection_.selectedCountBuffer.buffer, VK_ACCESS_SHADER_WRITE_BIT,
+                              VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT),
+                bufferBarrier(multiViewNodeSelection_.selectedNodesBuffer.buffer, VK_ACCESS_SHADER_WRITE_BIT,
+                              VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT),
+            };
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 2,
+                                 afterFinal, 0, nullptr);
         }
     }
+    else
+    {
+        // 旧逻辑：粗→细一次收集，再统一 Final
+        for (int level = coarsestLevel; level >= finestLevel; --level)
+        {
+            dispatchCollectionLevel(level);
+            if (level > finestLevel)
+            {
+                VkBufferMemoryBarrier barriers[] = {
+                    bufferBarrier(multiViewNodeSelection_.candidateCountBuffer.buffer, VK_ACCESS_SHADER_WRITE_BIT,
+                                  VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT),
+                    bufferBarrier(multiViewNodeSelection_.candidateNodesBuffer.buffer, VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_WRITE_BIT),
+                };
+                vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 2,
+                                     barriers, 0, nullptr);
+            }
+        }
 
-    // === Phase 3: Pass 4 最终选择（包含检查）===
+        VkMemoryBarrier collectionCompleteBarrier{};
+        collectionCompleteBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        collectionCompleteBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        collectionCompleteBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
+                             &collectionCompleteBarrier, 0, nullptr, 0, nullptr);
 
-    // 屏障：确保候选节点收集完成
-    VkMemoryBarrier collectionCompleteBarrier{};
-    collectionCompleteBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    collectionCompleteBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    collectionCompleteBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        dispatchFinalSelection(finestLevel, kMaxCandidateNodes);
+    }
 
-    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &collectionCompleteBarrier,
-                         0, nullptr, 0, nullptr);
-
-    // === Phase 3: Pass 4 最终选择（包含检查）===
-
-    // 绑定最终选择管线
-
-    multiViewNodeSelection_.FinalSelectionPushConstant.MaxSelectedNode = config_->Sdf.MultiViewUsedCameraNum;
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.finalSelectionPipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.finalSelectionPipelineLayout, 0, 1,
-                            &multiViewNodeSelection_.finalSelectionDescriptorSet, 0, nullptr);
-
-    // 同步以确保候选节点计数已完成
     VkMemoryBarrier candidateCountBarrier{};
     candidateCountBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     candidateCountBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     candidateCountBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-
-    vkCmdPushConstants(commandBuffer, multiViewNodeSelection_.finalSelectionPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
-                       sizeof(MultiViewSolidNodeSelection::FinalSelectionPushConstantDesc), &multiViewNodeSelection_.FinalSelectionPushConstant);
-    // 需要提交命令缓冲区并等待，以便读取候选节点数量
-    // 为了优化，我们可以使用间接dispatch或保守估计
-    // 这里先使用保守但更合理的估计：基于level数量
-    uint32_t optimizedDispatch = (config_->Sdf.MultiViewUsedCameraNum + 63) / 64; // 约2个workgroup而不是16个
-
-    // printf("Optimized final selection dispatch: %u workgroups (estimated %u candidates)\n", optimizedDispatch, estimatedCandidates);
-
-    vkCmdDispatch(commandBuffer, optimizedDispatch, 1, 1);
     vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &candidateCountBarrier, 0, nullptr, 0,
                          nullptr);
 
-    const VkPipeline sortPipeline = useCountSort_ ? multiViewNodeSelection_.SortingPipeline
-                                                  : multiViewNodeSelection_.SortingPassthroughPipeline;
+    const VkPipeline sortPipeline =
+        (hierarchical || !useCountSort_) ? multiViewNodeSelection_.SortingPassthroughPipeline
+                                         : multiViewNodeSelection_.SortingPipeline;
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, sortPipeline);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, multiViewNodeSelection_.SortingPipelineLayout, 0, 1,
                             &multiViewNodeSelection_.SortingDescriptorSet, 0, nullptr);
@@ -9501,6 +9604,9 @@ void Renderer::MultiViewSolidNodeSelection::cleanup(VkDevice device)
     candidateCountBuffer.Destroy();
     selectedNodesBuffer.Destroy();
     selectedCountBuffer.Destroy();
+    LevelCountBuffer.Destroy();
+    parentCountsBuffer.Destroy();
+    selectionPrefixCountBuffer.Destroy();
 }
 
 /// @brief 初始化阶段四版本B：多视角深度SDF资源
@@ -9927,6 +10033,37 @@ void Renderer::SetSelectionScoreOctreePassEnabled(bool enabled)
             m_unifiedGPUPipeline.commandsRecorded = false;
             printf("Pipeline commands will be re-recorded with new S(n) octree mode\n");
         }
+    }
+}
+
+void Renderer::SetHierarchicalParentQuotaEnabled(bool enabled)
+{
+    if (m_enableHierarchicalParentQuota == enabled)
+    {
+        return;
+    }
+    m_enableHierarchicalParentQuota = enabled;
+    printf("Hierarchical Parent Quota %s (max children=%u)\n", enabled ? "Enabled" : "Disabled", m_maxChildrenPerParent);
+    if (m_unifiedGPUPipeline.commandsRecorded)
+    {
+        m_unifiedGPUPipeline.commandsRecorded = false;
+        printf("Pipeline commands will be re-recorded with hierarchical selection mode\n");
+    }
+}
+
+void Renderer::SetMaxChildrenPerParent(uint32_t maxChildren)
+{
+    maxChildren = std::clamp(maxChildren, 1u, 8u);
+    if (m_maxChildrenPerParent == maxChildren)
+    {
+        return;
+    }
+    m_maxChildrenPerParent = maxChildren;
+    printf("Max children per parent = %u\n", m_maxChildrenPerParent);
+    if (m_unifiedGPUPipeline.commandsRecorded)
+    {
+        m_unifiedGPUPipeline.commandsRecorded = false;
+        printf("Pipeline commands will be re-recorded with new parent quota\n");
     }
 }
 

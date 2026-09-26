@@ -171,6 +171,11 @@ std::optional<DatasetBenchOptions> DatasetBench::ParseArgs(int argc, char **argv
             options.outPath = *value;
             continue;
         }
+        if (arg == "--quality-quota")
+        {
+            options.qualityQuota = true;
+            continue;
+        }
 
         uint32_t *target = nullptr;
         if (arg == "--resolution")
@@ -280,6 +285,15 @@ void DatasetBench::ApplyToConfig(Config &config, const DatasetBenchOptions &opti
     if (options.cameras > 0)
     {
         config.Sdf.MaxCameraNum = options.cameras;
+    }
+    if (options.qualityQuota)
+    {
+        // 质量对比在运行时切换旧逻辑 / 层级限额，这里只固定到 MultiView
+        config.Sdf.UseRandomSelection = 0;
+        config.Sdf.EnableHierarchicalParentQuota = 0;
+        config.Sdf.MaxChildrenPerParent = 1;
+        config.Sdf.SdfAoUseSdfKind = Config::SdfKind::MultiView;
+        config.Sdf.SdfMode = 1;
     }
     config.Dynamic.enable = false;
 }

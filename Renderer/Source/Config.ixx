@@ -68,6 +68,10 @@ export struct Config
         uint32_t EnableCameraOverlay{1};
         uint32_t EnableMultiviewIsoSurface{0};
         uint32_t EnableSelectionScoreOctreePass{0};
+        // 1: 粗→细按父节点配额挑选；0: 旧复杂度门控逻辑
+        uint32_t EnableHierarchicalParentQuota{0};
+        // 同一父节点下最多选几个子相机，范围 [1, 8]
+        uint32_t MaxChildrenPerParent{1};
         uint32_t SdfResolution{64};
 	};
 	SdfConfig Sdf;

@@ -2,12 +2,137 @@ module;
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
 #include <cstdlib>
+#include <cmath>
+#include <cstring>
+#include <fstream>
 
 module RendererMod;
 import std;
 import DatasetBench;
 import InitMod;
 import CubqlBvh;
+
+namespace
+{
+struct QuotaQualityMetrics
+{
+    double rmseAbs{0.0};
+    double maeAbs{0.0};
+    double maxAbs{0.0};
+    double rmseNarrow{0.0};
+    uint32_t narrowCount{0};
+    uint32_t cameras{0};
+};
+
+QuotaQualityMetrics CompareAbsToUnsigned(const std::vector<float> &multiview, const std::vector<float> &gt, float narrowBand)
+{
+    QuotaQualityMetrics m;
+    if (multiview.size() != gt.size() || multiview.empty())
+    {
+        return m;
+    }
+    double sumAbs = 0.0;
+    double sumSq = 0.0;
+    double sumSqNarrow = 0.0;
+    for (std::size_t i = 0; i < gt.size(); ++i)
+    {
+        const double err = std::abs(static_cast<double>(std::abs(multiview[i]) - gt[i]));
+        sumAbs += err;
+        sumSq += err * err;
+        m.maxAbs = std::max(m.maxAbs, err);
+        if (gt[i] <= narrowBand)
+        {
+            sumSqNarrow += err * err;
+            ++m.narrowCount;
+        }
+    }
+    const double n = static_cast<double>(gt.size());
+    m.maeAbs = sumAbs / n;
+    m.rmseAbs = std::sqrt(sumSq / n);
+    m.rmseNarrow = m.narrowCount > 0 ? std::sqrt(sumSqNarrow / static_cast<double>(m.narrowCount)) : 0.0;
+    return m;
+}
+
+void AppendQuotaQualityCsv(const std::string &path, const std::string &model, uint32_t triangles, uint32_t resolution, uint32_t budget,
+                           const std::string &variant, const QuotaQualityMetrics &m)
+{
+    const bool needsHeader = !std::filesystem::exists(path) || std::filesystem::file_size(path) == 0;
+    std::ofstream out(path, std::ios::app);
+    if (!out)
+    {
+        throw std::runtime_error("failed to open quality csv: " + path);
+    }
+    if (needsHeader)
+    {
+        out << "model,triangles,resolution,budget,variant,cameras,rmse_abs,mae_abs,max_abs,rmse_narrow,narrow_count\n";
+    }
+    out << model << ',' << triangles << ',' << resolution << ',' << budget << ',' << variant << ',' << m.cameras << ','
+        << std::format("{:.6f}", m.rmseAbs) << ',' << std::format("{:.6f}", m.maeAbs) << ',' << std::format("{:.6f}", m.maxAbs) << ','
+        << std::format("{:.6f}", m.rmseNarrow) << ',' << m.narrowCount << '\n';
+}
+
+std::vector<float> DownloadSdfTexture(OldVulkanDevice *device, VkQueue queue, Texture *texture, VkImageLayout oldLayout)
+{
+    vkDeviceWaitIdle(device->logicalDevice);
+    const uint32_t resolution = texture->dimZ;
+    const size_t totalVoxels = static_cast<size_t>(resolution) * resolution * resolution;
+    const size_t dataSize = totalVoxels * sizeof(float);
+
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = dataSize;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    Tool::CheckResult(vkCreateBuffer(device->logicalDevice, &bufferInfo, nullptr, &stagingBuffer));
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(device->logicalDevice, stagingBuffer, &memRequirements);
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex =
+        device->GetMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    Tool::CheckResult(vkAllocateMemory(device->logicalDevice, &allocInfo, nullptr, &stagingMemory));
+    Tool::CheckResult(vkBindBufferMemory(device->logicalDevice, stagingBuffer, stagingMemory, 0));
+
+    VkCommandBuffer commandBuffer = device->CreateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = texture->image;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent = {resolution, resolution, resolution};
+    vkCmdCopyImageToBuffer(commandBuffer, texture->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingBuffer, 1, &region);
+
+    VkImageMemoryBarrier restore = barrier;
+    restore.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    restore.newLayout = oldLayout;
+    restore.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    restore.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &restore);
+    device->FlushCommandBuffer(commandBuffer, queue, true);
+
+    void *mapped = nullptr;
+    Tool::CheckResult(vkMapMemory(device->logicalDevice, stagingMemory, 0, dataSize, 0, &mapped));
+    std::vector<float> out(totalVoxels);
+    std::memcpy(out.data(), mapped, dataSize);
+    vkUnmapMemory(device->logicalDevice, stagingMemory);
+    vkDestroyBuffer(device->logicalDevice, stagingBuffer, nullptr);
+    vkFreeMemory(device->logicalDevice, stagingMemory, nullptr);
+    return out;
+}
+} // namespace
 
 void Renderer::ReloadBenchModel(const std::string &relativePath)
 {
@@ -196,4 +321,141 @@ void Renderer::RunDatasetBench(const DatasetBenchOptions &options)
     vkDeviceWaitIdle(m_device);
     // 短跑之后现有 Cleanup 会在堆检查处中止，交互模式的退出路径保持不动。
     std::_Exit(allMeasured ? EXIT_SUCCESS : EXIT_FAILURE);
+}
+
+void Renderer::RunQuotaQualityBench(const DatasetBenchOptions &options)
+{
+    const std::vector<std::string> models = DatasetBench::ModelPaths(options);
+    const uint32_t settleFrames = std::max(3u, options.warmup == 0 ? 3u : std::min(options.warmup, 5u));
+    std::vector<uint32_t> budgets;
+    if (options.cameras > 0)
+    {
+        budgets.push_back(options.cameras);
+    }
+    else
+    {
+        budgets = {30u, 40u, 50u, 60u};
+    }
+
+    std::cout << "quality-quota: legacy(complexity) vs hierarchical(parent quota)\n"
+              << "  models=" << models.size() << " resolution=" << options.resolution << " settle_frames=" << settleFrames
+              << " MaxChildrenPerParent=" << config_->Sdf.MaxChildrenPerParent << " budgets=";
+    for (std::size_t i = 0; i < budgets.size(); ++i)
+    {
+        std::cout << budgets[i] << (i + 1 < budgets.size() ? "," : "");
+    }
+    std::cout << "\n";
+
+    // 深度/挑选缓冲按 MultiViewUsedCameraNum 分配，需能盖住最大 budget
+    uint32_t maxBudget = 0;
+    for (uint32_t b : budgets)
+    {
+        maxBudget = std::max(maxBudget, b);
+    }
+    if (config_->Sdf.MultiViewUsedCameraNum < maxBudget)
+    {
+        config_->Sdf.MultiViewUsedCameraNum = maxBudget;
+    }
+    config_->Sdf.MaxCameraNum = budgets.front();
+
+    InitWindow();
+    InitVulkan();
+    perfStats_.targetFrames = settleFrames + 1000;
+    perfStats_.warmupFrames = 0;
+
+    if (std::filesystem::exists(options.outPath))
+    {
+        std::filesystem::remove(options.outPath);
+    }
+
+    bool allOk = true;
+    const float cellSize = config_->Sdf.WorldSize / static_cast<float>(options.resolution);
+    const float narrowBand = 2.0f * cellSize;
+
+    for (std::size_t modelIndex = 0; modelIndex < models.size(); ++modelIndex)
+    {
+        if (modelIndex > 0)
+        {
+            ReloadBenchModel(models[modelIndex]);
+        }
+
+        const std::string modelName = GetModelNameFromPath(config_->modelPath);
+        const uint32_t triangles = static_cast<uint32_t>(m_glTFModel.indexBuffer.size() / 3);
+        std::cout << "quality " << (modelIndex + 1) << "/" << models.size() << " " << modelName << " triangles=" << triangles << "\n";
+
+        std::vector<float> gt;
+        {
+            CubqlBvhSdf cubql;
+            float buildMs = 0.f;
+            float fillMs = 0.f;
+            if (!cubql.Create())
+            {
+                std::cout << "  GT(BVH) create failed\n";
+                allOk = false;
+                continue;
+            }
+            cubql.SetModel(&m_glTFModel);
+            if (!cubql.Build(buildMs) || !cubql.FillVolume(config_->Sdf.WorldSize, options.resolution, gt, fillMs))
+            {
+                std::cout << "  GT(BVH) failed\n";
+                allOk = false;
+                continue;
+            }
+            std::cout << "  GT(BVH) build=" << buildMs << " ms fill=" << fillMs << " ms\n";
+        }
+
+        auto rerecord = [&]() {
+            vkDeviceWaitIdle(m_device);
+            vkResetCommandBuffer(m_unifiedGPUPipeline.commandBuffer, 0);
+            m_unifiedGPUPipeline.commandsRecorded = false;
+            RecordUnifiedGPUPipelineCommands();
+        };
+
+        auto runVariant = [&](uint32_t budget, bool hierarchical, const char *variantName) -> bool {
+            config_->Sdf.MaxCameraNum = budget;
+            SetHierarchicalParentQuotaEnabled(hierarchical);
+            if (hierarchical)
+            {
+                SetMaxChildrenPerParent(std::clamp(config_->Sdf.MaxChildrenPerParent, 1u, 8u));
+            }
+            rerecord();
+
+            for (uint32_t frame = 0; frame < settleFrames; ++frame)
+            {
+                glfwPollEvents();
+                DrawFrame();
+            }
+            vkDeviceWaitIdle(m_device);
+            ReadSelectedCameraCount();
+
+            Texture *tex = GetMultiViewDepthSdfTexture();
+            std::vector<float> mv = DownloadSdfTexture(m_vulkanDevice, m_queues.graphicsQueue, tex, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            delete tex;
+
+            if (mv.size() != gt.size())
+            {
+                std::cout << "  K=" << budget << " " << variantName << " size mismatch\n";
+                return false;
+            }
+
+            QuotaQualityMetrics metrics = CompareAbsToUnsigned(mv, gt, narrowBand);
+            metrics.cameras = std::min(lastSelectedCameraCount_, budget);
+            AppendQuotaQualityCsv(options.outPath, modelName, triangles, options.resolution, budget, variantName, metrics);
+            std::cout << "  K=" << budget << " " << variantName << " cameras=" << metrics.cameras << " rmse_abs=" << metrics.rmseAbs
+                      << " mae_abs=" << metrics.maeAbs << " rmse_narrow=" << metrics.rmseNarrow << "\n";
+            return true;
+        };
+
+        for (uint32_t budget : budgets)
+        {
+            if (!runVariant(budget, false, "legacy_complexity") || !runVariant(budget, true, "hierarchical_quota"))
+            {
+                allOk = false;
+            }
+        }
+    }
+
+    std::cout << "quality csv: " << options.outPath << "\n" << std::flush;
+    vkDeviceWaitIdle(m_device);
+    std::_Exit(allOk ? EXIT_SUCCESS : EXIT_FAILURE);
 }

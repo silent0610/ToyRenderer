@@ -463,6 +463,8 @@ private:
 	void AllocateDescriptorSetSdfIsoSurface();
 	void SetMultiviewIsoSurfaceEnabled(bool enabled);
     void SetSelectionScoreOctreePassEnabled(bool enabled);
+	void SetHierarchicalParentQuotaEnabled(bool enabled);
+	void SetMaxChildrenPerParent(uint32_t maxChildren);
 
 	// PBR
 	void GenerateBRDFLUT();
@@ -1200,14 +1202,18 @@ private:
 		Buffer selectedCountBuffer; // 最终节点计数
        
         Buffer LevelCountBuffer;
+		Buffer parentCountsBuffer; // 每父节点已选子数（层级配额）
+		Buffer selectionPrefixCountBuffer; // 当前层 Final 开始前已选数量快照
 
 		// 新添加的多pass字段
 		struct CollectionPushConstantDesc
 		{
 			uint32_t BaseSize{};
 			uint32_t CurrentLevel{};
+			uint32_t UseHierarchicalParentQuota{};
+			uint32_t MaxChildrenPerParent{};
 		} CollectionPushConstant;
-		Buffer candidateNodesBuffer; // 候选节点缓冲区 (最多1000个)
+		Buffer candidateNodesBuffer; // 候选节点缓冲区
 		Buffer candidateCountBuffer; // 候选节点计数
 		VkPipeline collectionPipeline = VK_NULL_HANDLE;
 		VkPipelineLayout collectionPipelineLayout = VK_NULL_HANDLE;
@@ -1217,9 +1223,16 @@ private:
 		// 最终选择管线字段
 
 		struct FinalSelectionPushConstantDesc
-        {
-            uint32_t MaxSelectedNode{};
-        } FinalSelectionPushConstant{};
+		{
+			uint32_t MaxSelectedNode{};
+			uint32_t UseHierarchicalParentQuota{};
+			uint32_t MaxChildrenPerParent{};
+			uint32_t BaseSize{};
+			uint32_t CoarsestLevel{};
+			uint32_t CurrentLevel{};
+			uint32_t MaxLevelIndex{};
+			uint32_t Pad{};
+		} FinalSelectionPushConstant{};
 		VkPipeline finalSelectionPipeline = VK_NULL_HANDLE;
 		VkPipelineLayout finalSelectionPipelineLayout = VK_NULL_HANDLE;
 		VkDescriptorSetLayout finalSelectionDescriptorSetLayout = VK_NULL_HANDLE;
@@ -1246,6 +1259,8 @@ private:
 	int32_t m_cameraOverlayLevel{-1};
 	bool m_showMultiviewIsoSurface = false;
     bool m_enableSelectionScoreOctreePass = false;
+	bool m_enableHierarchicalParentQuota = false;
+	uint32_t m_maxChildrenPerParent = 1;
 
 	// 阶段四：解析式SDF生成 (Analytical SDF Generation)
 	struct AnalyticalSDFGeneration
@@ -1584,6 +1599,7 @@ public:
 	void TestBruteSdfAndSave(bool bSigned);
 	// 打开窗口。每个模型先丢掉 warmup 帧，再对 repeat 帧的预处理时间取平均，写入 CSV 后退出。
 	void RunDatasetBench(const DatasetBenchOptions &options);
+	void RunQuotaQualityBench(const DatasetBenchOptions &options);
 
 private:
 	void ReloadBenchModel(const std::string &relativePath);
