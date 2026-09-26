@@ -19,6 +19,10 @@ export struct DatasetBenchOptions
     uint32_t warmup{50};
     // 对比层级挑选「每父限额」与「不限额」的 MultiView SDF 质量（相对 BVH GT）
     bool qualityQuota{false};
+    // 强制层级配额（测 select 开销）；-1=沿用 Config
+    int hierarchicalQuota{-1};
+    // 稳定挑选开关；-1=沿用 Config
+    int stableSelection{-1};
 };
 
 // 渲染器测完若干帧后交回的摘要。求值时间不在这里，采样 pass 还没有。
@@ -94,5 +98,5 @@ public:
 
     static constexpr const char *kUsage =
         // 对比：旧复杂度门控 vs 层级父配额（限额）
-        "usage: MyToyRenderer --batch <model.gltf> | --batch-list <models.txt> [--out bench.csv] [--resolution 128] [--cameras 0] [--queries 4096] [--warmup 50] [--repeat 50] [--quality-quota]";
+        "usage: MyToyRenderer --batch <model.gltf> | --batch-list <models.txt> [--out bench.csv] [--resolution 128] [--cameras 0] [--queries 4096] [--warmup 50] [--repeat 50] [--quality-quota] [--hierarchical 0|1] [--stable-selection 0|1]";
 };

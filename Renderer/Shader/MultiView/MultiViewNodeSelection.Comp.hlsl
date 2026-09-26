@@ -120,9 +120,10 @@ void main(uint3 id : SV_DispatchThreadID) {
     candidate.center.z *= -1.0;
 
     if (PushConstant.UseHierarchicalParentQuota != 0) {
-        // parentLinear 放 padding[0]，勿写入 Complexity（CountSort 会按 Complexity 排序且仅支持 0..255）
+        // parentLinear -> padding[0]; stableKey -> padding[1]（确定性排序 / 跨帧匹配）
         candidate.Complexity = 0;
         candidate.padding[0] = ParentLinearIndex(coord, levelSize);
+        candidate.padding[1] = coord.x + coord.y * levelSize + coord.z * levelSize * levelSize;
     } else {
         uint3 coordPrev = coord / 2;
         uint complexity = ReadPrevLevelTexture(coordPrev);
@@ -135,6 +136,7 @@ void main(uint3 id : SV_DispatchThreadID) {
         if (finalComplexity < 100) return;
         candidate.Complexity = finalComplexity;
         candidate.padding[0] = 0;
+        candidate.padding[1] = 0;
     }
 
     uint candidateIndex;

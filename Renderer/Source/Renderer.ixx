@@ -466,6 +466,7 @@ private:
 	void SetHierarchicalParentQuotaEnabled(bool enabled);
 	void SetMaxChildrenPerParent(uint32_t maxChildren);
 	void SetMaxCameraNum(uint32_t maxCameras);
+	void SetStableCameraSelectionEnabled(bool enabled);
 
 	// PBR
 	void GenerateBRDFLUT();
@@ -1201,7 +1202,9 @@ private:
 
 		Buffer selectedNodesBuffer; // 最终选中的节点 (最多10个)
 		Buffer selectedCountBuffer; // 最终节点计数
-       
+		Buffer prevSelectedNodesBuffer; // 上一帧选中节点（时序稳定）
+		Buffer prevSelectedCountBuffer; // 上一帧选中数量
+
         Buffer LevelCountBuffer;
 		Buffer parentCountsBuffer; // 每父节点已选子数（层级配额）
 		Buffer selectionPrefixCountBuffer; // 当前层 Final 开始前已选数量快照
@@ -1232,7 +1235,7 @@ private:
 			uint32_t CoarsestLevel{};
 			uint32_t CurrentLevel{};
 			uint32_t MaxLevelIndex{};
-			uint32_t Pad{};
+			uint32_t UseStableSelection{}; // 1=确定性+时序, 0=旧并行原子
 		} FinalSelectionPushConstant{};
 		VkPipeline finalSelectionPipeline = VK_NULL_HANDLE;
 		VkPipelineLayout finalSelectionPipelineLayout = VK_NULL_HANDLE;
@@ -1262,6 +1265,8 @@ private:
     bool m_enableSelectionScoreOctreePass = false;
 	bool m_enableHierarchicalParentQuota = false;
 	uint32_t m_maxChildrenPerParent = 1;
+	bool m_enableStableCameraSelection = true;
+	bool m_invalidatePrevCameraSelection = true;
 
 	// 阶段四：解析式SDF生成 (Analytical SDF Generation)
 	struct AnalyticalSDFGeneration

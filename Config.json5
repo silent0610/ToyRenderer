@@ -1,6 +1,6 @@
 {
     "modelPath": [
-        "Models/dynamic/red_panda/scene.gltf"
+        "Models/dynamic/sugar_teddy_bear/scene.gltf"
     ],
     "shaderPath": [
         "BlinnPhong/Basic.Vert.spv",
@@ -45,7 +45,9 @@
         "UseSdfKind": 2, // SDFAO, 0 BruteForce, 2 Multiview, 3 JFA, 4 NGP, 5 Heat, 6 BVH(cuBQL)
         "UseRandomSelection": 0,
         "EnableHierarchicalParentQuota": 0, // 1=按八叉树父节点配额挑选, 0=旧复杂度门控
-        "MaxChildrenPerParent": 1 // 同一父节点下最多选几个子相机 [1,8]
+        "MaxChildrenPerParent": 1, // 同一父节点下最多选几个子相机 [1,8],
+        "EnableStableCameraSelection": 0
+        
     },
     "DynamicGeometry": {
         "enable": true,

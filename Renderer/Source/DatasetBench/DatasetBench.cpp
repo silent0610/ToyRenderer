@@ -176,6 +176,40 @@ std::optional<DatasetBenchOptions> DatasetBench::ParseArgs(int argc, char **argv
             options.qualityQuota = true;
             continue;
         }
+        if (arg == "--hierarchical")
+        {
+            const auto value = TakeValue(argc, argv, i, "--hierarchical");
+            if (!value)
+            {
+                std::cerr << kUsage << "\n";
+                return std::nullopt;
+            }
+            const auto parsed = ParseU32(*value);
+            if (!parsed || *parsed > 1)
+            {
+                std::cerr << "invalid --hierarchical (use 0 or 1)\n";
+                return std::nullopt;
+            }
+            options.hierarchicalQuota = static_cast<int>(*parsed);
+            continue;
+        }
+        if (arg == "--stable-selection")
+        {
+            const auto value = TakeValue(argc, argv, i, "--stable-selection");
+            if (!value)
+            {
+                std::cerr << kUsage << "\n";
+                return std::nullopt;
+            }
+            const auto parsed = ParseU32(*value);
+            if (!parsed || *parsed > 1)
+            {
+                std::cerr << "invalid --stable-selection (use 0 or 1)\n";
+                return std::nullopt;
+            }
+            options.stableSelection = static_cast<int>(*parsed);
+            continue;
+        }
 
         uint32_t *target = nullptr;
         if (arg == "--resolution")
@@ -294,6 +328,16 @@ void DatasetBench::ApplyToConfig(Config &config, const DatasetBenchOptions &opti
         config.Sdf.MaxChildrenPerParent = 1;
         config.Sdf.SdfAoUseSdfKind = Config::SdfKind::MultiView;
         config.Sdf.SdfMode = 1;
+    }
+    if (options.hierarchicalQuota >= 0)
+    {
+        config.Sdf.EnableHierarchicalParentQuota = static_cast<uint32_t>(options.hierarchicalQuota);
+        config.Sdf.SdfMode = 1;
+        config.Sdf.UseRandomSelection = 0;
+    }
+    if (options.stableSelection >= 0)
+    {
+        config.Sdf.EnableStableCameraSelection = static_cast<uint32_t>(options.stableSelection);
     }
     config.Dynamic.enable = false;
 }

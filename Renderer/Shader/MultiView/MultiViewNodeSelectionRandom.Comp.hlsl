@@ -117,9 +117,10 @@ void main(uint3 id : SV_DispatchThreadID) {
     candidate.center.y *= -1.0;
     candidate.center.z *= -1.0;
     if (PushConstant.UseHierarchicalParentQuota != 0) {
-        // Main/Final 的 padding[0] 对应本结构 padding[1]（Complexity 槽位在 offset 20）
+        // 布局对齐 Main/Final：padding[0]=Complexity, [1]=parentLinear, [2]=stableKey
         candidate.padding[0] = 0;
         candidate.padding[1] = ParentLinearIndex(coord, levelSize);
+        candidate.padding[2] = coord.x + coord.y * levelSize + coord.z * levelSize * levelSize;
     }
 
     uint candidateIndex;

@@ -58,6 +58,7 @@ Config::Config(const std::string& configPath)
         Sdf.EnableSelectionScoreOctreePass = sdfConfig.value("EnableSelectionScoreOctreePass", 0);
         Sdf.EnableHierarchicalParentQuota = sdfConfig.value("EnableHierarchicalParentQuota", 0);
         Sdf.MaxChildrenPerParent = sdfConfig.value("MaxChildrenPerParent", 1);
+        Sdf.EnableStableCameraSelection = sdfConfig.value("EnableStableCameraSelection", 1);
         if (Sdf.MaxChildrenPerParent < 1)
         {
             Sdf.MaxChildrenPerParent = 1;

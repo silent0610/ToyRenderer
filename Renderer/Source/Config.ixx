@@ -72,6 +72,8 @@ export struct Config
         uint32_t EnableHierarchicalParentQuota{0};
         // 同一父节点下最多选几个子相机，范围 [1, 8]
         uint32_t MaxChildrenPerParent{1};
+        // 1: 层级挑选确定性排序+时序稳定；0: 旧并行原子（不稳定但更快）
+        uint32_t EnableStableCameraSelection{1};
         uint32_t SdfResolution{64};
 	};
 	SdfConfig Sdf;
